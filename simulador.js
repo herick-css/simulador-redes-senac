@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.0.0',
+    versao: '1.1.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -1614,6 +1614,11 @@
         ctx.fillStyle = '#5B6B80';
         ctx.font = 'bold 7px Arial';
         ctx.fillText('ROTEADOR', 4, 12);
+        if (j.roteadorLigado) {
+          ctx.fillStyle = '#0B4F9C';
+          ctx.font = 'bold 6px Arial';
+          ctx.fillText('192.168.0.1', 22, 20);
+        }
         ctx.fillStyle = j.roteadorLigado ? '#39FF6A' : '#2A3530';
         ctx.fillRect(6, 16, 4, 3);
         ctx.fillRect(14, 16, 4, 3);
@@ -2417,7 +2422,8 @@
       indice: -1,
       progressoEm: 0,
       nivelDica: 0,
-      concluido: false
+      concluido: false,
+      viuIpRoteador: false
     };
 
     function pc(n) { return S.pcs[n].estado; }
@@ -2511,19 +2517,19 @@
       {
         id: 'ip1',
         quadro: 'IP fixo no PC-01',
-        texto: 'Configure IP fixo no PC-01 (Configurações de Rede).',
+        texto: 'Veja o IP do roteador (rack) e configure IP fixo no PC-01 na mesma rede, com final .2 ou .3.',
         feita: function () { return pc('PC-01').configurado; },
-        alvos: function () { return ['pc:PC-01']; },
-        dica1: 'Use o PC-01 e abra o ícone "Configurações de Rede". Escolha IP manual (fixo).',
+        alvos: function () { return J.viuIpRoteador ? ['pc:PC-01'] : ['roteador']; },
+        dica1: 'Primeiro use o roteador para ver o IP dele: ele é o gateway da rede. Depois abra "Configurações de Rede" no PC-01.',
         dica2: 'IP 192.168.0.2 ou .3 · Máscara 255.255.255.0 · Gateway 192.168.0.1 (o roteador).'
       },
       {
         id: 'ip2',
         quadro: 'IP fixo no PC-02',
-        texto: 'Configure IP fixo no PC-02 (outro IP, mesma rede).',
+        texto: 'Configure IP fixo no PC-02: mesma rede do roteador, outro final (.2 ou .3).',
         feita: function () { return pc('PC-02').configurado; },
-        alvos: function () { return ['pc:PC-02']; },
-        dica1: 'Agora o PC-02: mesma máscara e gateway, mas outro endereço IP.',
+        alvos: function () { return J.viuIpRoteador ? ['pc:PC-02'] : ['roteador']; },
+        dica1: 'Agora o PC-02: mesma máscara e mesmo gateway (o IP do roteador), mas outro endereço IP.',
         dica2: 'Se o PC-01 ficou com .2, use 192.168.0.3 (e vice-versa). O .1 é do roteador.'
       }
     ];
@@ -2630,6 +2636,7 @@
         case 'roteador':
           if (mao && mao.tipo === 'ponta') return 'Encaixar cabo no roteador';
           if (J.portaRoteador && !J.roteadorLigado) return 'Ligar o roteador';
+          if (J.roteadorLigado) return 'Ver IP do roteador';
           return 'Ver roteador';
         default:
           if (info.pc) {
@@ -2840,10 +2847,14 @@
           J.roteadorLigado = true;
           S.mundo.desenharRoteador();
           S.mundo.desenharSwitch();
-          S.aviso('Roteador ligado! Agora configure os IPs dos PCs.', 'ok', 3400);
+          S.aviso('Roteador ligado! Ele recebeu um IP automaticamente. Use o roteador para ver qual é.', 'ok', 4200);
           J.atualizarMissoes();
         });
         return;
+      }
+      if (J.roteadorLigado && !J.viuIpRoteador) {
+        J.viuIpRoteador = true;
+        J.progresso();
       }
       S.minigames.roteador('ver', null);
     }
@@ -3283,7 +3294,23 @@
       S.el('div', { marginBottom: '8px', fontSize: '13px' },
         modo === 'cabo' ? 'Escolha a porta certa para ligar o switch.'
           : modo === 'energia' ? 'Aperte o botão de energia para ligar o roteador.'
-          : 'Gateway da rede: 192.168.0.1 · WAN = internet · LAN = rede local.', m.corpo);
+          : 'WAN = internet do provedor · LAN = rede local (switch e PCs).', m.corpo);
+      if (modo === 'ver') {
+        var st = S.el('div', {
+          background: J.roteadorLigado ? '#0F3A22' : '#071733',
+          border: '3px solid ' + (J.roteadorLigado ? C.verde : C.borda),
+          borderRadius: '8px',
+          padding: '10px 14px',
+          marginBottom: '10px'
+        }, null, m.corpo);
+        if (J.roteadorLigado) {
+          S.el('div', { fontSize: '12px', fontWeight: '700', color: C.verde, letterSpacing: '0.05em' }, 'STATUS: LIGADO · IP DA REDE LOCAL (LAN)', st);
+          S.el('div', { fontFamily: C.mono, fontSize: '26px', fontWeight: '700', margin: '2px 0' }, S.REDE.gateway, st);
+          S.el('div', { fontSize: '13px', color: C.cinza }, 'Máscara ' + S.REDE.mascara + ' · Este IP é o gateway: os PCs usam a mesma rede (192.168.0.x) com outro final.', st);
+        } else {
+          S.el('div', { fontSize: '13px', color: C.cinza }, 'Status: desligado · sem IP. Quando ligado, ele recebe o IP automaticamente.', st);
+        }
+      }
       var painel = S.el('div', {
         display: 'flex',
         gap: '12px',
@@ -3432,6 +3459,17 @@
           padding: '12px 14px'
         }, null, tela);
         S.el('div', { fontWeight: '700', marginBottom: '8px', color: '#0B4F9C' }, '⚙ Configurações de Rede · Ethernet (' + (e.portaSwitch || 'sem cabo') + ')', janela);
+        if (!S.jogo.viuIpRoteador) {
+          S.el('div', {
+            background: '#FFF4D6',
+            border: '2px solid #D9A21B',
+            borderRadius: '6px',
+            padding: '6px 8px',
+            marginBottom: '8px',
+            fontSize: '12px',
+            color: '#5A4300'
+          }, 'Dica: o IP do roteador (gateway da rede) aparece no próprio roteador, no rack. Ele mostra em qual rede os PCs devem ficar.', janela);
+        }
 
         var modoManual = !!e.configurado;
         var opcoes = S.el('div', { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px', fontSize: '13px' }, null, janela);
@@ -3523,7 +3561,7 @@
           var outro = pc.nome === 'PC-01' ? S.pcs['PC-02'].estado : S.pcs['PC-01'].estado;
           if (outro.ip === ip) return errou('Esse IP já está no outro PC. Cada aparelho precisa de um IP único.', fIp);
           if (masc !== R.mascara) return errou('Rede classe C: a máscara é 255.255.255.0.', fMasc);
-          if (gw !== R.gateway) return errou('O gateway é o roteador: 192.168.0.1.', fGw);
+          if (gw !== R.gateway) return errou('O gateway é o IP do roteador. Confira no roteador (rack).', fGw);
           e.ip = ip;
           e.mascara = masc;
           e.gateway = gw;
