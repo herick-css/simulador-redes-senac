@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.1.0',
+    versao: '1.2.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -258,9 +258,7 @@
       top: '0',
       left: '0',
       width: '100%',
-      // --vh vem do script de redimensionamento do Canva: assim o jogo cabe
-      // na parte visível da página, mesmo que o iframe seja mais alto.
-      height: 'calc(100 * min(var(--vh, 1vh), 1vh))',
+      height: '100%', // ajustado abaixo para caber só na parte visível do iframe
       overflow: 'hidden',
       background: C.fundo,
       color: C.branco,
@@ -273,6 +271,116 @@
     });
     document.body.appendChild(raiz);
     S.raiz = raiz;
+    document.documentElement.style.touchAction = 'none';
+    document.body.style.touchAction = 'none';
+
+    // O Canva pode deixar o iframe mais alto que a tela (principalmente no
+    // celular deitado). Faixas invisíveis de 40 px + IntersectionObserver dizem
+    // qual parte do iframe está realmente visível, e o jogo se encaixa nela.
+    S.areaVisivel = null;
+    S.ajustarAreaVisivel = function () {
+      var hIframe = window.innerHeight;
+      var v = S.areaVisivel;
+      var cheio = document.fullscreenElement || document.webkitFullscreenElement;
+      var topo = 0;
+      var altura = hIframe;
+      if (v && !cheio && v.altura >= 120 && v.altura < hIframe - 2) {
+        topo = Math.max(0, Math.round(v.topo));
+        altura = Math.round(v.altura);
+      }
+      var novoTopo = topo + 'px';
+      var novaAltura = altura + 'px';
+      if (raiz.style.top !== novoTopo || raiz.style.height !== novaAltura) {
+        raiz.style.top = novoTopo;
+        raiz.style.height = novaAltura;
+        if (S.redimensionar) S.redimensionar();
+      }
+    };
+    var faixas = [];
+    var retangulos = [];
+    var observador = null;
+    function recalcularVisivel() {
+      var topo = Infinity;
+      var base = -Infinity;
+      retangulos.forEach(function (r) {
+        if (!r) return;
+        if (r.top < topo) topo = r.top;
+        if (r.bottom > base) base = r.bottom;
+      });
+      S.areaVisivel = base > topo ? { topo: topo, altura: base - topo } : null;
+      S.ajustarAreaVisivel();
+    }
+    function montarFaixas() {
+      if (!observador) return;
+      faixas.forEach(function (f) {
+        observador.unobserve(f);
+        f.remove();
+      });
+      faixas = [];
+      retangulos = [];
+      var h = window.innerHeight;
+      for (var y = 0; y < h; y += 40) {
+        var f = document.createElement('div');
+        S.estilo(f, {
+          position: 'absolute',
+          top: y + 'px',
+          left: '0',
+          width: '1px',
+          height: Math.min(40, h - y) + 'px',
+          pointerEvents: 'none',
+          visibility: 'hidden'
+        });
+        document.body.appendChild(f);
+        faixas.push(f);
+        retangulos.push(null);
+        observador.observe(f);
+      }
+    }
+    if (window.IntersectionObserver) {
+      observador = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) {
+          var i = faixas.indexOf(e.target);
+          if (i >= 0) retangulos[i] = e.isIntersecting ? e.intersectionRect : null;
+        });
+        recalcularVisivel();
+      }, { threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] });
+      montarFaixas();
+    }
+    var alturaAnterior = window.innerHeight;
+    window.addEventListener('resize', function () {
+      if (window.innerHeight !== alturaAnterior) {
+        alturaAnterior = window.innerHeight;
+        montarFaixas();
+      }
+      S.ajustarAreaVisivel();
+    });
+
+    // Tela cheia (quando o Canva permitir): ocupa a tela toda e trava em paisagem.
+    S.podeTelaCheia = function () {
+      return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+    };
+    S.alternarTelaCheia = function () {
+      var el = document.documentElement;
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        return;
+      }
+      var pedir = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!pedir) return;
+      try {
+        var p = pedir.call(el, { navigationUI: 'hide' });
+        var travar = function () {
+          try {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
+          } catch (e) { /* nem todo aparelho permite */ }
+        };
+        if (p && p.then) p.then(travar, function () {});
+        else travar();
+      } catch (e) { /* bloqueado pelo navegador */ }
+    };
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+      document.addEventListener(ev, function () { setTimeout(S.ajustarAreaVisivel, 60); });
+    });
     S.ui = {};
 
     S.ui.camada = function (z, estilos) {
@@ -748,6 +856,8 @@
         }, rodape);
         bVoltar.style.flex = '0 0 auto';
         var bComecar = S.ui.botao('Começar o laboratório ▶', 'primario', function () {
+          // No celular, aproveita o toque para pedir tela cheia (se o Canva permitir).
+          if (S.toque && S.podeTelaCheia() && !document.fullscreenElement) S.alternarTelaCheia();
           t.fechar();
           S.iniciarCarregamento();
         }, rodape);
@@ -850,6 +960,11 @@
         maxWidth: '190px',
         pointerEvents: 'none'
       }, '', hud.direita);
+      if (S.toque && S.podeTelaCheia()) {
+        var bCheia = S.ui.botao('⛶', 'secundario', S.alternarTelaCheia, hud.direita);
+        S.estilo(bCheia, { padding: '6px 12px', fontSize: '16px' });
+        bCheia.setAttribute('aria-label', 'Tela cheia');
+      }
       var bAjuda = S.ui.botao('?', 'secundario', function () { S.ui.mostrarComandos(false); }, hud.direita);
       S.estilo(bAjuda, { padding: '6px 12px', fontSize: '16px' });
       bAjuda.setAttribute('aria-label', 'Ver comandos');
