@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.3.1',
+    versao: '1.4.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -235,6 +235,12 @@
       }
       ctx.putImageData(img, 0, 0);
       return canvasLogo;
+    };
+
+    // Primeiro nome do aluno com inicial maiúscula (usado nas falas).
+    S.primeiroNome = function () {
+      var n = ((S.aluno && S.aluno.nome) || 'aluno').trim().split(/\s+/)[0];
+      return n.charAt(0).toUpperCase() + n.slice(1);
     };
 
     S.armazenar = function (chave, valor) {
@@ -1095,17 +1101,45 @@
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'none',
-        background: 'rgba(7, 20, 48, 0.94)',
-        border: '3px solid ' + C.laranja,
+        background: 'rgba(7, 20, 48, 0.5)',
+        border: '2px solid rgba(247, 148, 29, 0.75)',
         borderRadius: '8px',
         padding: '7px 14px',
         fontSize: '14px',
+        textShadow: '0 1px 2px rgba(0,0,0,0.9)',
         fontWeight: '700',
         whiteSpace: 'nowrap',
         maxWidth: 'calc(100% - 320px)',
         overflow: 'hidden',
         textOverflow: 'ellipsis'
       }, '', hud.camada);
+      S.ui.ajustarHudToque();
+    };
+
+    // No celular as caixas ficam ~20% menores para sobrar mais vista do 3D.
+    S.ui.ajustarHudToque = function () {
+      if (!hud.camada) return;
+      var t = S.toque;
+      S.estilo(hud.missao, {
+        width: t ? 'min(288px, 37%)' : 'min(360px, 46%)',
+        padding: t ? '6px 10px' : '8px 12px',
+        fontSize: t ? '10.5px' : '13px',
+        borderWidth: t ? '2px' : '3px'
+      });
+      hud.numero.style.fontSize = t ? '9.5px' : '12px';
+      hud.tempo.style.fontSize = t ? '14.5px' : '18px';
+      hud.texto.style.fontSize = t ? '11px' : '14px';
+      hud.dica.style.fontSize = t ? '10px' : '12px';
+      hud.dica.style.padding = t ? '4px 6px' : '5px 8px';
+      S.estilo(hud.prompt, {
+        fontSize: t ? '11px' : '14px',
+        padding: t ? '5px 11px' : '7px 14px'
+      });
+      hud.mao.style.fontSize = t ? '10px' : '12px';
+    };
+
+    S.ui.mostrarHud = function (sim) {
+      if (hud.camada) hud.camada.style.display = sim ? 'block' : 'none';
     };
 
     S.ui.atualizarHud = function () {
@@ -1399,7 +1433,7 @@
         m.castShadow = true;
         m.receiveShadow = true;
       }
-      (pai || S.cena).add(m);
+      (pai || S.raizFase || S.cena).add(m);
       return m;
     };
 
@@ -1407,14 +1441,45 @@
       var m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, a, seg || 6), material);
       m.position.set(x || 0, y || 0, z || 0);
       m.castShadow = true;
-      (pai || S.cena).add(m);
+      (pai || S.raizFase || S.cena).add(m);
       return m;
+    };
+
+    // Tudo o que pertence a uma fase vai para S.raizFase: ao trocar de fase,
+    // um único dispose() libera geometrias, materiais e texturas da GPU.
+    S.adicionar = function (obj) {
+      (S.raizFase || S.cena).add(obj);
+      return obj;
+    };
+
+    S.limparCacheMateriais = function () {
+      cacheMat = {};
+    };
+
+    S.liberar = function (raiz) {
+      var geos = new Set();
+      var mats = new Set();
+      var texs = new Set();
+      raiz.traverse(function (o) {
+        if (o.geometry) geos.add(o.geometry);
+        if (!o.material) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+          mats.add(m);
+          for (var k in m) {
+            if (m[k] && m[k].isTexture) texs.add(m[k]);
+          }
+        });
+      });
+      geos.forEach(function (g) { g.dispose(); });
+      texs.forEach(function (t) { t.dispose(); });
+      mats.forEach(function (m) { m.dispose(); });
+      return { geometrias: geos.size, materiais: mats.size, texturas: texs.size };
     };
 
     S.grupo = function (x, y, z, pai) {
       var g = new THREE.Group();
       g.position.set(x || 0, y || 0, z || 0);
-      (pai || S.cena).add(g);
+      (pai || S.raizFase || S.cena).add(g);
       return g;
     };
 
@@ -1535,7 +1600,7 @@
       var piso = new THREE.Mesh(new THREE.PlaneGeometry(L, P), new THREE.MeshLambertMaterial({ map: texPiso }));
       piso.rotation.x = -Math.PI / 2;
       piso.receiveShadow = true;
-      S.cena.add(piso);
+      S.adicionar(piso);
 
       var mParede = S.mat(C.parede);
       var mFaixa = S.mat(C.azul);
@@ -1586,7 +1651,7 @@
       S.caixa(1.66, 1.06, 0.05, S.mat(C.azulEscuro), 2.3, 2.05, -P / 2 + 0.03, null, true);
       var placa = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshLambertMaterial({ map: texPlaca }));
       placa.position.set(2.3, 2.05, -P / 2 + 0.06);
-      S.cena.add(placa);
+      S.adicionar(placa);
       var texNome = S.textura(128, 16, function (ctx, w, h) {
         ctx.fillStyle = '#0B4F9C';
         ctx.fillRect(0, 0, w, h);
@@ -1597,14 +1662,14 @@
       });
       var nomeLab = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.2), new THREE.MeshLambertMaterial({ map: texNome }));
       nomeLab.position.set(2.3, 1.38, -P / 2 + 0.06);
-      S.cena.add(nomeLab);
+      S.adicionar(nomeLab);
 
       // Quadro branco: lista de missões que vai sendo riscada.
       S.mundo.texQuadro = S.textura(256, 128, null);
       S.caixa(3.1, 1.62, 0.05, S.mat(C.metal), -1.7, 1.75, -P / 2 + 0.03, null, true);
       var quadro = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.52), new THREE.MeshLambertMaterial({ map: S.mundo.texQuadro }));
       quadro.position.set(-1.7, 1.75, -P / 2 + 0.06);
-      S.cena.add(quadro);
+      S.adicionar(quadro);
       S.caixa(1.0, 0.04, 0.08, S.mat(C.metal), -1.7, 0.95, -P / 2 + 0.07, null, true);
       S.interativo(quadro, {
         id: 'quadro',
@@ -2037,7 +2102,7 @@
       var curva = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
       var tubo = new THREE.Mesh(new THREE.TubeGeometry(curva, curto ? 16 : 48, 0.014, 4, false), S.mat(curto ? S.COR.caboCinza : S.COR.caboAzul));
       tubo.castShadow = true;
-      S.cena.add(tubo);
+      S.adicionar(tubo);
       return tubo;
     };
 
@@ -2049,7 +2114,7 @@
       var linha = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: S.COR.caboAzul }));
       linha.visible = false;
       linha.frustumCulled = false;
-      S.cena.add(linha);
+      S.adicionar(linha);
       S.mundo.caboMao = { linha: linha, n: n, origem: null };
     };
 
@@ -2086,7 +2151,7 @@
       );
       seta.rotation.x = Math.PI;
       seta.visible = false;
-      S.cena.add(seta);
+      S.adicionar(seta);
       S.mundo.seta = { malha: seta, alvo: null };
     };
 
@@ -2179,14 +2244,14 @@
       return t;
     }
 
-    function texturaNome(nome) {
+    function texturaNome(nome, fundo) {
       return S.textura(128, 20, function (ctx, w, h) {
         ctx.clearRect(0, 0, w, h);
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         var txt = nome.length > 16 ? nome.slice(0, 15) + '…' : nome;
         var larg = Math.min(w - 2, ctx.measureText(txt).width + 10);
-        ctx.fillStyle = 'rgba(7,20,48,0.85)';
+        ctx.fillStyle = fundo || 'rgba(7,20,48,0.85)';
         ctx.fillRect((w - larg) / 2, 2, larg, 16);
         ctx.fillStyle = '#FFFFFF';
         ctx.fillText(txt, w / 2, 14);
@@ -2313,6 +2378,8 @@
       raiz.rotation.y = Math.PI;
     };
 
+    S.texturaNome = texturaNome;
+
     S.personagemSegurando = function (sim) {
       if (S.personagem) S.personagem.rolo.visible = !!sim;
     };
@@ -2378,22 +2445,381 @@
       p.corpo.position.y = p.andando ? Math.abs(Math.sin(p.fase)) * 0.05 : Math.sin(S.agora() / 600) * 0.008;
     };
 
+    // Posição e alvo da câmera de jogo para o personagem em "pos".
+    S.poseCamera = function (pos, saidaPos, saidaAlvo) {
+      var c = S.CFG.camera;
+      var afast = S.camera.aspect < 1.5 ? 1.15 : 1;
+      var cx = Math.max(-2.4, Math.min(2.4, pos.x * 0.85)) + c.x;
+      saidaPos.set(cx, c.y * afast, pos.z + c.z * afast);
+      saidaAlvo.set(cx, 0.9, pos.z - 0.7);
+    };
+
     S.atualizarCamera = function (dt, imediato) {
       if (!desejada) {
         desejada = new THREE.Vector3();
         alvo = new THREE.Vector3();
       }
-      var pos = S.personagem.raiz.position;
-      var c = S.CFG.camera;
-      var aspecto = S.camera.aspect;
-      var afast = aspecto < 1.5 ? 1.15 : 1;
-      var cx = Math.max(-2.4, Math.min(2.4, pos.x * 0.85)) + c.x;
-      desejada.set(cx, c.y * afast, pos.z + c.z * afast);
+      S.poseCamera(S.personagem.raiz.position, desejada, alvo);
       if (imediato) S.camera.position.copy(desejada);
       else S.camera.position.lerp(desejada, 1 - Math.exp(-dt * 5));
-      alvo.set(cx, 0.9, pos.z - 0.7);
       S.camera.lookAt(alvo);
     };
+  });
+
+  /* ================================================================== */
+  secao('P03-professor', function () {
+    // Professor Herick: fica no canto da frente, à direita, ao lado da mesa.
+    // Acompanha o aluno com a cabeça e conversa quando é clicado.
+    var PELE = '#E8B994';
+    var CABELO = '#1A120D';
+    var BARBA = '#20160F';
+    var JAQUETA = '#F08A24';
+    var JAQUETA_ESCURA = '#C96A12';
+    var CAMISA = '#1C2B4A';
+    var CRACHA = '#2B6FD1';
+    var POS = { x: 5.2, z: 3.3, angulo: -1.33 };
+
+    function px(ctx, cor, x, y, l, a) {
+      ctx.fillStyle = cor;
+      ctx.fillRect(x, y, l || 1, a || 1);
+    }
+
+    function texturaRostoProf() {
+      return S.textura(16, 16, function (ctx) {
+        px(ctx, PELE, 0, 0, 16, 16);
+        // Cabelo cacheado na testa (linha irregular).
+        px(ctx, CABELO, 0, 0, 16, 1);
+        [0, 1, 2, 3, 4, 7, 8, 9, 12, 13, 14, 15].forEach(function (x) { px(ctx, CABELO, x, 1); });
+        [0, 1, 3, 14, 15].forEach(function (x) { px(ctx, CABELO, x, 2); });
+        // Sobrancelhas grossas.
+        px(ctx, CABELO, 3, 5, 4, 1);
+        px(ctx, CABELO, 9, 5, 4, 1);
+        px(ctx, CABELO, 4, 4, 3, 1);
+        px(ctx, CABELO, 9, 4, 3, 1);
+        // Olhos castanhos com um brilho.
+        px(ctx, '#2E1A0F', 4, 7, 2, 2);
+        px(ctx, '#2E1A0F', 10, 7, 2, 2);
+        px(ctx, '#F1E6DA', 5, 7, 1, 1);
+        px(ctx, '#F1E6DA', 11, 7, 1, 1);
+        // Nariz.
+        px(ctx, 'rgba(120,60,30,0.28)', 7, 8, 2, 3);
+        // Costeletas finas e barba contornando o queixo.
+        px(ctx, BARBA, 0, 6, 1, 7);
+        px(ctx, BARBA, 15, 6, 1, 7);
+        px(ctx, BARBA, 1, 11, 2, 2);
+        px(ctx, BARBA, 13, 11, 2, 2);
+        px(ctx, BARBA, 1, 13, 14, 3);
+        px(ctx, BARBA, 3, 12, 3, 1);
+        px(ctx, BARBA, 10, 12, 3, 1);
+        // Bigode com pontas viradas (estilo "guidão").
+        px(ctx, BARBA, 4, 11, 8, 1);
+        px(ctx, BARBA, 3, 10, 1, 1);
+        px(ctx, BARBA, 12, 10, 1, 1);
+        // Boca (sorriso discreto).
+        px(ctx, '#A8604E', 6, 12, 4, 1);
+      });
+    }
+
+    // Lateral da cabeça; "frenteEsquerda" espelha para o outro lado.
+    function texturaLadoProf(frenteEsquerda) {
+      return S.textura(16, 16, function (ctx) {
+        function p(cor, x, y, l, a) {
+          px(ctx, cor, frenteEsquerda ? x : 16 - x - (l || 1), y, l, a);
+        }
+        p(PELE, 0, 0, 16, 16);
+        p(CABELO, 0, 0, 16, 4);
+        p(CABELO, 9, 4, 7, 7);
+        p(CABELO, 12, 11, 4, 2);
+        p(BARBA, 5, 4, 3, 8); // costeleta
+        p(BARBA, 0, 11, 9, 5); // barba no maxilar
+        p(BARBA, 0, 10, 3, 1);
+        p('#C9946E', 8, 7, 2, 3); // orelha
+      });
+    }
+
+    function texturaNucaProf() {
+      return S.textura(16, 16, function (ctx) {
+        px(ctx, PELE, 0, 0, 16, 16);
+        px(ctx, CABELO, 0, 0, 16, 12);
+        px(ctx, CABELO, 2, 12, 12, 1);
+      });
+    }
+
+    function texturaPeitoProf() {
+      var t = S.textura(32, 32, function (ctx) {
+        px(ctx, JAQUETA, 0, 0, 32, 32);
+        px(ctx, CAMISA, 11, 0, 10, 32); // camiseta por baixo da jaqueta aberta
+        px(ctx, '#E6E6E6', 11, 0, 10, 1); // gola com listras
+        px(ctx, '#E6E6E6', 12, 1, 8, 1);
+        px(ctx, JAQUETA_ESCURA, 10, 0, 1, 32); // lapelas
+        px(ctx, JAQUETA_ESCURA, 21, 0, 1, 32);
+        px(ctx, JAQUETA_ESCURA, 0, 28, 32, 1);
+        // Cordão do crachá (azul) e o crachá branco.
+        for (var y = 2; y < 14; y++) {
+          px(ctx, CRACHA, 12 + Math.floor((y - 2) / 4), y);
+          px(ctx, CRACHA, 19 - Math.floor((y - 2) / 4), y);
+        }
+        px(ctx, '#FFFFFF', 13, 14, 6, 7);
+        px(ctx, CRACHA, 13, 19, 6, 2);
+      });
+      S.quandoLogo(function (img) {
+        t.__ctx.drawImage(img, 13, 15, 6, 4);
+        t.needsUpdate = true;
+      });
+      return t;
+    }
+
+    function texturaCostasProf() {
+      return S.textura(32, 32, function (ctx) {
+        px(ctx, JAQUETA, 0, 0, 32, 32);
+        px(ctx, CAMISA, 10, 0, 12, 2);
+        px(ctx, JAQUETA_ESCURA, 0, 28, 32, 1);
+        px(ctx, JAQUETA_ESCURA, 15, 8, 2, 20);
+      });
+    }
+
+    function mesaProfessor() {
+      var C = S.COR;
+      var mx = 4.25;
+      var mz = 3.3;
+      var g = S.grupo(mx, 0, mz);
+      var mTampo = S.mat(C.madeira);
+      var mPe = S.mat(C.metalEscuro);
+      S.caixa(0.62, 0.05, 1.3, mTampo, 0, 0.76, 0, g);
+      S.caixa(0.05, 0.74, 0.05, mPe, -0.26, 0.37, -0.6, g);
+      S.caixa(0.05, 0.74, 0.05, mPe, -0.26, 0.37, 0.6, g);
+      S.caixa(0.05, 0.74, 0.05, mPe, 0.26, 0.37, -0.6, g);
+      S.caixa(0.05, 0.74, 0.05, mPe, 0.26, 0.37, 0.6, g);
+      S.caixa(0.02, 0.4, 1.2, S.mat(C.azul), -0.3, 0.52, 0, g, true); // painel frontal azul
+      // Notebook aberto virado para o professor.
+      S.caixa(0.24, 0.02, 0.32, S.mat(C.plastico), 0.08, 0.795, -0.2, g);
+      var tampa = S.caixa(0.015, 0.22, 0.32, S.mat(C.azul), -0.04, 0.9, -0.2, g);
+      tampa.rotation.z = 0.25;
+      // Caneca laranja e livros.
+      S.cilindro(0.045, 0.04, 0.1, 8, S.mat(C.laranja), 0.12, 0.835, 0.25, g);
+      S.caixa(0.22, 0.04, 0.3, S.mat(0x2e7d4f), -0.05, 0.805, 0.38, g);
+      S.caixa(0.2, 0.04, 0.28, S.mat(0xb33a3a), -0.05, 0.845, 0.38, g);
+      S.colisor(mx, mz, 0.62, 1.3);
+    }
+
+    var gesto = null;
+    var balao = null;
+    var balaoAte = 0;
+    var balaoTexto = null;
+    var vTmp = null;
+
+    S.criarProfessor = function () {
+      mesaProfessor();
+      var mPele = S.mat(parseInt(PELE.slice(1), 16));
+      var mCabelo = S.mat(parseInt(CABELO.slice(1), 16));
+      var mBarba = S.mat(parseInt(BARBA.slice(1), 16));
+      var mJaqueta = S.mat(parseInt(JAQUETA.slice(1), 16));
+      var mCalca = S.mat(0x5f646c);
+      var mSapato = S.mat(0x1a1a1a);
+
+      var raiz = S.grupo(POS.x, 0, POS.z);
+      raiz.rotation.y = POS.angulo;
+      var corpo = S.grupo(0, 0, 0, raiz);
+      var partes = [];
+
+      function perna(x) {
+        var piv = S.grupo(x, 0.72, 0, corpo);
+        partes.push(S.caixa(0.23, 0.6, 0.25, mCalca, 0, -0.3, 0, piv));
+        partes.push(S.caixa(0.25, 0.1, 0.34, mSapato, 0, -0.66, 0.04, piv));
+        return piv;
+      }
+      perna(-0.14);
+      perna(0.14);
+
+      var mFrente = new THREE.MeshLambertMaterial({ map: texturaPeitoProf() });
+      var mCostas = new THREE.MeshLambertMaterial({ map: texturaCostasProf() });
+      var tronco = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.66, 0.34), [mJaqueta, mJaqueta, mJaqueta, mJaqueta, mFrente, mCostas]);
+      tronco.position.set(0, 1.03, 0);
+      tronco.castShadow = true;
+      corpo.add(tronco);
+      partes.push(tronco);
+
+      function braco(x) {
+        var piv = S.grupo(x, 1.28, 0, corpo);
+        partes.push(S.caixa(0.2, 0.28, 0.22, mJaqueta, 0, -0.11, 0, piv));
+        partes.push(S.caixa(0.17, 0.3, 0.18, mJaqueta, 0, -0.38, 0, piv));
+        partes.push(S.caixa(0.16, 0.15, 0.16, mPele, 0, -0.6, 0, piv));
+        return piv;
+      }
+      var bracoE = braco(-0.41);
+      var bracoD = braco(0.41);
+
+      partes.push(S.caixa(0.18, 0.06, 0.16, mPele, 0, 1.37, 0, corpo));
+      // Cabeça num pivô próprio para poder girar acompanhando o aluno.
+      var pivCabeca = S.grupo(0, 1.36, 0, corpo);
+      var mRosto = new THREE.MeshLambertMaterial({ map: texturaRostoProf() });
+      var mLadoD = new THREE.MeshLambertMaterial({ map: texturaLadoProf(true) });
+      var mLadoE = new THREE.MeshLambertMaterial({ map: texturaLadoProf(false) });
+      var mNuca = new THREE.MeshLambertMaterial({ map: texturaNucaProf() });
+      var cabeca = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.52, 0.48), [mLadoD, mLadoE, mCabelo, mPele, mRosto, mNuca]);
+      cabeca.position.set(0, 0.26, 0);
+      cabeca.castShadow = true;
+      pivCabeca.add(cabeca);
+      partes.push(cabeca);
+      // Volume da barba no queixo.
+      partes.push(S.caixa(0.34, 0.06, 0.06, mBarba, 0, 0.02, 0.25, pivCabeca, true));
+      // Cabelo cacheado: base volumosa + "cachos" em blocos.
+      partes.push(S.caixa(0.58, 0.14, 0.54, mCabelo, 0, 0.57, -0.01, pivCabeca));
+      partes.push(S.caixa(0.58, 0.32, 0.08, mCabelo, 0, 0.38, -0.25, pivCabeca));
+      partes.push(S.caixa(0.05, 0.16, 0.36, mCabelo, -0.285, 0.44, -0.05, pivCabeca, true));
+      partes.push(S.caixa(0.05, 0.16, 0.36, mCabelo, 0.285, 0.44, -0.05, pivCabeca, true));
+      [
+        [-0.19, 0.67, 0.13], [0.02, 0.69, 0.17], [0.2, 0.66, 0.1], [-0.09, 0.68, -0.08],
+        [0.13, 0.67, -0.14], [-0.21, 0.65, -0.18], [0.0, 0.66, -0.24], [-0.12, 0.58, 0.25], [0.12, 0.59, 0.25]
+      ].forEach(function (c, i) {
+        var t = i % 3 === 0 ? 0.15 : 0.12;
+        partes.push(S.caixa(t, t, t, mCabelo, c[0], c[1], c[2], pivCabeca, true));
+      });
+
+      var etiqueta = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.texturaNome('Prof. Herick', 'rgba(201,106,18,0.92)'), depthTest: false, transparent: true }));
+      etiqueta.scale.set(1.3, 0.2, 1);
+      etiqueta.position.set(0, 2.3, 0);
+      etiqueta.renderOrder = 10;
+      raiz.add(etiqueta);
+
+      S.professor = {
+        raiz: raiz,
+        corpo: corpo,
+        cabeca: pivCabeca,
+        bracoE: bracoE,
+        bracoD: bracoD,
+        yaw: 0,
+        alvoFixo: null
+      };
+      S.interativo(partes, {
+        id: 'professor',
+        nome: 'Professor Herick',
+        ancora: new THREE.Vector3(3.55, 0, 2.9)
+      });
+      S.colisor(POS.x, POS.z, 0.5, 0.4);
+    };
+
+    // Gestos simples: 'aceno' (mão levantada balançando), 'apontar' e 'falar'.
+    S.gestoProfessor = function (tipo, duracao) {
+      gesto = tipo ? { tipo: tipo, t: 0, dur: duracao || 1.6 } : null;
+    };
+
+    function difAngulo(a, b) {
+      var d = b - a;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    }
+
+    S.atualizarProfessor = function (dt) {
+      var pr = S.professor;
+      if (!pr) return;
+      // Cabeça segue o aluno (ou um ponto fixo durante a cena), com limite de giro.
+      var alvo = pr.alvoFixo || (S.personagem && S.personagem.raiz.position);
+      if (alvo) {
+        var mundo = Math.atan2(alvo.x - POS.x, alvo.z - POS.z);
+        var local = Math.max(-1.25, Math.min(1.25, difAngulo(POS.angulo, mundo)));
+        pr.yaw += (local - pr.yaw) * Math.min(1, dt * 6);
+        pr.cabeca.rotation.y = pr.yaw;
+      }
+      var tempo = S.agora() / 1000;
+      var bE = 0;
+      var bD = 0;
+      var bDz = 0;
+      var aceno = 0;
+      pr.cabeca.rotation.x = 0;
+      if (gesto) {
+        gesto.t += dt;
+        var f = Math.min(1, gesto.t / 0.25, (gesto.dur - gesto.t) / 0.25);
+        if (gesto.tipo === 'aceno') {
+          bD = -2.6 * f;
+          aceno = Math.sin(gesto.t * 12) * 0.35 * f;
+        } else if (gesto.tipo === 'apontar') {
+          bD = -1.45 * f;
+        } else if (gesto.tipo === 'falar') {
+          bE = (-0.45 + Math.sin(gesto.t * 5) * 0.15) * f;
+          pr.cabeca.rotation.x = Math.sin(gesto.t * 7) * 0.05 * f;
+        }
+        if (gesto.t >= gesto.dur) gesto = null;
+      }
+      pr.bracoD.rotation.x = bD;
+      pr.bracoD.rotation.z = bDz + aceno;
+      pr.bracoE.rotation.x = bE;
+      pr.corpo.position.y = Math.sin(tempo * 1.7) * 0.008;
+      atualizarBalao();
+    };
+
+    // Balão de fala em HTML (legível mesmo com o 3D em baixa resolução).
+    function criarBalao() {
+      balao = S.el('div', {
+        position: 'absolute',
+        zIndex: '6',
+        transform: 'translate(-50%, -100%)',
+        background: '#FFFFFF',
+        color: '#10203A',
+        border: '3px solid #071430',
+        borderRadius: '12px',
+        padding: '7px 12px',
+        fontWeight: '700',
+        fontSize: '14px',
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        display: 'none',
+        boxShadow: '0 4px 0 rgba(7,20,48,0.35)'
+      }, '', S.raiz);
+      balaoTexto = S.el('span', null, '', balao);
+      S.el('div', {
+        position: 'absolute',
+        left: '50%',
+        bottom: '-9px',
+        width: '12px',
+        height: '12px',
+        marginLeft: '-6px',
+        background: '#FFFFFF',
+        borderRight: '3px solid #071430',
+        borderBottom: '3px solid #071430',
+        transform: 'rotate(45deg)'
+      }, null, balao);
+    }
+
+    S.professorFalar = function (texto, ms) {
+      if (!S.professor) return;
+      if (!balao) criarBalao();
+      balaoTexto.textContent = texto;
+      balao.style.fontSize = S.toque || S.ui.compacto() ? '12px' : '14px';
+      balaoAte = S.agora() + (ms || 3200);
+      S.gestoProfessor('aceno', 1.2);
+      atualizarBalao();
+    };
+
+    S.esconderBalaoProfessor = function () {
+      balaoAte = 0;
+      if (balao) balao.style.display = 'none';
+    };
+
+    function atualizarBalao() {
+      if (!balao) return;
+      if (S.agora() > balaoAte || S.pausado || !S.professor) {
+        balao.style.display = 'none';
+        return;
+      }
+      if (!vTmp) vTmp = new THREE.Vector3();
+      vTmp.set(POS.x, 2.45, POS.z).project(S.camera);
+      if (vTmp.z > 1 || Math.abs(vTmp.x) > 1.1 || Math.abs(vTmp.y) > 1.1) {
+        balao.style.display = 'none';
+        return;
+      }
+      var w = S.raiz.clientWidth;
+      var h = S.raiz.clientHeight;
+      var x = (vTmp.x + 1) / 2 * w;
+      var larg = balao.offsetWidth || 180;
+      x = Math.max(larg / 2 + 6, Math.min(w - larg / 2 - 6, x));
+      balao.style.left = x + 'px';
+      balao.style.top = Math.max(60, (1 - vTmp.y) / 2 * h - 10) + 'px';
+      balao.style.display = 'block';
+    }
+
+    S.professorPosicao = POS;
   });
 
 
@@ -2674,6 +3100,7 @@
         S.toque = true;
         if (S.fase === 'jogo') {
           S.ui.criarControlesToque();
+          S.ui.ajustarHudToque();
           if (S.limparHover) S.limparHover();
           S.redimensionar();
         }
@@ -2889,7 +3316,7 @@
         var info = objs[id];
         var d = J.distancia(info);
         if (d > S.CFG.alcance) continue;
-        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' ? 0.6 : 0);
+        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' ? 0.6 : 0);
         if (nota < melhorNota) {
           melhorNota = nota;
           melhor = info;
@@ -2902,6 +3329,7 @@
       var mao = J.mao;
       switch (info.id) {
         case 'quadro': return 'Ver missões';
+        case 'professor': return 'Falar com o professor Herick';
         case 'cartaz': return 'Ver cartaz T-568B';
         case 'alicate': return 'Crimpar cabo';
         case 'switch':
@@ -2972,6 +3400,7 @@
         return;
       }
       J.registrarAtividade();
+      if (info.id === 'professor') return falarProfessor();
       if (info.id === 'quadro') return S.minigames.quadro();
       if (info.id === 'cartaz') return S.minigames.cartaz();
       if (info.id === 'alicate') return usarAlicate();
@@ -2979,6 +3408,18 @@
       if (info.id === 'roteador') return usarRoteador();
       if (info.pc) return usarPc(info.pc);
     });
+
+    // Quantas missões já foram feitas (para o professor comentar o progresso).
+    J.missoesFeitas = function () {
+      return J.MISSOES.filter(function (m) { return m.feita(); }).length;
+    };
+
+    function falarProfessor() {
+      var nome = S.primeiroNome();
+      S.professorFalar(J.missoesFeitas() === 0
+        ? 'Boa sorte com a atividade, ' + nome + '!'
+        : 'Você está indo bem, ' + nome + '!', 3200);
+    }
 
     function usarAlicate() {
       if (J.mao) {
@@ -4132,6 +4573,92 @@
       });
     }
 
+    // ---- Fases ----------------------------------------------------------
+    // Cada fase descreve as etapas que montam o cenário dela. Tudo que ela
+    // cria fica dentro de S.raizFase; desmontar libera tudo da GPU (dispose).
+    S.fases = {};
+    S.faseAtual = null;
+    var aoDesmontar = [];
+
+    S.registrarFase = function (id, def) {
+      def.id = id;
+      S.fases[id] = def;
+      return def;
+    };
+
+    // Funções extras de limpeza (ex.: esconder balões em HTML da fase).
+    S.aoDesmontarFase = function (fn) {
+      aoDesmontar.push(fn);
+    };
+
+    S.desmontarFase = function () {
+      if (!S.raizFase) return null;
+      var def = S.faseAtual;
+      if (def && def.desmontar) {
+        try { def.desmontar(); } catch (e) { registrarErro('desmontar', e); }
+      }
+      aoDesmontar.splice(0).forEach(function (fn) {
+        try { fn(); } catch (e) { registrarErro('desmontar', e); }
+      });
+      S.cena.remove(S.raizFase);
+      var liberado = S.liberar(S.raizFase);
+      S.raizFase = null;
+      S.faseAtual = null;
+      S.limparCacheMateriais();
+      S.interativos.length = 0;
+      S.colisores.length = 0;
+      S.leds.length = 0;
+      S.mundo.objetos = {};
+      for (var k in S.pcs) {
+        if (Object.prototype.hasOwnProperty.call(S.pcs, k)) delete S.pcs[k];
+      }
+      S.personagem = null;
+      S.professor = null;
+      if (S.limparHover) S.limparHover();
+      if (S.renderer) S.renderer.renderLists.dispose();
+      return liberado;
+    };
+
+    // Monta a fase em passos (a barra de carregamento avança entre eles).
+    S.montarFase = function (id, tela) {
+      var def = S.fases[id];
+      if (S.raizFase) S.desmontarFase();
+      S.raizFase = new THREE.Group();
+      S.raizFase.name = 'fase:' + id;
+      S.cena.add(S.raizFase);
+      S.faseAtual = def;
+      var etapas = def.etapas;
+      var cadeia = Promise.resolve();
+      etapas.forEach(function (et, i) {
+        cadeia = cadeia.then(function () {
+          if (tela) tela.progresso((i + 1) / (etapas.length + 2), et[0]);
+          return passo(et[1]);
+        });
+      });
+      return cadeia;
+    };
+
+    // Fase 1: o laboratório de redes.
+    S.registrarFase('laboratorio', {
+      nome: 'Laboratório de Redes',
+      etapas: [
+        ['Construindo a sala…', function () { S.mundo.montarSala(); }],
+        ['Montando as bancadas e os PCs…', function () { S.mundo.montarBancadas(); }],
+        ['Instalando o rack, o switch e o roteador…', function () { S.mundo.montarRack(); }],
+        ['Separando as ferramentas…', function () { S.mundo.montarFerramentas(); }],
+        ['Chamando o professor e o aluno…', function () {
+          S.criarProfessor();
+          S.criarPersonagem(S.aluno.nome, S.aluno.genero);
+          S.mundo.montarCaboMao();
+          S.mundo.montarSeta();
+        }]
+      ],
+      desmontar: function () {
+        if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
+        if (S.mundo.seta) S.mundo.seta = null;
+      }
+    });
+
     S.iniciarCarregamento = function () {
       S.fase = 'carregando';
       var tela = S.ui.mostrarCarregamento();
@@ -4140,33 +4667,21 @@
         registrarErro('carregamento', new Error('THREE indisponível'));
         return;
       }
-      var etapas = [
-        ['Ligando o motor 3D…', S.montarRenderer],
-        ['Construindo a sala…', S.mundo.montarSala],
-        ['Montando as bancadas e os PCs…', S.mundo.montarBancadas],
-        ['Instalando o rack, o switch e o roteador…', S.mundo.montarRack],
-        ['Separando as ferramentas…', S.mundo.montarFerramentas],
-        ['Chamando o aluno…', function () {
-          S.criarPersonagem(S.aluno.nome, S.aluno.genero);
-          S.mundo.montarCaboMao();
-          S.mundo.montarSeta();
-        }],
-        ['Preparando os gráficos…', function () {
+      tela.progresso(0, 'Ligando o motor 3D…');
+      passo(function () {
+        if (!S.renderer) S.montarRenderer();
+      }).then(function () {
+        return S.montarFase('laboratorio', tela);
+      }).then(function () {
+        tela.progresso(0.95, 'Preparando os gráficos…');
+        return passo(function () {
           S.ligarEntradaCena();
           S.atualizarCamera(0, true);
           // Compila todos os shaders agora, para o jogo não engasgar depois.
           S.renderer.compile(S.cena, S.camera);
           S.renderer.render(S.cena, S.camera);
-        }]
-      ];
-      var cadeia = Promise.resolve();
-      etapas.forEach(function (et, i) {
-        cadeia = cadeia.then(function () {
-          tela.progresso(i / etapas.length, et[0]);
-          return passo(et[1]);
         });
-      });
-      cadeia.then(function () {
+      }).then(function () {
         tela.progresso(1, 'Pronto!');
         setTimeout(function () {
           tela.fechar();
@@ -4175,17 +4690,29 @@
       });
     };
 
+    // Antes do jogo: cena de abertura com o professor. O cronômetro só
+    // começa quando ela termina (ou é pulada).
     S.comecarJogo = S.protegido('comecarJogo', function () {
       S.ui.criarHud();
+      S.ui.mostrarHud(false);
+      S.jogo.atualizarMissoes();
+      S.pausado = false;
+      if (S.cenaAbertura) S.cenaAbertura(S.liberarJogo);
+      else S.liberarJogo();
+    });
+
+    S.liberarJogo = S.protegido('liberarJogo', function () {
+      S.ui.mostrarHud(true);
       if (S.toque) S.ui.criarControlesToque();
       S.fase = 'jogo';
       S.pausado = false;
+      S.teclas = {};
       S.tempoInicio = S.agora();
       S.jogo.progressoEm = S.agora();
       S.jogo.atualizarMissoes();
       S.ui.atualizarControlesToque();
       S.raiz.focus({ preventScroll: true });
-      S.aviso('Boa sorte, ' + S.aluno.nome.split(' ')[0] + '! Siga as missões do quadro.', 'info', 3200);
+      S.aviso('Boa sorte, ' + S.primeiroNome() + '! Siga as missões do quadro.', 'info', 3200);
     });
   });
 
@@ -4267,12 +4794,21 @@
 
     function quadro() {
       requestAnimationFrame(quadro);
-      if (S.fase !== 'jogo' && S.fase !== 'fim') return;
+      if (S.fase !== 'jogo' && S.fase !== 'fim' && S.fase !== 'cena') return;
       if (!relogio) relogio = new THREE.Clock();
       var dt = Math.min(relogio.getDelta(), 0.05);
       var agora = S.agora();
       try {
         S.ui.atualizarHud();
+        if (S.fase === 'cena') {
+          // Cena de abertura: câmera e personagens seguem o roteiro.
+          if (S.atualizarCena) S.atualizarCena(dt);
+          S.atualizarProfessor(dt);
+          S.renderer.render(S.cena, S.camera);
+          ajustarQualidade(agora);
+          medir(agora);
+          return;
+        }
         if (S.pausado || S.fase !== 'jogo') {
           janelaInicio = 0;
           ultimoQuadro = 0;
@@ -4283,6 +4819,7 @@
         S.atualizarHover();
         S.mundo.atualizarCaboMao();
         S.mundo.atualizarSeta(agora / 1000);
+        S.atualizarProfessor(dt);
         S.jogo.atualizarDicas();
         S.jogo.atualizarPrompt();
         S.renderer.render(S.cena, S.camera);
@@ -4311,10 +4848,355 @@
     S.ui.mostrarLogin();
   });
 
+
+  /* ================================================================== */
+  secao('C01-cena-abertura', function () {
+    // Cena de abertura "in-game": é a própria sala 3D com a câmera seguindo
+    // um roteiro. Não carrega vídeo nem arquivo novo — só números e texto.
+    var C = S.CSS;
+    var DESTINO = { x: 3.45, z: 3.3 }; // onde o aluno para, de frente para o professor
+
+    var TOMADAS = {
+      abertura: { pos: [-2.2, 4.4, 8.4], alvo: [0.2, 0.7, 0.2] },
+      dupla: { pos: [2.2, 2.15, 4.45], alvo: [5.0, 1.4, 3.1] }, // por cima do ombro do aluno
+      aluno: { pos: [5.85, 2.2, 1.7], alvo: [3.6, 1.3, 3.4] }, // por cima do ombro do professor
+      sala: { pos: [0.4, 5.6, 7.6], alvo: [-0.4, 0.4, -1.2] },
+      pcs: { pos: [-0.8, 2.5, 1.9], alvo: [-0.8, 0.9, -1.4] },
+      ferramentas: { pos: [-3.2, 2.3, 2.7], alvo: [-4.9, 0.85, 0.3] },
+      switch: { pos: [3.7, 1.7, -1.9], alvo: [4.6, 1.05, -4.0] },
+      roteador: { pos: [3.95, 1.85, -2.5], alvo: [4.6, 1.42, -4.0] },
+      quadro: { pos: [-1.7, 2.05, -0.55], alvo: [-1.7, 1.6, -4.5] }
+    };
+
+    function roteiro() {
+      var nome = S.primeiroNome();
+      var bemVindo = S.aluno.genero === 'f' ? 'bem-vinda' : 'bem-vindo';
+      return [
+        { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Olá, ' + nome + '! Eu sou o Herick, professor do laboratório. Seja ' + bemVindo + '!' },
+        { quem: 'prof', tomada: 'sala', gesto: 'falar', texto: 'Hoje você vai montar uma rede de verdade: dois computadores ligados a um switch e a um roteador.' },
+        { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'Primeiro, ligue o PC-01 e o PC-02, naquela fileira perto do quadro. O PC-03 e o PC-04 estão em manutenção.' },
+        { quem: 'prof', tomada: 'ferramentas', gesto: 'apontar', texto: 'Na bancada perto da porta você vai crimpar os cabos no padrão T-568B. Tem um cartaz lá com a ordem das cores.' },
+        { quem: 'prof', tomada: 'switch', gesto: 'apontar', texto: 'Os cabos dos PCs vão nas portas Fast do switch. As duas portas Gigabit ficam reservadas para o roteador.' },
+        { quem: 'prof', tomada: 'roteador', gesto: 'apontar', texto: 'Depois, ligue o roteador, veja o IP dele e configure IPs fixos nos dois PCs, na mesma rede.' },
+        { quem: 'prof', tomada: 'quadro', gesto: 'falar', texto: 'As missões ficam no quadro e vão sendo riscadas. Se você travar, eu mando umas dicas.' },
+        { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Boa sorte, ' + nome + '!' },
+        { quem: 'aluno', tomada: 'aluno', texto: 'Valeu, professor! Bora lá!' }
+      ];
+    }
+
+    var est = null;
+
+    // Etiquetas de nome somem durante a cena (atrapalham os closes).
+    function etiquetas(visiveis) {
+      [S.personagem, S.professor].forEach(function (c) {
+        if (!c) return;
+        c.raiz.children.forEach(function (o) {
+          if (o.isSprite) o.visible = visiveis;
+        });
+      });
+    }
+
+    function v3(a) {
+      return new THREE.Vector3(a[0], a[1], a[2]);
+    }
+    function suave(t) {
+      t = Math.max(0, Math.min(1, t));
+      return t * t * (3 - 2 * t);
+    }
+
+    // Leva a câmera de onde ela está até uma tomada, em "dur" segundos.
+    function irPara(pos, alvo, dur) {
+      est.cam = {
+        dePos: S.camera.position.clone(),
+        deAlvo: est.alvoAtual.clone(),
+        paraPos: pos,
+        paraAlvo: alvo,
+        t: 0,
+        dur: dur
+      };
+    }
+
+    function atualizarCamera(dt) {
+      var c = est.cam;
+      if (!c) return;
+      c.t += dt;
+      var k = suave(c.t / c.dur);
+      S.camera.position.lerpVectors(c.dePos, c.paraPos, k);
+      est.alvoAtual.lerpVectors(c.deAlvo, c.paraAlvo, k);
+      // Leve deslize depois de chegar, para a tomada não ficar "parada".
+      if (c.t > c.dur) {
+        var extra = Math.min(c.t - c.dur, 6) * 0.025;
+        S.camera.position.x += extra;
+      }
+      S.camera.lookAt(est.alvoAtual);
+    }
+
+    // ---- Interface: faixas de cinema, caixa de diálogo e botão pular ----
+    function montarUi() {
+      var compacto = S.ui.compacto();
+      var ui = {};
+      ui.camada = S.el('div', {
+        position: 'absolute',
+        inset: '0',
+        zIndex: '14',
+        pointerEvents: 'auto',
+        cursor: 'pointer',
+        touchAction: 'none'
+      }, null, S.raiz);
+      var faixa = { position: 'absolute', left: '0', right: '0', height: '0', background: '#000', transition: 'height .5s ease' };
+      ui.faixaCima = S.el('div', faixa, null, ui.camada);
+      ui.faixaCima.style.top = '0';
+      ui.faixaBaixo = S.el('div', faixa, null, ui.camada);
+      ui.faixaBaixo.style.bottom = '0';
+
+      ui.titulo = S.el('div', {
+        position: 'absolute',
+        top: compacto ? '9%' : '12%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        color: '#FFFFFF',
+        fontWeight: '700',
+        fontSize: compacto ? '15px' : '20px',
+        letterSpacing: '0.12em',
+        textShadow: '0 2px 4px rgba(0,0,0,0.9)',
+        whiteSpace: 'nowrap',
+        opacity: '0',
+        transition: 'opacity .6s ease'
+      }, 'LABORATÓRIO DE REDES · SENAC', ui.camada);
+
+      ui.pular = S.ui.botao('Pular ▸▸', 'secundario', function () { terminar(true); }, ui.camada);
+      S.estilo(ui.pular, {
+        position: 'absolute',
+        top: compacto ? '6px' : '12px',
+        right: compacto ? '8px' : '14px',
+        padding: compacto ? '4px 10px' : '6px 14px',
+        fontSize: compacto ? '12px' : '14px',
+        zIndex: '2'
+      });
+      ui.pular.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+
+      ui.caixa = S.el('div', {
+        position: 'absolute',
+        left: '50%',
+        bottom: compacto ? '8px' : '22px',
+        transform: 'translateX(-50%)',
+        width: compacto ? 'min(640px, 92%)' : 'min(760px, 92%)',
+        boxSizing: 'border-box',
+        background: 'rgba(7, 20, 48, 0.93)',
+        border: '3px solid ' + C.laranja,
+        borderRadius: '10px',
+        padding: compacto ? '14px 14px 10px' : '20px 20px 14px',
+        display: 'none'
+      }, null, ui.camada);
+      ui.quem = S.el('div', {
+        position: 'absolute',
+        top: compacto ? '-13px' : '-15px',
+        left: '14px',
+        padding: compacto ? '2px 10px' : '3px 12px',
+        borderRadius: '6px',
+        border: '3px solid #071430',
+        fontWeight: '700',
+        fontSize: compacto ? '12px' : '14px'
+      }, '', ui.caixa);
+      ui.texto = S.el('div', {
+        color: '#FFFFFF',
+        fontWeight: '700',
+        fontSize: compacto ? '13px' : '16px',
+        lineHeight: '1.45',
+        minHeight: compacto ? '38px' : '46px'
+      }, '', ui.caixa);
+      ui.seguir = S.el('div', {
+        textAlign: 'right',
+        color: C.laranja,
+        fontWeight: '700',
+        fontSize: compacto ? '11px' : '12px',
+        marginTop: '2px',
+        visibility: 'hidden'
+      }, S.toque ? 'toque para continuar ▶' : 'clique ou Espaço ▶', ui.caixa);
+
+      ui.camada.addEventListener('pointerdown', S.protegido('cena:toque', function (e) {
+        e.preventDefault();
+        avancar();
+      }));
+      // Faixas de cinema entram suavemente.
+      setTimeout(function () {
+        var alt = compacto ? '6%' : '9%';
+        ui.faixaCima.style.height = alt;
+        ui.faixaBaixo.style.height = alt;
+        ui.titulo.style.opacity = '1';
+      }, 30);
+      return ui;
+    }
+
+    function mostrarFala(i) {
+      var f = est.falas[i];
+      var ui = est.ui;
+      est.falaAtual = i;
+      est.letras = 0;
+      est.completa = false;
+      ui.titulo.style.opacity = '0';
+      ui.caixa.style.display = 'block';
+      var prof = f.quem === 'prof';
+      ui.caixa.style.borderColor = prof ? C.laranja : '#4F9BFF';
+      ui.quem.textContent = prof ? 'Prof. Herick' : S.aluno.nome;
+      ui.quem.style.background = prof ? C.laranja : '#4F9BFF';
+      ui.quem.style.color = prof ? '#10203A' : '#071430';
+      ui.texto.textContent = '';
+      ui.seguir.style.visibility = 'hidden';
+      var t = TOMADAS[f.tomada];
+      irPara(v3(t.pos), v3(t.alvo), i === 0 ? 0.6 : 1.1);
+      var pr = S.professor;
+      if (prof) {
+        S.gestoProfessor(f.gesto, f.gesto === 'aceno' ? 1.6 : 2.6);
+        // Ao apontar algo, o professor olha para lá; senão olha o aluno.
+        pr.alvoFixo = f.gesto === 'apontar' ? v3(t.alvo) : null;
+      } else {
+        pr.alvoFixo = null;
+        S.gestoProfessor(null);
+      }
+    }
+
+    function avancar() {
+      if (!est || est.saindo) return;
+      if (est.etapa === 'chegada') {
+        chegar();
+        return;
+      }
+      if (!est.completa) {
+        est.letras = est.falas[est.falaAtual].texto.length;
+        return;
+      }
+      if (est.falaAtual + 1 < est.falas.length) mostrarFala(est.falaAtual + 1);
+      else terminar(false);
+    }
+
+    // Coloca o aluno diante do professor (no fim da caminhada ou ao pular).
+    function chegar() {
+      var p = S.personagem;
+      S.joy.x = 0;
+      S.joy.z = 0;
+      p.raiz.position.set(DESTINO.x, 0, DESTINO.z);
+      p.angulo = Math.PI / 2;
+      p.raiz.rotation.y = p.angulo;
+      est.etapa = 'dialogo';
+      mostrarFala(0);
+    }
+
+    function terminar(pulou) {
+      if (!est || est.saindo) return;
+      if (est.etapa === 'chegada') {
+        var p = S.personagem;
+        p.raiz.position.set(DESTINO.x, 0, DESTINO.z);
+        p.angulo = Math.PI / 2;
+        p.raiz.rotation.y = p.angulo;
+      }
+      S.joy.x = 0;
+      S.joy.z = 0;
+      est.saindo = true;
+      est.etapa = 'saida';
+      S.professor.alvoFixo = null;
+      var ui = est.ui;
+      ui.caixa.style.display = 'none';
+      ui.titulo.style.opacity = '0';
+      ui.faixaCima.style.height = '0';
+      ui.faixaBaixo.style.height = '0';
+      ui.pular.style.display = 'none';
+      ui.camada.style.pointerEvents = 'none';
+      var pos = new THREE.Vector3();
+      var alvo = new THREE.Vector3();
+      S.poseCamera(S.personagem.raiz.position, pos, alvo);
+      irPara(pos, alvo, pulou ? 0.45 : 0.9);
+      est.fimEm = est.cam.dur;
+    }
+
+    function concluir() {
+      var fim = est.aoFim;
+      est.ui.camada.remove();
+      etiquetas(true);
+      S.camera.lookAt(est.alvoAtual);
+      est = null;
+      S.atualizarCena = null;
+      fim();
+    }
+
+    S.cenaAbertura = function (aoFim) {
+      S.fase = 'cena';
+      S.teclas = {};
+      est = {
+        aoFim: aoFim,
+        falas: roteiro(),
+        etapa: 'chegada',
+        tempo: 0,
+        alvoAtual: v3(TOMADAS.abertura.alvo),
+        ui: montarUi()
+      };
+      etiquetas(false);
+      var p = S.personagem;
+      p.raiz.position.set(S.CFG.inicio.x, 0, S.CFG.inicio.z);
+      S.camera.position.copy(v3(TOMADAS.abertura.pos));
+      S.camera.lookAt(est.alvoAtual);
+      var d = TOMADAS.dupla;
+      irPara(v3(d.pos), v3(d.alvo), 3.4);
+      S.atualizarCena = atualizar;
+    };
+
+    function atualizar(dt) {
+      if (!est) return;
+      est.tempo += dt;
+      var p = S.personagem;
+      if (est.etapa === 'chegada') {
+        // O aluno entra andando até a mesa do professor (como se fosse o joystick).
+        var dx = DESTINO.x - p.raiz.position.x;
+        var dz = DESTINO.z - p.raiz.position.z;
+        var dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.12 || est.tempo > 5) {
+          chegar();
+        } else {
+          var f = Math.min(1, dist / 0.6);
+          S.joy.x = dx / dist * Math.max(0.35, f);
+          S.joy.z = dz / dist * Math.max(0.35, f);
+        }
+      } else if (est.etapa === 'dialogo') {
+        // Vira o aluno de frente para o professor.
+        p.angulo += (Math.PI / 2 - p.angulo) * Math.min(1, dt * 8);
+        p.raiz.rotation.y = p.angulo;
+        var f2 = est.falas[est.falaAtual];
+        if (!est.completa) {
+          est.letras = Math.min(f2.texto.length, est.letras + dt * 42);
+          est.ui.texto.textContent = f2.texto.slice(0, Math.floor(est.letras));
+          if (est.letras >= f2.texto.length) {
+            est.completa = true;
+            est.ui.seguir.style.visibility = 'visible';
+          }
+        }
+      }
+      S.atualizarMovimento(dt);
+      if (est.etapa === 'dialogo') p.raiz.rotation.y = p.angulo;
+      atualizarCamera(dt);
+      if (est.etapa === 'saida') {
+        est.fimEm -= dt;
+        if (est.fimEm <= 0) concluir();
+      }
+    }
+
+    // Espaço / Enter / E avançam; Esc pula a cena.
+    window.addEventListener('keydown', function (e) {
+      if (S.fase !== 'cena' || !est) return;
+      var k = (e.key || '').toLowerCase();
+      if (k === ' ' || k === 'enter' || k === 'e') {
+        e.preventDefault();
+        if (!e.repeat) avancar();
+      } else if (k === 'escape') {
+        e.preventDefault();
+        terminar(true);
+      }
+    });
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura"];
   var painel = null;
   var timer = null;
   var gpu = null;
@@ -4338,14 +5220,16 @@
     linha('DIAGNÓSTICO AO VIVO (F9 fecha)', '#F7941D');
     linha('Versão do jogo: ' + (S.versao || '?') + ' · carregador: ' + (window.__SIM_CARREGADOR || '?') + ' · origem: ' + (window.__SIM_ORIGEM || '?'));
     var d = S.desempenho;
-    if (d && S.fase === 'jogo') {
+    if (d && (S.fase === 'jogo' || S.fase === 'cena')) {
       var cor = d.media >= 50 ? '#6BF08E' : d.media >= 28 ? '#FFD36B' : '#FF7676';
       linha('FPS agora: ' + d.fps.toFixed(0) + ' · média 3 s: ' + d.media.toFixed(1), cor);
       linha('FPS mínimo 3 s: ' + d.minimo.toFixed(0) + ' (pior quadro ' + d.piorQuadroMs.toFixed(0) + ' ms)', d.piorQuadroMs > 50 ? '#FF7676' : '#FFFFFF');
       linha('Draw calls: ' + d.drawCalls + ' · triângulos: ' + d.triangulos.toLocaleString('pt-BR'));
       linha('Resolução 3D: ' + d.resolucao + ' · sombras: ' + (d.sombras ? 'sim' : 'não') + ' · escala ' + d.escala);
+      var mem = S.renderer.info.memory;
+      linha('Memória GPU: ' + mem.geometries + ' geometrias · ' + mem.textures + ' texturas');
       linha('GPU: ' + obterGpu());
-    } else if (S.fase === 'jogo') {
+    } else if (S.fase === 'jogo' || S.fase === 'cena') {
       linha('Medindo… (o 3D fica parado com janelas abertas)', '#AFC2D8');
     } else {
       linha('O desempenho aparece quando o laboratório estiver rodando.', '#AFC2D8');
