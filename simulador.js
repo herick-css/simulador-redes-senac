@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.2.1',
+    versao: '1.3.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -340,7 +340,19 @@
       observador = new IntersectionObserver(function (entradas) {
         entradas.forEach(function (e) {
           var i = faixas.indexOf(e.target);
-          if (i >= 0) retangulos[i] = e.isIntersecting ? e.intersectionRect : null;
+          if (i < 0) return;
+          var b = e.boundingClientRect;
+          var r = e.intersectionRect;
+          if (!e.isIntersecting || r.height <= 0 || b.height <= 0) {
+            retangulos[i] = null;
+            return;
+          }
+          // Converte para pixels do próprio iframe: funciona mesmo se o Canva
+          // ampliar/reduzir o iframe com escala (transform).
+          var f = faixas[i];
+          var y0 = parseFloat(f.style.top);
+          var esc = parseFloat(f.style.height) / b.height;
+          retangulos[i] = { top: y0 + (r.top - b.top) * esc, bottom: y0 + (r.bottom - b.top) * esc };
         });
         recalcularVisivel();
       }, { threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] });
@@ -710,18 +722,92 @@
   secao('U03-login', function () {
     var C = S.CSS;
 
+    // Tela baixa (celular deitado) ou estreita: layout compacto em duas colunas.
+    S.ui.telaApertada = function () {
+      return S.raiz.clientHeight < 520 || S.raiz.clientWidth < 560;
+    };
+
+    S.ui.compactarTela = function (t) {
+      S.estilo(t.fundo, { padding: '6px' });
+      S.estilo(t.cartao, { padding: '12px 14px', boxShadow: '0 4px 0 #050E1F' });
+    };
+
+    S.ui.compactarCampo = function (c) {
+      c.wrap.style.marginBottom = '8px';
+      c.wrap.firstChild.style.marginBottom = '3px';
+      c.wrap.firstChild.style.fontSize = '11px';
+      c.input.style.padding = '7px 10px';
+    };
+
     S.ui.mostrarLogin = function () {
       S.fase = 'login';
-      var t = S.ui.tela(30, '440px');
+      var ap = S.ui.telaApertada();
+      var deitado = ap && S.raiz.clientWidth >= 560;
+      var t = S.ui.tela(30, deitado ? '760px' : '440px');
       S.telaLogin = t;
-      var cab = S.el('div', { display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '18px' }, null, t.cartao);
-      S.ui.logo(cab, 40);
-      var tit = S.el('div', null, null, cab);
-      S.el('div', { fontSize: '21px', fontWeight: '700', lineHeight: '1.15' }, 'Simulador de Redes', tit);
-      S.el('div', { fontSize: '13px', color: C.laranja, fontWeight: '700', letterSpacing: '0.06em' }, 'LABORATÓRIO · CABEAMENTO E IP', tit);
+      t.modo = String(ap) + '|' + String(deitado);
+      if (ap) S.ui.compactarTela(t);
 
-      var nome = S.ui.campo('NOME DO ALUNO', t.cartao, { placeholder: 'Ex.: Maria Souza', max: 40 });
-      var turma = S.ui.campo('CÓDIGO DA TURMA', t.cartao, { placeholder: 'Ex.: TI2026A', max: 20, maiusculas: true });
+      // Em celular deitado: coluna da esquerda (marca + personagem) e da direita (campos).
+      var corpo = S.el('div', deitado
+        ? { display: 'grid', gridTemplateColumns: 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: '16px', alignItems: 'start' }
+        : null, null, t.cartao);
+      var colA = S.el('div', null, null, corpo);
+      var colB = deitado ? S.el('div', null, null, corpo) : colA;
+
+      var cab = S.el('div', { display: 'flex', alignItems: 'center', gap: ap ? '10px' : '14px', marginBottom: ap ? '10px' : '18px' }, null, colA);
+      S.ui.logo(cab, ap ? 30 : 40);
+      var tit = S.el('div', null, null, cab);
+      S.el('div', { fontSize: ap ? '17px' : '21px', fontWeight: '700', lineHeight: '1.15' }, 'Simulador de Redes', tit);
+      S.el('div', { fontSize: ap ? '11px' : '13px', color: C.laranja, fontWeight: '700', letterSpacing: '0.06em' }, 'LABORATÓRIO · CABEAMENTO E IP', tit);
+
+      // Escolha do personagem.
+      var genero = S.armazenar('sim-genero') === 'f' ? 'f' : 'm';
+      var blocoPers = S.el('div', { marginBottom: ap ? '8px' : '14px' }, null, deitado ? colA : colB);
+      S.el('div', { fontSize: ap ? '11px' : '13px', fontWeight: '700', color: C.cinza, marginBottom: ap ? '3px' : '6px', letterSpacing: '0.04em' }, 'PERSONAGEM', blocoPers);
+      var opcoes = S.el('div', { display: 'flex', gap: '8px' }, null, blocoPers);
+      var botoesGenero = {};
+      function marcarGenero() {
+        ['m', 'f'].forEach(function (g) {
+          var b = botoesGenero[g];
+          var sel = g === genero;
+          b.style.background = sel ? C.laranja : '#071733';
+          b.style.color = sel ? '#10203A' : C.branco;
+          b.style.borderColor = sel ? '#071430' : C.borda;
+          b.setAttribute('aria-pressed', sel ? 'true' : 'false');
+        });
+      }
+      [['m', '🧑 Masculino'], ['f', '👩 Feminino']].forEach(function (op) {
+        var b = S.el('button', {
+          flex: '1 1 0',
+          padding: ap ? '7px 8px' : '9px 10px',
+          border: '3px solid ' + C.borda,
+          borderRadius: '6px',
+          fontFamily: C.fonte,
+          fontWeight: '700',
+          fontSize: ap ? '13px' : '14px',
+          cursor: 'pointer',
+          touchAction: 'manipulation'
+        }, op[1], opcoes);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          genero = op[0];
+          marcarGenero();
+        });
+        botoesGenero[op[0]] = b;
+      });
+      marcarGenero();
+      if (deitado) {
+        S.el('div', { fontSize: '11px', color: C.cinza, lineHeight: '1.35' },
+          'Seu nome, turma e tempo aparecem no ranking da turma.', colA);
+      }
+
+      var nome = S.ui.campo('NOME DO ALUNO', colB, { placeholder: 'Ex.: Maria Souza', max: 40 });
+      var turma = S.ui.campo('CÓDIGO DA TURMA', colB, { placeholder: 'Ex.: TI2026A', max: 20, maiusculas: true });
+      if (ap) {
+        S.ui.compactarCampo(nome);
+        S.ui.compactarCampo(turma);
+      }
       nome.input.value = S.armazenar('sim-nome') || '';
       turma.input.value = S.armazenar('sim-turma') || '';
       turma.input.addEventListener('input', function () {
@@ -730,8 +816,8 @@
         try { turma.input.setSelectionRange(pos, pos); } catch (e) { /* ignora */ }
       });
 
-      var erro = S.el('div', { color: C.vermelho, fontSize: '13px', fontWeight: '700', minHeight: '18px', marginBottom: '8px' }, '', t.cartao);
-      var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
+      var erro = S.el('div', { color: C.vermelho, fontSize: '13px', fontWeight: '700', minHeight: ap ? '0' : '18px', marginBottom: ap ? '4px' : '8px' }, '', colB);
+      var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, colB);
 
       function entrar() {
         var n = nome.input.value.trim().replace(/\s+/g, ' ');
@@ -748,18 +834,20 @@
         }
         S.aluno.nome = n;
         S.aluno.turma = tu;
+        S.aluno.genero = genero;
         S.armazenar('sim-nome', n);
         S.armazenar('sim-turma', tu);
+        S.armazenar('sim-genero', genero);
         t.fechar();
         S.ui.mostrarComandos(true);
       }
 
       var bEntrar = S.ui.botao('Entrar', 'primario', entrar, botoes);
-      bEntrar.style.flex = '1 1 140px';
+      bEntrar.style.flex = '1 1 120px';
       var bRank = S.ui.botao('Ver ranking', 'secundario', function () {
         S.ui.mostrarRanking(turma.input.value.trim().toUpperCase(), null);
       }, botoes);
-      bRank.style.flex = '1 1 140px';
+      bRank.style.flex = '1 1 120px';
 
       [nome.input, turma.input].forEach(function (inp) {
         inp.addEventListener('keydown', function (e) {
@@ -770,11 +858,30 @@
         });
       });
 
-      S.el('div', { fontSize: '12px', color: C.cinza, marginTop: '16px', lineHeight: '1.4' },
-        'Seu nome, turma e tempo aparecem no ranking da turma. Melhor jogado no computador ou no celular na horizontal.', t.cartao);
-      S.el('div', { fontSize: '10px', color: '#5F7896', marginTop: '10px', textAlign: 'right' },
+      if (!deitado) {
+        S.el('div', { fontSize: '12px', color: C.cinza, marginTop: ap ? '8px' : '16px', lineHeight: '1.4' },
+          'Seu nome, turma e tempo aparecem no ranking da turma. Melhor jogado no computador ou no celular na horizontal.', t.cartao);
+      }
+      S.el('div', { fontSize: '10px', color: '#5F7896', marginTop: ap ? '6px' : '10px', textAlign: 'right' },
         'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : ''), t.cartao);
+      // Se o celular girar, a tela é remontada no layout certo sem perder o que foi digitado.
+      t.guardar = function () {
+        S.armazenar('sim-nome', nome.input.value);
+        S.armazenar('sim-turma', turma.input.value);
+        S.armazenar('sim-genero', genero);
+      };
       if (!S.toque) setTimeout(function () { (nome.input.value ? turma.input : nome.input).focus(); }, 50);
+    };
+
+    S.ui.reorganizarLogin = function () {
+      var t = S.telaLogin;
+      if (S.fase !== 'login' || !t || !t.fundo.isConnected) return;
+      var ap = S.ui.telaApertada();
+      var modo = String(ap) + '|' + String(ap && S.raiz.clientWidth >= 560);
+      if (modo === t.modo) return;
+      t.guardar();
+      t.fechar();
+      S.ui.mostrarLogin();
     };
   });
 
@@ -782,75 +889,85 @@
   secao('U04-comandos', function () {
     var C = S.CSS;
 
-    function linhaComando(pai, tecla, acao) {
-      var l = S.el('div', { display: 'flex', alignItems: 'center', gap: '10px', margin: '7px 0' }, null, pai);
+    function linhaComando(pai, tecla, acao, ap) {
+      var l = S.el('div', { display: 'flex', alignItems: 'center', gap: '10px', margin: ap ? '4px 0' : '7px 0' }, null, pai);
       S.el('div', {
-        minWidth: '92px',
+        minWidth: ap ? '78px' : '92px',
         textAlign: 'center',
         background: '#071733',
         border: '2px solid ' + C.borda,
         borderBottomWidth: '4px',
         borderRadius: '6px',
-        padding: '4px 8px',
+        padding: ap ? '2px 6px' : '4px 8px',
         fontFamily: C.mono,
         fontWeight: '700',
-        fontSize: '13px',
+        fontSize: ap ? '12px' : '13px',
         color: C.laranja,
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        flex: '0 0 auto'
       }, tecla, l);
-      S.el('div', { fontSize: '14px' }, acao, l);
+      S.el('div', { fontSize: ap ? '13px' : '14px' }, acao, l);
     }
 
     // inicio = true: vem do login e leva ao jogo; false: só consulta durante o jogo.
     S.ui.mostrarComandos = function (inicio) {
       if (inicio) S.fase = 'comandos';
+      var ap = S.ui.telaApertada();
       var t = S.ui.tela(inicio ? 30 : 40, '640px');
-      S.el('div', { fontSize: '13px', color: C.laranja, fontWeight: '700', letterSpacing: '0.08em' }, inicio ? 'OLÁ, ' + S.aluno.nome.toUpperCase() : 'PAUSA', t.cartao);
-      S.el('div', { fontSize: '22px', fontWeight: '700', margin: '4px 0 14px' }, 'Como jogar', t.cartao);
+      if (ap) S.ui.compactarTela(t);
+      var topo = S.el('div', { display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', marginBottom: ap ? '8px' : '14px' }, null, t.cartao);
+      S.el('div', { fontSize: ap ? '18px' : '22px', fontWeight: '700' }, 'Como jogar', topo);
+      S.el('div', { fontSize: '12px', color: C.laranja, fontWeight: '700', letterSpacing: '0.08em' }, inicio ? 'OLÁ, ' + S.aluno.nome.toUpperCase() : 'PAUSA', topo);
 
-      var grade = S.el('div', { display: 'flex', flexWrap: 'wrap', gap: '14px' }, null, t.cartao);
+      var grade = S.el('div', { display: 'flex', flexWrap: 'wrap', gap: ap ? '8px' : '14px' }, null, t.cartao);
       function bloco(titulo, ativo) {
         var b = S.el('div', {
           flex: '1 1 250px',
           background: ativo ? C.painel2 : '#0B1F3E',
           border: '3px solid ' + (ativo ? C.laranja : C.borda),
           borderRadius: '8px',
-          padding: '12px 14px',
+          padding: ap ? '8px 10px' : '12px 14px',
           boxSizing: 'border-box',
           opacity: ativo ? '1' : '0.75'
         }, null, grade);
-        var cab = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }, null, b);
+        var cab = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }, null, b);
         S.el('div', { fontWeight: '700', fontSize: '15px' }, titulo, cab);
         if (ativo) S.el('div', { fontSize: '11px', fontWeight: '700', color: '#10203A', background: C.laranja, borderRadius: '4px', padding: '2px 6px' }, 'SEU APARELHO', cab);
         return b;
       }
-      var pc = bloco('Computador', !S.toque);
-      linhaComando(pc, 'W A S D', 'Andar (ou setas ↑ ↓ ← →)');
-      linhaComando(pc, 'E', 'Usar o objeto mais próximo');
-      linhaComando(pc, 'CLIQUE', 'Usar o objeto clicado');
-      linhaComando(pc, 'ESC', 'Fechar janela');
-      linhaComando(pc, 'H', 'Ver estes comandos');
-
-      var cel = bloco('Celular (na horizontal)', S.toque);
-      linhaComando(cel, 'JOYSTICK', 'Arraste no canto esquerdo para andar');
-      linhaComando(cel, 'USAR', 'Botão laranja: usar o objeto próximo');
-      linhaComando(cel, 'TOQUE', 'Tocar no objeto também funciona');
-      linhaComando(cel, '?', 'Ver estes comandos');
+      // No celular mostra só os controles de toque (a tela é pequena).
+      if (!S.toque || !ap) {
+        var pc = bloco('Computador', !S.toque);
+        linhaComando(pc, 'W A S D', 'Andar (ou setas ↑ ↓ ← →)', ap);
+        linhaComando(pc, 'E', 'Usar o objeto mais próximo', ap);
+        linhaComando(pc, 'CLIQUE', 'Usar o objeto clicado', ap);
+        linhaComando(pc, 'ESC', 'Fechar janela', ap);
+        linhaComando(pc, 'H', 'Ver estes comandos', ap);
+      }
+      if (S.toque || !ap) {
+        var cel = bloco('Celular (na horizontal)', S.toque);
+        linhaComando(cel, 'JOYSTICK', 'Arraste no canto esquerdo para andar', ap);
+        linhaComando(cel, 'USAR', 'Botão laranja: usar o objeto próximo', ap);
+        linhaComando(cel, 'TOQUE', 'Tocar no objeto também funciona', ap);
+        linhaComando(cel, '?', 'Ver estes comandos', ap);
+      }
 
       var obj = S.el('div', {
-        marginTop: '14px',
+        marginTop: ap ? '8px' : '14px',
         background: '#071733',
         border: '2px dashed ' + C.borda,
         borderRadius: '8px',
-        padding: '10px 14px',
-        fontSize: '14px',
-        lineHeight: '1.5'
+        padding: ap ? '6px 10px' : '10px 14px',
+        fontSize: ap ? '13px' : '14px',
+        lineHeight: '1.45'
       }, null, t.cartao);
       S.el('div', { fontWeight: '700', color: C.laranja, marginBottom: '2px' }, 'Sua missão', obj);
-      S.el('div', null, 'Monte a rede do laboratório: ligue os PCs, crimpe cabos no padrão T-568B, conecte tudo no switch e no roteador e configure IPs fixos. O quadro mostra as etapas e vai riscando o que você concluir.', obj);
-      S.el('div', { color: C.cinza, marginTop: '6px', fontSize: '13px' }, 'O tempo conta para o ranking. Se travar numa etapa, aparece uma dica e uma seta laranja.', obj);
+      S.el('div', null, ap
+        ? 'Ligue os PCs, crimpe cabos T-568B, conecte switch e roteador e configure IPs fixos. Siga o quadro de missões.'
+        : 'Monte a rede do laboratório: ligue os PCs, crimpe cabos no padrão T-568B, conecte tudo no switch e no roteador e configure IPs fixos. O quadro mostra as etapas e vai riscando o que você concluir.', obj);
+      if (!ap) S.el('div', { color: C.cinza, marginTop: '6px', fontSize: '13px' }, 'O tempo conta para o ranking. Se travar numa etapa, aparece uma dica e uma seta laranja.', obj);
 
-      var rodape = S.el('div', { display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }, null, t.cartao);
+      var rodape = S.el('div', { display: 'flex', gap: '10px', marginTop: ap ? '10px' : '16px', flexWrap: 'wrap' }, null, t.cartao);
       if (inicio) {
         var bVoltar = S.ui.botao('Voltar', 'secundario', function () {
           t.fechar();
@@ -1638,14 +1755,13 @@
       S.caixa(0.44, 0.02, 0.14, mPreto, -0.02, 0.01, 0.22, g, true);
       S.caixa(0.06, 0.025, 0.1, mPreto, 0.33, 0.013, 0.24, g, true);
 
-      if (ativo) {
-        pc.info = S.interativo([moldura, gab, frente, base, haste, tela], {
-          id: 'pc:' + nome,
-          nome: nome,
-          pc: pc,
-          ancora: new THREE.Vector3(x - 0.2, 0, z + 0.85)
-        });
-      }
+      // PCs de enfeite também respondem (avisam que estão em manutenção).
+      pc.info = S.interativo([moldura, gab, frente, base, haste, tela], {
+        id: 'pc:' + nome,
+        nome: ativo ? nome : nome + ' (em manutenção)',
+        pc: pc,
+        ancora: new THREE.Vector3(x - 0.2, 0, z + 0.85)
+      });
       S.pcs[nome] = pc;
       return pc;
     }
@@ -2002,19 +2118,36 @@
     var PELES = ['#F2C9A5', '#DDA67E', '#BF8159', '#946042', '#62402A'];
     var CABELOS = ['#1C140F', '#3B2416', '#6B4423', '#C9A15A', '#0E0E0E'];
 
-    function texturaRosto(pele) {
+    function texturaRosto(pele, feminino) {
       return S.textura(16, 16, function (ctx) {
         ctx.fillStyle = pele;
         ctx.fillRect(0, 0, 16, 16);
         ctx.fillStyle = '#16120F';
-        ctx.fillRect(3, 5, 4, 1); // sobrancelhas
-        ctx.fillRect(9, 5, 4, 1);
-        ctx.fillRect(4, 7, 2, 3); // olhos
-        ctx.fillRect(10, 7, 2, 3);
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(7, 9, 2, 2); // nariz
-        ctx.fillStyle = '#7A3B2E';
-        ctx.fillRect(6, 12, 4, 1); // boca
+        if (feminino) {
+          ctx.fillRect(4, 5, 3, 1); // sobrancelhas finas
+          ctx.fillRect(9, 5, 3, 1);
+          ctx.fillRect(4, 7, 2, 3); // olhos
+          ctx.fillRect(10, 7, 2, 3);
+          ctx.fillRect(3, 7, 1, 1); // cílios
+          ctx.fillRect(12, 7, 1, 1);
+          ctx.fillStyle = 'rgba(214, 90, 90, 0.35)';
+          ctx.fillRect(3, 10, 2, 1); // bochechas
+          ctx.fillRect(11, 10, 2, 1);
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.fillRect(7, 9, 2, 2); // nariz
+          ctx.fillStyle = '#B5475A';
+          ctx.fillRect(6, 12, 4, 1); // boca
+          ctx.fillRect(7, 13, 2, 1);
+        } else {
+          ctx.fillRect(3, 5, 4, 1); // sobrancelhas
+          ctx.fillRect(9, 5, 4, 1);
+          ctx.fillRect(4, 7, 2, 3); // olhos
+          ctx.fillRect(10, 7, 2, 3);
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';
+          ctx.fillRect(7, 9, 2, 2); // nariz
+          ctx.fillStyle = '#7A3B2E';
+          ctx.fillRect(6, 12, 4, 1); // boca
+        }
       });
     }
 
@@ -2062,7 +2195,8 @@
 
     // Personagem "blocado" (cabeça cúbica grande), visual gerado pelo nome:
     // cada aluno ganha tom de pele, cor e estilo de cabelo próprios.
-    S.criarPersonagem = function (nome) {
+    S.criarPersonagem = function (nome, genero) {
+      var feminino = genero === 'f';
       var h = S.hashTexto(nome || 'aluno');
       var pele = PELES[h % PELES.length];
       var cabelo = CABELOS[(h >>> 3) % CABELOS.length];
@@ -2078,7 +2212,7 @@
       var mCamisa = S.mat(S.COR.azul);
       var mFrente = new THREE.MeshLambertMaterial({ map: texturaCamisa(true) });
       var mCostas = new THREE.MeshLambertMaterial({ map: texturaCamisa(false) });
-      var mRosto = new THREE.MeshLambertMaterial({ map: texturaRosto(pele) });
+      var mRosto = new THREE.MeshLambertMaterial({ map: texturaRosto(pele, feminino) });
 
       var raiz = S.grupo(S.CFG.inicio.x, 0, S.CFG.inicio.z);
       var corpo = S.grupo(0, 0, 0, raiz);
@@ -2113,8 +2247,32 @@
       cabeca.position.set(0, 1.62, 0);
       cabeca.castShadow = true;
       corpo.add(cabeca);
-      // Três estilos de cabelo em blocos.
-      if (estilo === 0) {
+      // Três estilos de cabelo em blocos para cada personagem.
+      if (feminino) {
+        if (estilo === 0) {
+          // Liso comprido com franja.
+          S.caixa(0.56, 0.14, 0.52, mCabelo, 0, 1.91, -0.01, corpo);
+          S.caixa(0.56, 0.08, 0.06, mCabelo, 0, 1.83, 0.23, corpo);
+          S.caixa(0.58, 0.8, 0.1, mCabelo, 0, 1.52, -0.25, corpo);
+          S.caixa(0.07, 0.56, 0.3, mCabelo, -0.285, 1.6, -0.07, corpo);
+          S.caixa(0.07, 0.56, 0.3, mCabelo, 0.285, 1.6, -0.07, corpo);
+        } else if (estilo === 1) {
+          // Rabo de cavalo com elástico laranja.
+          S.caixa(0.56, 0.14, 0.52, mCabelo, 0, 1.91, -0.01, corpo);
+          S.caixa(0.56, 0.34, 0.08, mCabelo, 0, 1.73, -0.25, corpo);
+          S.caixa(0.06, 0.22, 0.3, mCabelo, -0.28, 1.78, -0.08, corpo);
+          S.caixa(0.06, 0.22, 0.3, mCabelo, 0.28, 1.78, -0.08, corpo);
+          S.caixa(0.18, 0.06, 0.16, S.mat(S.COR.laranja), 0, 1.84, -0.32, corpo);
+          S.caixa(0.16, 0.5, 0.14, mCabelo, 0, 1.56, -0.34, corpo);
+        } else {
+          // Volumoso com coque no alto.
+          S.caixa(0.62, 0.22, 0.58, mCabelo, 0, 1.94, -0.02, corpo);
+          S.caixa(0.62, 0.52, 0.12, mCabelo, 0, 1.66, -0.25, corpo);
+          S.caixa(0.08, 0.36, 0.34, mCabelo, -0.3, 1.72, -0.06, corpo);
+          S.caixa(0.08, 0.36, 0.34, mCabelo, 0.3, 1.72, -0.06, corpo);
+          S.caixa(0.26, 0.22, 0.26, mCabelo, 0, 2.14, -0.08, corpo);
+        }
+      } else if (estilo === 0) {
         S.caixa(0.56, 0.14, 0.52, mCabelo, 0, 1.91, -0.01, corpo);
         S.caixa(0.56, 0.32, 0.08, mCabelo, 0, 1.73, -0.25, corpo);
       } else if (estilo === 1) {
@@ -2757,6 +2915,7 @@
           return 'Ver roteador';
         default:
           if (info.pc) {
+            if (!info.pc.ativo) return 'Ver ' + info.pc.nome;
             var e = info.pc.estado;
             if (!e.ligado) return 'Ligar ' + info.pc.nome;
             if (mao && mao.tipo === 'cabo' && !e.conectado) return 'Encaixar cabo no ' + info.pc.nome;
@@ -2849,11 +3008,17 @@
     function usarPc(pc) {
       var e = pc.estado;
       var mao = J.mao;
+      if (!pc.ativo) {
+        S.aviso('Esse PC está sendo reparado pela turma de Manutenção de Computadores do SENAC.', 'info', 4200);
+        return;
+      }
       if (!e.ligado) {
-        S.ligarPc(pc, true);
-        S.mundo.desenharSwitch();
-        S.aviso(pc.nome + ' ligado.', 'ok', 2000);
-        J.atualizarMissoes();
+        S.minigames.gabinete(pc, function () {
+          S.ligarPc(pc, true);
+          S.mundo.desenharSwitch();
+          S.aviso(pc.nome + ' ligado.', 'ok', 2000);
+          J.atualizarMissoes();
+        });
         return;
       }
       if (mao && mao.tipo === 'cabo') {
@@ -3245,6 +3410,112 @@
     var C = S.CSS;
     var MG = S.minigames;
 
+    // Frente do gabinete: o aluno precisa achar o botão de ligar (⏻).
+    MG.gabinete = function (pc, aoConcluir) {
+      var m = S.ui.abrirModal('Gabinete do ' + pc.nome + ' · ligar o computador', { largura: '460px' });
+      var ap = S.ui.compacto();
+      S.el('div', { marginBottom: '10px' }, 'Encontre e aperte o botão de ligar do gabinete.', m.corpo);
+      var area = S.el('div', { display: 'flex', gap: '14px', alignItems: 'stretch', justifyContent: 'center', flexWrap: 'wrap' }, null, m.corpo);
+      var torre = S.el('div', {
+        width: ap ? '150px' : '170px',
+        height: ap ? '210px' : '290px',
+        background: 'linear-gradient(90deg, #C9D1DA, #E3E8EE 30%, #D4DBE3)',
+        border: '4px solid #071430',
+        borderRadius: '8px',
+        position: 'relative',
+        boxSizing: 'border-box',
+        flex: '0 0 auto'
+      }, null, area);
+      var painel = S.el('div', {
+        position: 'absolute',
+        left: '14px',
+        right: '14px',
+        top: '12px',
+        bottom: '12px',
+        background: '#1F2329',
+        borderRadius: '5px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: ap ? '7px' : '12px',
+        padding: '10px 8px',
+        boxSizing: 'border-box'
+      }, null, torre);
+      var msg = MG.mensagem(m.corpo);
+      var ligando = false;
+
+      function peca(estilos, rotulo, aoClicar, aria) {
+        var b = S.el('button', estilos, rotulo, painel);
+        b.type = 'button';
+        b.style.cursor = 'pointer';
+        b.style.touchAction = 'manipulation';
+        if (aria) b.setAttribute('aria-label', aria);
+        b.addEventListener('click', S.protegido('gabinete', function () {
+          if (!ligando) aoClicar(b);
+        }));
+        return b;
+      }
+      // Gaveta do leitor de DVD.
+      peca({ width: '100%', height: '18px', background: '#2B3138', border: '2px solid #4A5462', borderRadius: '3px', padding: '0' }, '', function () {
+        msg('Essa é a gaveta do leitor de DVD.', 'info');
+      }, 'Gaveta do DVD');
+      var linhaBotoes = S.el('div', { display: 'flex', alignItems: 'center', gap: '14px', marginTop: ap ? '2px' : '10px' }, null, painel);
+      painel.appendChild(linhaBotoes);
+      var led = S.el('div', { width: '9px', height: '9px', borderRadius: '50%', background: '#2A3530', border: '1px solid #000' }, null, painel);
+      linhaBotoes.appendChild(led);
+      function botaoRedondo(simbolo, tamanho, aria, aoClicar) {
+        var b = S.el('button', {
+          width: tamanho + 'px',
+          height: tamanho + 'px',
+          borderRadius: '50%',
+          background: '#3A424C',
+          border: '3px solid #8A96A6',
+          color: '#E6EBF2',
+          fontSize: Math.round(tamanho * 0.45) + 'px',
+          fontWeight: '700',
+          padding: '0',
+          cursor: 'pointer',
+          touchAction: 'manipulation',
+          lineHeight: '1'
+        }, simbolo, linhaBotoes);
+        b.type = 'button';
+        b.setAttribute('aria-label', aria);
+        b.addEventListener('click', S.protegido('gabinete:' + aria, function () {
+          if (!ligando) aoClicar(b);
+        }));
+        return b;
+      }
+      // Ordem embaralhada: o aluno precisa reconhecer o símbolo ⏻.
+      var botoes = [
+        ['⏻', ap ? 42 : 50, 'Botão de energia', function (b) {
+          ligando = true;
+          b.style.borderColor = '#39FF6A';
+          led.style.background = '#39FF6A';
+          led.style.boxShadow = '0 0 6px #39FF6A';
+          msg('Ligando… o LED de energia acendeu!', 'ok');
+          setTimeout(function () {
+            m.fechar(true);
+            aoConcluir();
+          }, 800);
+        }],
+        ['↺', ap ? 26 : 30, 'Botão de reset', function (b) {
+          S.jogo.erros++;
+          b.style.borderColor = '#D63A33';
+          msg('✖ Esse é o Reset: ele reinicia um PC que já está ligado. Procure o botão ⏻.', 'erro');
+        }]
+      ];
+      S.embaralhar(botoes).forEach(function (bt) { botaoRedondo(bt[0], bt[1], bt[2], bt[3]); });
+      var usbs = S.el('div', { display: 'flex', gap: '6px', marginTop: 'auto' }, null, painel);
+      [0, 1].forEach(function () {
+        var u = S.el('button', { width: '22px', height: '9px', background: '#1d5fbf', border: '2px solid #ccc', padding: '0', cursor: 'pointer' }, '', usbs);
+        u.type = 'button';
+        u.setAttribute('aria-label', 'Porta USB frontal');
+        u.addEventListener('click', function () { if (!ligando) msg('Portas USB frontais: pendrive, fone, carregador.', 'info'); });
+      });
+      var dica = S.el('div', { flex: '1 1 160px', fontSize: '12px', color: S.CSS.cinza, lineHeight: '1.45', alignSelf: 'center' }, null, area);
+      dica.textContent = 'O botão de ligar costuma ser o maior da frente do gabinete e tem o símbolo ⏻ (um círculo com um traço). O LED acende quando o PC liga.';
+    };
+
     // Traseira do gabinete: o aluno precisa achar a porta RJ45.
     MG.portasPc = function (pc, aoConcluir) {
       var m = S.ui.abrirModal('Traseira do ' + pc.nome + ' · onde vai o cabo de rede?', { largura: '640px' });
@@ -3605,46 +3876,101 @@
         radio('Obter endereço IP automaticamente (DHCP)', false);
         radio('Usar o seguinte endereço IP (fixo / manual)', true);
 
-        var grade = S.el('div', { display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', gap: '6px 10px', alignItems: 'center' }, null, janela);
-        function campo(rotulo, valor) {
+        var grade = S.el('div', { display: 'grid', gridTemplateColumns: 'minmax(105px, auto) minmax(0, 1fr)', gap: '6px 10px', alignItems: 'center' }, null, janela);
+
+        // Campo de IP em 4 caixas com os pontos já escritos: funciona com o
+        // teclado numérico do celular (no iPhone ele não tem ponto).
+        function campoIp(rotulo, valor) {
           S.el('div', { fontSize: '13px', fontWeight: '700' }, rotulo, grade);
-          var inp = S.el('input', {
-            width: '100%',
-            maxWidth: '220px',
-            boxSizing: 'border-box',
-            padding: '7px 8px',
-            fontSize: '16px',
-            fontFamily: C.mono,
-            border: '2px solid #8A96A6',
-            borderRadius: '4px',
-            background: '#FFFFFF',
-            color: '#10203A',
-            userSelect: 'text',
-            webkitUserSelect: 'text',
-            touchAction: 'manipulation'
-          }, null, grade);
-          inp.type = 'text';
-          inp.inputMode = 'decimal';
-          inp.autocomplete = 'off';
-          inp.placeholder = '0.0.0.0';
-          inp.value = valor || '';
-          inp.addEventListener('keydown', function (ev) {
-            if (ev.key === 'Enter') {
-              ev.preventDefault();
-              salvar();
-            }
+          var linha = S.el('div', { display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'nowrap' }, null, grade);
+          var partes = (valor || '').split('.');
+          var caixas = [];
+          for (var i = 0; i < 4; i++) {
+            if (i) S.el('span', { fontWeight: '700', fontSize: '18px', color: '#10203A', padding: '0 1px' }, '.', linha);
+            var inp = S.el('input', {
+              width: '3.3em',
+              minWidth: '0',
+              boxSizing: 'border-box',
+              padding: '7px 4px',
+              fontSize: '16px',
+              fontFamily: C.mono,
+              textAlign: 'center',
+              border: '2px solid #8A96A6',
+              borderRadius: '4px',
+              background: '#FFFFFF',
+              color: '#10203A',
+              userSelect: 'text',
+              webkitUserSelect: 'text',
+              touchAction: 'manipulation'
+            }, null, linha);
+            inp.type = 'text';
+            inp.inputMode = 'numeric';
+            inp.autocomplete = 'off';
+            inp.maxLength = 3;
+            inp.placeholder = '0';
+            inp.setAttribute('aria-label', rotulo + ', parte ' + (i + 1) + ' de 4');
+            inp.value = partes[i] && /^\d{1,3}$/.test(partes[i]) ? partes[i] : '';
+            caixas.push(inp);
+          }
+          caixas.forEach(function (inp, i) {
+            inp.addEventListener('keydown', function (ev) {
+              if (ev.key === 'Enter') {
+                ev.preventDefault();
+                salvar();
+              } else if (ev.key === '.' || ev.key === ',' || ev.key === ' ') {
+                // Digitar ponto (no PC) só pula para a próxima caixa.
+                ev.preventDefault();
+                if (inp.value && caixas[i + 1]) caixas[i + 1].focus();
+              } else if (ev.key === 'Backspace' && !inp.value && caixas[i - 1]) {
+                ev.preventDefault();
+                caixas[i - 1].focus();
+              }
+            });
+            inp.addEventListener('input', function () {
+              var txt = inp.value;
+              // Colou um IP inteiro? Distribui nas 4 caixas.
+              if (/[.,]/.test(txt)) {
+                var p = txt.split(/[.,]/);
+                for (var k = 0; k < 4 && i + k < 4; k++) caixas[i + k].value = (p[k] || '').replace(/\D/g, '').slice(0, 3);
+                var ultimo = Math.min(3, i + p.length - 1);
+                caixas[ultimo].focus();
+                return;
+              }
+              inp.value = txt.replace(/\D/g, '').slice(0, 3);
+              if (inp.value.length === 3 && caixas[i + 1]) caixas[i + 1].focus();
+            });
+            inp.addEventListener('focus', function () {
+              try { inp.select(); } catch (er) { /* ignora */ }
+            });
           });
-          return inp;
+          return {
+            valor: function () {
+              return caixas.map(function (c) { return c.value.trim(); }).join('.');
+            },
+            completo: function () {
+              return caixas.every(function (c) { return c.value.trim() !== ''; });
+            },
+            habilitar: function (sim) {
+              caixas.forEach(function (c) {
+                c.disabled = !sim;
+                c.style.background = sim ? '#FFFFFF' : '#DCE2EA';
+              });
+            },
+            marcarErro: function (sim) {
+              caixas.forEach(function (c) { c.style.borderColor = sim ? '#D63A33' : '#8A96A6'; });
+            },
+            focar: function () {
+              var vazia = caixas.filter(function (c) { return !c.value; })[0];
+              (vazia || caixas[0]).focus();
+            }
+          };
         }
-        var fIp = campo('Endereço IP', e.ip);
-        var fMasc = campo('Máscara de sub-rede', e.mascara);
-        var fGw = campo('Gateway padrão', e.gateway);
+        var fIp = campoIp('Endereço IP', e.ip);
+        var fMasc = campoIp('Máscara de sub-rede', e.mascara);
+        var fGw = campoIp('Gateway padrão', e.gateway);
 
         function atualizarCampos() {
-          [fIp, fMasc, fGw].forEach(function (f) {
-            f.disabled = !modoManual;
-            f.style.background = modoManual ? '#FFFFFF' : '#DCE2EA';
-          });
+          [fIp, fMasc, fGw].forEach(function (f) { f.habilitar(modoManual); });
         }
         atualizarCampos();
 
@@ -3659,19 +3985,26 @@
           S.jogo.erros++;
           msg('✖ ' + texto, 'erro');
           if (campoErr) {
-            campoErr.style.borderColor = '#D63A33';
-            campoErr.focus();
+            campoErr.marcarErro(true);
+            campoErr.focar();
           }
         }
 
         function salvar() {
-          [fIp, fMasc, fGw].forEach(function (f) { f.style.borderColor = '#8A96A6'; });
+          [fIp, fMasc, fGw].forEach(function (f) { f.marcarErro(false); });
           if (!modoManual) return errou('Nesta rede os IPs são fixos: escolha "Usar o seguinte endereço IP".');
-          var ip = fIp.value.trim();
-          var masc = fMasc.value.trim();
-          var gw = fGw.value.trim();
+          var vazio = [fIp, fMasc, fGw].filter(function (f) { return !f.completo(); })[0];
+          if (vazio) {
+            msg('Preencha as 4 partes de cada endereço.', 'info');
+            vazio.marcarErro(true);
+            vazio.focar();
+            return;
+          }
+          var ip = fIp.valor();
+          var masc = fMasc.valor();
+          var gw = fGw.valor();
           var R = S.REDE;
-          if (!ipValido(ip)) return errou('Endereço IP inválido. Formato: 4 números de 0 a 255 separados por ponto.', fIp);
+          if (!ipValido(ip)) return errou('Endereço IP inválido: cada parte vai de 0 a 255.', fIp);
           if (ip === R.gateway) return errou('O .1 é o endereço do roteador (gateway). Escolha outro para o PC.', fIp);
           if (ip.indexOf(R.prefixo) !== 0) return errou('O IP precisa estar na mesma rede: 192.168.0.x.', fIp);
           if (R.ipsValidos.indexOf(ip) < 0) return errou('Use 192.168.0.2 ou 192.168.0.3, conforme a missão.', fIp);
@@ -3691,7 +4024,7 @@
             aoConcluir();
           }, 1100);
         }
-        if (!S.toque) setTimeout(function () { (modoManual ? fIp : opcoes.querySelector('input')).focus(); }, 30);
+        if (!S.toque) setTimeout(function () { if (modoManual) fIp.focar(); else opcoes.querySelector('input').focus(); }, 30);
       }
     };
   });
@@ -3814,7 +4147,7 @@
         ['Instalando o rack, o switch e o roteador…', S.mundo.montarRack],
         ['Separando as ferramentas…', S.mundo.montarFerramentas],
         ['Chamando o aluno…', function () {
-          S.criarPersonagem(S.aluno.nome);
+          S.criarPersonagem(S.aluno.nome, S.aluno.genero);
           S.mundo.montarCaboMao();
           S.mundo.montarSeta();
         }],
@@ -3864,6 +4197,48 @@
     var errosLaco = 0;
     S.fpsMedio = 0;
 
+    // Estatísticas de desempenho ao vivo (painel F9).
+    var amostras = [];
+    var ultimoQuadro = 0;
+    var ultimoCalculo = 0;
+    S.desempenho = null;
+    function medir(agora) {
+      if (ultimoQuadro) amostras.push({ t: agora, dt: agora - ultimoQuadro });
+      ultimoQuadro = agora;
+      while (amostras.length && agora - amostras[0].t > 3000) amostras.shift();
+      if (agora - ultimoCalculo < 250 || amostras.length < 2) return;
+      ultimoCalculo = agora;
+      var soma = 0;
+      var pior = 0;
+      var somaRecente = 0;
+      var nRecente = 0;
+      amostras.forEach(function (a) {
+        soma += a.dt;
+        if (a.dt > pior) pior = a.dt;
+        if (agora - a.t <= 500) {
+          somaRecente += a.dt;
+          nRecente++;
+        }
+      });
+      var info = S.renderer.info.render;
+      var c = S.renderer.domElement;
+      S.desempenho = {
+        fps: nRecente ? 1000 / (somaRecente / nRecente) : 0,
+        media: 1000 / (soma / amostras.length),
+        minimo: pior ? 1000 / pior : 0,
+        piorQuadroMs: pior,
+        drawCalls: info.calls,
+        triangulos: info.triangles,
+        resolucao: c.width + '×' + c.height,
+        sombras: S.qualidade.sombras,
+        escala: S.qualidade.escala
+      };
+    }
+    S.zerarMedicao = function () {
+      amostras = [];
+      ultimoQuadro = 0;
+    };
+
     // Se o computador não aguentar, desliga as sombras e reduz a resolução.
     function ajustarQualidade(agora) {
       if (!janelaInicio) {
@@ -3900,6 +4275,7 @@
         S.ui.atualizarHud();
         if (S.pausado || S.fase !== 'jogo') {
           janelaInicio = 0;
+          ultimoQuadro = 0;
           return; // com janela aberta o 3D fica parado (economiza processamento)
         }
         S.atualizarMovimento(dt);
@@ -3911,6 +4287,7 @@
         S.jogo.atualizarPrompt();
         S.renderer.render(S.cena, S.camera);
         ajustarQualidade(agora);
+        medir(agora);
       } catch (e) {
         if (errosLaco++ < 5) registrarErro('laco', e);
       }
@@ -3927,6 +4304,7 @@
     window.addEventListener('resize', function () {
       if (S.redimensionar) S.redimensionar();
       else S.ui.verificarOrientacao();
+      setTimeout(S.ui.reorganizarLogin, 80);
     });
     S.dados.iniciar();
     S.iniciarLaco();
@@ -3938,28 +4316,57 @@
 (function () {
   var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio"];
   var painel = null;
-  function montar() {
+  var timer = null;
+  var gpu = null;
+  function obterGpu() {
+    if (gpu !== null) return gpu;
+    gpu = '?';
+    try {
+      var gl = window.__SIM.renderer.getContext();
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    } catch (e) { gpu = '?'; }
+    return gpu;
+  }
+  function desenhar() {
     var S = window.__SIM || {};
     var marcas = window.__SIM_MARCAS || [];
     var faltando = ESPERADAS.filter(function (m) { return marcas.indexOf(m) < 0; });
     var erros = window.__SIM_ERROS || [];
-    painel = document.createElement('div');
-    var s = painel.style;
-    s.position = 'fixed'; s.left = '8px'; s.bottom = '30px'; s.zIndex = '99'; s.maxWidth = '380px';
-    s.background = 'rgba(6,22,44,0.95)'; s.border = '2px solid #F7941D'; s.borderRadius = '8px';
-    s.padding = '10px 12px'; s.font = '12px/1.45 Arial, sans-serif'; s.color = '#FFFFFF';
-    s.maxHeight = '60vh'; s.overflow = 'auto';
+    painel.textContent = '';
     function linha(t, cor) { var d = document.createElement('div'); d.textContent = t; if (cor) d.style.color = cor; painel.appendChild(d); }
-    linha('DIAGNÓSTICO (F9 para fechar)', '#F7941D');
+    linha('DIAGNÓSTICO AO VIVO (F9 fecha)', '#F7941D');
     linha('Versão do jogo: ' + (S.versao || '?') + ' · carregador: ' + (window.__SIM_CARREGADOR || '?'));
+    var d = S.desempenho;
+    if (d && S.fase === 'jogo') {
+      var cor = d.media >= 50 ? '#6BF08E' : d.media >= 28 ? '#FFD36B' : '#FF7676';
+      linha('FPS agora: ' + d.fps.toFixed(0) + ' · média 3 s: ' + d.media.toFixed(1), cor);
+      linha('FPS mínimo 3 s: ' + d.minimo.toFixed(0) + ' (pior quadro ' + d.piorQuadroMs.toFixed(0) + ' ms)', d.piorQuadroMs > 50 ? '#FF7676' : '#FFFFFF');
+      linha('Draw calls: ' + d.drawCalls + ' · triângulos: ' + d.triangulos.toLocaleString('pt-BR'));
+      linha('Resolução 3D: ' + d.resolucao + ' · sombras: ' + (d.sombras ? 'sim' : 'não') + ' · escala ' + d.escala);
+      linha('GPU: ' + obterGpu());
+    } else if (S.fase === 'jogo') {
+      linha('Medindo… (o 3D fica parado com janelas abertas)', '#AFC2D8');
+    } else {
+      linha('O desempenho aparece quando o laboratório estiver rodando.', '#AFC2D8');
+    }
     linha('Seções: ' + (ESPERADAS.length - faltando.length) + '/' + ESPERADAS.length + (faltando.length ? ' · faltando: ' + faltando.join(', ') : ''), faltando.length ? '#FF7676' : '#6BF08E');
     linha('Erros: ' + (erros.length || 'nenhum'), erros.length ? '#FF7676' : '#6BF08E');
-    erros.slice(-8).forEach(function (e) { linha('• ' + e, '#FF7676'); });
+    erros.slice(-6).forEach(function (e) { linha('• ' + e, '#FF7676'); });
     linha('Ranking: ' + (S.dados ? (S.dados.offline ? 'offline (fora do Canva)' : 'Canva Sheets') : '?'));
-    if (S.fpsMedio) linha('FPS médio: ' + S.fpsMedio.toFixed(1));
+  }
+  function montar() {
+    painel = document.createElement('div');
+    var s = painel.style;
+    s.position = 'absolute'; s.left = '8px'; s.bottom = '8px'; s.zIndex = '99'; s.maxWidth = '420px';
+    s.background = 'rgba(6,22,44,0.95)'; s.border = '2px solid #F7941D'; s.borderRadius = '8px';
+    s.padding = '10px 12px'; s.font = '12px/1.45 Arial, sans-serif'; s.color = '#FFFFFF';
+    s.maxHeight = '70%'; s.overflow = 'auto'; s.pointerEvents = 'none';
     (document.getElementById('sim-root') || document.body).appendChild(painel);
+    desenhar();
+    timer = setInterval(desenhar, 500);
   }
   if (window.__SIM) window.__SIM.alternarVerificacao = function () {
-    if (painel) { painel.remove(); painel = null; } else montar();
+    if (painel) { clearInterval(timer); painel.remove(); painel = null; } else montar();
   };
 })();
