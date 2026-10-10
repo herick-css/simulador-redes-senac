@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.3.0',
+    versao: '1.3.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -863,7 +863,7 @@
           'Seu nome, turma e tempo aparecem no ranking da turma. Melhor jogado no computador ou no celular na horizontal.', t.cartao);
       }
       S.el('div', { fontSize: '10px', color: '#5F7896', marginTop: ap ? '6px' : '10px', textAlign: 'right' },
-        'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : ''), t.cartao);
+        'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : '') + (window.__SIM_ORIGEM ? ' · ' + window.__SIM_ORIGEM : ''), t.cartao);
       // Se o celular girar, a tela é remontada no layout certo sem perder o que foi digitado.
       t.guardar = function () {
         S.armazenar('sim-nome', nome.input.value);
@@ -4336,7 +4336,7 @@
     painel.textContent = '';
     function linha(t, cor) { var d = document.createElement('div'); d.textContent = t; if (cor) d.style.color = cor; painel.appendChild(d); }
     linha('DIAGNÓSTICO AO VIVO (F9 fecha)', '#F7941D');
-    linha('Versão do jogo: ' + (S.versao || '?') + ' · carregador: ' + (window.__SIM_CARREGADOR || '?'));
+    linha('Versão do jogo: ' + (S.versao || '?') + ' · carregador: ' + (window.__SIM_CARREGADOR || '?') + ' · origem: ' + (window.__SIM_ORIGEM || '?'));
     var d = S.desempenho;
     if (d && S.fase === 'jogo') {
       var cor = d.media >= 50 ? '#6BF08E' : d.media >= 28 ? '#FFD36B' : '#FF7676';
