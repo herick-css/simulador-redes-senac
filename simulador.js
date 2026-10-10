@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.2.0',
+    versao: '1.2.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -772,6 +772,8 @@
 
       S.el('div', { fontSize: '12px', color: C.cinza, marginTop: '16px', lineHeight: '1.4' },
         'Seu nome, turma e tempo aparecem no ranking da turma. Melhor jogado no computador ou no celular na horizontal.', t.cartao);
+      S.el('div', { fontSize: '10px', color: '#5F7896', marginTop: '10px', textAlign: 'right' },
+        'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : ''), t.cartao);
       if (!S.toque) setTimeout(function () { (nome.input.value ? turma.input : nome.input).focus(); }, 50);
     };
   });
