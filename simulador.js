@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.1.0',
+    versao: '2.2.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -899,7 +899,7 @@
         S.armazenar('sim-turma', tu);
         S.armazenar('sim-genero', genero);
         t.fechar();
-        S.ui.mostrarComandos(true);
+        S.ui.mostrarFases();
       }
 
       var bEntrar = S.ui.botao('Entrar', 'primario', entrar, botoes);
@@ -970,6 +970,51 @@
     }
 
     // inicio = true: vem do login e leva ao jogo; false: só consulta durante o jogo.
+    // Seletor de fases: logo depois do login.
+    S.ui.mostrarFases = function () {
+      S.fase = 'fases';
+      var ap = S.ui.telaApertada();
+      var t = S.ui.tela(30, '640px');
+      if (ap) S.ui.compactarTela(t);
+      S.el('div', { fontSize: ap ? '18px' : '22px', fontWeight: '700', marginBottom: '4px' }, 'Escolha o laboratório', t.cartao);
+      S.el('div', { color: C.cinza, fontSize: '13px', marginBottom: ap ? '8px' : '14px' }, 'Cada laboratório tem o seu próprio ranking.', t.cartao);
+      var lista = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
+      ['laboratorio', 'servidores'].forEach(function (id) {
+        var f = S.fases[id];
+        if (!f) return;
+        var b = S.el('button', {
+          flex: '1 1 240px',
+          textAlign: 'left',
+          background: '#071733',
+          border: '3px solid ' + C.borda,
+          borderRadius: '10px',
+          padding: ap ? '10px 12px' : '14px 16px',
+          color: C.branco,
+          cursor: 'pointer',
+          touchAction: 'manipulation',
+          fontFamily: C.fonte
+        }, null, lista);
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Laboratório ' + f.numero);
+        S.el('div', { color: C.laranja, fontWeight: '700', fontSize: '12px', letterSpacing: '0.06em' }, 'LABORATÓRIO ' + f.numero, b);
+        S.el('div', { fontWeight: '700', fontSize: ap ? '16px' : '18px', margin: '2px 0 4px' }, f.titulo || f.nome, b);
+        S.el('div', { fontSize: '13px', color: C.cinza, lineHeight: '1.4' }, f.resumoCurto || '', b);
+        S.el('div', { fontSize: '12px', fontWeight: '700', color: C.laranja, marginTop: '8px' }, 'Escolher ▶', b);
+        b.addEventListener('mouseenter', function () { b.style.borderColor = C.laranja; });
+        b.addEventListener('mouseleave', function () { b.style.borderColor = C.borda; });
+        b.addEventListener('click', function () {
+          S.faseEscolhida = id;
+          t.fechar();
+          S.ui.mostrarComandos(true);
+        });
+      });
+      var rod = S.el('div', { display: 'flex', marginTop: ap ? '10px' : '14px' }, null, t.cartao);
+      S.ui.botao('Voltar', 'secundario', function () {
+        t.fechar();
+        S.ui.mostrarLogin();
+      }, rod);
+    };
+
     S.ui.mostrarComandos = function (inicio) {
       if (inicio) S.fase = 'comandos';
       var ap = S.ui.telaApertada();
@@ -1022,16 +1067,15 @@
         lineHeight: '1.45'
       }, null, t.cartao);
       S.el('div', { fontWeight: '700', color: C.laranja, marginBottom: '2px' }, 'Sua missão', obj);
-      S.el('div', null, ap
-        ? 'Ligue os PCs, crimpe cabos T-568B, conecte switch e roteador e configure IPs fixos. Siga o quadro de missões.'
-        : 'Monte a rede do laboratório: ligue os PCs, crimpe cabos no padrão T-568B, conecte tudo no switch e no roteador e configure IPs fixos. O quadro mostra as etapas e vai riscando o que você concluir.', obj);
+      var faseCmd = S.fases[S.faseEscolhida] || S.fases.laboratorio || {};
+      S.el('div', null, ap ? faseCmd.missaoCurta : faseCmd.missaoLonga, obj);
       if (!ap) S.el('div', { color: C.cinza, marginTop: '6px', fontSize: '13px' }, 'O tempo conta para o ranking. Se travar numa etapa, aparece uma dica e uma seta laranja.', obj);
 
       var rodape = S.el('div', { display: 'flex', gap: '10px', marginTop: ap ? '10px' : '16px', flexWrap: 'wrap' }, null, t.cartao);
       if (inicio) {
         var bVoltar = S.ui.botao('Voltar', 'secundario', function () {
           t.fechar();
-          S.ui.mostrarLogin();
+          S.ui.mostrarFases();
         }, rodape);
         bVoltar.style.flex = '0 0 auto';
         var bComecar = S.ui.botao('Começar o laboratório ▶', 'primario', function () {
@@ -1611,6 +1655,46 @@
       });
       S.raiz.insertBefore(r.domElement, S.raiz.firstChild);
       S.renderer = r;
+
+      // Celular com pouca memória: o navegador pode "derrubar" o 3D (WebGL).
+      // Em vez de travar, avisamos e redesenhamos quando ele voltar.
+      var avisoContexto = null;
+      r.domElement.addEventListener('webglcontextlost', function (ev) {
+        ev.preventDefault();
+        S.contextoPerdido = true;
+        S.perdasDeContexto = (S.perdasDeContexto || 0) + 1; // aparece no painel F9
+        if (avisoContexto) return;
+        avisoContexto = S.ui.camada(60, {
+          background: 'rgba(4,10,24,0.92)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          padding: '20px',
+          textAlign: 'center',
+          color: '#FFFFFF',
+          fontWeight: '700'
+        });
+        S.el('div', { fontSize: '17px' }, 'O navegador pausou o 3D para liberar memória.', avisoContexto);
+        S.el('div', { fontSize: '13px', color: S.CSS.cinza, fontWeight: '400' }, 'Aguarde alguns segundos. Se não voltar, feche outras abas e recarregue.', avisoContexto);
+        S.ui.botao('Recarregar a página', 'primario', function () { window.location.reload(); }, avisoContexto);
+      }, false);
+      r.domElement.addEventListener('webglcontextrestored', function () {
+        S.contextoPerdido = false;
+        if (avisoContexto) {
+          avisoContexto.remove();
+          avisoContexto = null;
+        }
+        if (!S.cena) return;
+        S.cena.traverse(function (o) {
+          if (!o.material) return;
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+            m.needsUpdate = true;
+            for (var k in m) if (m[k] && m[k].isTexture) m[k].needsUpdate = true;
+          });
+        });
+      }, false);
 
       S.cena = new THREE.Scene();
       S.cena.background = new THREE.Color(S.COR.noite);
@@ -4106,7 +4190,7 @@
           color: feita ? C.verde : C.branco,
           textDecoration: feita ? 'line-through' : 'none',
           fontWeight: atual ? '700' : '400'
-        }, (feita ? '✔ ' : atual ? '▶ ' : '□ ') + (i + 1) + '. ' + mi.texto, m.corpo);
+        }, (feita ? '✔ ' : atual ? '▶ ' : '□ ') + (i + 1) + '. ' + (typeof mi.texto === 'function' ? mi.texto() : mi.texto), m.corpo);
       });
     };
   });
@@ -5295,6 +5379,10 @@
     S.registrarFase('laboratorio', {
       numero: 1,
       nome: 'Laboratório de Redes',
+      titulo: 'Rede local',
+      resumoCurto: 'Crimpe cabos T-568B, ligue PCs no switch e no roteador, configure IP fixo e teste com ping.',
+      missaoCurta: 'Ligue os PCs, crimpe cabos T-568B, conecte switch e roteador, configure IPs fixos e teste com ping.',
+      missaoLonga: 'Monte a rede do laboratório: ligue os PCs, crimpe cabos no padrão T-568B, conecte tudo no switch e no roteador, configure IPs fixos e teste com ping nos dois sentidos. O quadro mostra as etapas e vai riscando o que você concluir.',
       proxima: 'servidores',
       usar: function (info) { return S.jogo.usarFase1(info); },
       rotulo: function (info) { return S.jogo.rotuloFase1(info); },
@@ -5363,7 +5451,7 @@
       passo(function () {
         if (!S.renderer) S.montarRenderer();
       }).then(function () {
-        return S.montarFase('laboratorio', tela);
+        return S.montarFase(S.fases[S.faseEscolhida] ? S.faseEscolhida : 'laboratorio', tela);
       }).then(function () {
         tela.progresso(0.95, 'Preparando os gráficos…');
         return passo(function () {
@@ -5487,6 +5575,7 @@
     function quadro() {
       requestAnimationFrame(quadro);
       if (S.fase !== 'jogo' && S.fase !== 'fim' && S.fase !== 'cena') return;
+      if (S.contextoPerdido) return;
       if (!relogio) relogio = new THREE.Clock();
       var dt = Math.min(relogio.getDelta(), 0.05);
       var agora = S.agora();
@@ -7488,6 +7577,10 @@
     S.registrarFase('servidores', {
       numero: 2,
       nome: 'Laboratório 2 · Servidor',
+      titulo: 'Servidor',
+      resumoCurto: 'Instale tomadas keystone e configure um servidor com DHCP, DNS e HTTPS. Depois, abra o site pelo nome.',
+      missaoCurta: 'Ligue o servidor, instale as keystones, configure DHCP, DNS e HTTPS e abra o site pelo nome num PC.',
+      missaoLonga: 'Coloque um servidor na rede: dê a ele IP fixo, instale as 3 tomadas keystone (T-568B), ative DHCP, DNS e HTTPS, deixe os PCs pegarem IP sozinhos e abra https://intranet.senac.lan no navegador. O quadro mostra as etapas.',
       usar: F2.usar,
       rotulo: F2.rotulo,
       concluir: function () { F2.concluir(); },
@@ -7709,9 +7802,12 @@
 
     // Poses: valores-alvo para tronco, cabeça, patas e rabo.
     var POSES = {
-      dormindo: { troncoY: 0.08, troncoRot: 0, cabY: 0.08, cabZ: 0.2, cabRot: 0.35, patas: 0.15, rabo1: 1.3, rabo2: 1.2, raboX: 0 },
-      sentado: { troncoY: 0.15, troncoRot: -0.55, cabY: 0.33, cabZ: 0.16, cabRot: 0, patas: 1, rabo1: 1.0, rabo2: 0.6, raboX: 0 },
-      andando: { troncoY: 0.17, troncoRot: 0, cabY: 0.26, cabZ: 0.22, cabRot: -0.1, patas: 1, rabo1: 0, rabo2: 0.3, raboX: -0.9 }
+      // pf/pt: patas da frente e de trás → [altura do encaixe, tamanho, inclinação]
+      dormindo: { troncoY: 0.08, troncoRot: 0, cabY: 0.08, cabZ: 0.2, cabRot: 0.35, pf: [0.1, 0.15, 0], pt: [0.1, 0.15, 0], rabo1: 1.3, rabo2: 1.2, raboX: 0 },
+      // Sentado: o peito sobe, então as patas da frente ficam maiores e
+      // inclinadas até o chão; as de trás dobram por baixo do corpo.
+      sentado: { troncoY: 0.15, troncoRot: -0.55, cabY: 0.33, cabZ: 0.16, cabRot: 0, pf: [0.2, 1.75, -0.18], pt: [0.07, 0.75, -1.15], rabo1: 1.0, rabo2: 0.6, raboX: 0 },
+      andando: { troncoY: 0.17, troncoRot: 0, cabY: 0.26, cabZ: 0.22, cabRot: -0.1, pf: [0.1, 1, 0], pt: [0.1, 1, 0], rabo1: 0, rabo2: 0.3, raboX: -0.9 }
     };
     function atualizarPose(k) {
       var nome = c.estado === 'andando' ? 'andando' : (c.estado === 'dormindo' || c.estado === 'foi') ? 'dormindo' : 'sentado';
@@ -7722,7 +7818,12 @@
       c.cab.position.y = lerp(c.cab.position.y, p.cabY);
       c.cab.position.z = lerp(c.cab.position.z, p.cabZ);
       c.cab.rotation.x = lerp(c.cab.rotation.x, p.cabRot);
-      c.patas.forEach(function (pt) { pt.scale.y = lerp(pt.scale.y, p.patas); });
+      c.patas.forEach(function (pt, i) {
+        var cfg = i < 2 ? p.pf : p.pt;
+        pt.position.y = lerp(pt.position.y, cfg[0]);
+        pt.scale.y = lerp(pt.scale.y, cfg[1]);
+        if (nome !== 'andando') pt.rotation.x = lerp(pt.rotation.x, cfg[2]);
+      });
       c.rabo1.rotation.y = lerp(c.rabo1.rotation.y, p.rabo1);
       c.rabo2.rotation.y = lerp(c.rabo2.rotation.y, p.rabo2);
       c.rabo1.rotation.x = lerp(c.rabo1.rotation.x, p.raboX);
@@ -7988,6 +8089,7 @@
     linha('Erros: ' + (erros.length || 'nenhum'), erros.length ? '#FF7676' : '#6BF08E');
     erros.slice(-6).forEach(function (e) { linha('• ' + e, '#FF7676'); });
     linha('Ranking: ' + (S.dados ? (S.dados.offline ? 'offline (fora do Canva)' : 'Canva Sheets') : '?'));
+    if (S.perdasDeContexto) linha('3D reiniciado pelo navegador: ' + S.perdasDeContexto + 'x (pouca memória)', '#FFD36B');
   }
   function montar() {
     painel = document.createElement('div');
