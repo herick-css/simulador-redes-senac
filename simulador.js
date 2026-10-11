@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.0.0',
+    versao: '2.1.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -201,10 +201,29 @@
       return performance.now();
     };
 
+    // Cronômetro com pausa (cenas curtas no meio do jogo não contam tempo).
+    S.tempoPausado = 0;
+    S.pausaDesde = null;
+    S.zerarRelogio = function () {
+      S.tempoInicio = S.agora();
+      S.tempoFinal = null;
+      S.tempoPausado = 0;
+      S.pausaDesde = null;
+    };
+    S.pausarRelogio = function () {
+      if (S.tempoInicio !== null && S.tempoFinal === null && S.pausaDesde === null) S.pausaDesde = S.agora();
+    };
+    S.retomarRelogio = function () {
+      if (S.pausaDesde === null) return;
+      var d = S.agora() - S.pausaDesde;
+      S.tempoPausado += d;
+      if (S.jogo) S.jogo.progressoEm += d; // as dicas também não contam a cena
+      S.pausaDesde = null;
+    };
     S.tempoDeJogo = function () {
       if (S.tempoInicio === null) return 0;
-      var fim = S.tempoFinal !== null ? S.tempoFinal : S.agora();
-      return (fim - S.tempoInicio) / 1000;
+      var fim = S.tempoFinal !== null ? S.tempoFinal : (S.pausaDesde !== null ? S.pausaDesde : S.agora());
+      return (fim - S.tempoInicio - S.tempoPausado) / 1000;
     };
 
     S.ehToque = function () {
@@ -2557,7 +2576,7 @@
       p.pernaE.rotation.x += (bal - p.pernaE.rotation.x) * k;
       p.pernaD.rotation.x += (-bal - p.pernaD.rotation.x) * k;
       p.bracoE.rotation.x += (-bal * 0.8 - p.bracoE.rotation.x) * k;
-      var alvoBracoD = S.personagem.rolo.visible ? -0.5 : bal * 0.8;
+      var alvoBracoD = p.gestoAte && S.agora() < p.gestoAte ? -2.85 : S.personagem.rolo.visible ? -0.5 : bal * 0.8;
       p.bracoD.rotation.x += (alvoBracoD - p.bracoD.rotation.x) * k;
       p.corpo.position.y = p.andando ? Math.abs(Math.sin(p.fase)) * 0.05 : Math.sin(S.agora() / 600) * 0.008;
     };
@@ -2726,6 +2745,8 @@
     var vTmp = null;
 
     S.criarProfessor = function () {
+      gesto = null;
+      tocaAqui = null;
       mesaProfessor();
       var mPele = S.mat(parseInt(PELE.slice(1), 16));
       var mCabelo = S.mat(parseInt(CABELO.slice(1), 16));
@@ -2927,6 +2948,8 @@
       var bDz = 0;
       var aceno = 0;
       pr.cabeca.rotation.x = 0;
+      pr.cabeca.rotation.z = 0;
+      atualizarTocaAqui(dt);
       if (gesto) {
         gesto.t += dt;
         var f = Math.min(1, gesto.t / 0.25, (gesto.dur - gesto.t) / 0.25);
@@ -2938,6 +2961,21 @@
         } else if (gesto.tipo === 'falar') {
           bE = (-0.45 + Math.sin(gesto.t * 5) * 0.15) * f;
           pr.cabeca.rotation.x = Math.sin(gesto.t * 7) * 0.05 * f;
+        } else if (gesto.tipo === 'explicar') {
+          // Mão à frente "desenhando" no ar e cabeça balançando (não é aceno).
+          bD = (-1.05 + Math.sin(gesto.t * 4.2) * 0.22) * f;
+          bDz = Math.sin(gesto.t * 3.1) * 0.28 * f;
+          bE = -0.25 * f;
+          pr.cabeca.rotation.x = Math.sin(gesto.t * 5.5) * 0.08 * f;
+          pr.cabeca.rotation.z = Math.sin(gesto.t * 2.6) * 0.1 * f;
+        } else if (gesto.tipo === 'tocaAqui') {
+          // Mão levantada, parada, esperando o toca aqui.
+          bD = -2.75 * f;
+          bDz = 0.12 * f;
+        } else if (gesto.tipo === 'toca') {
+          var k = Math.sin(Math.min(1, gesto.t / gesto.dur) * Math.PI);
+          bD = -2.3 - k * 0.5;
+          bDz = -0.35 * k;
         }
         if (gesto.t >= gesto.dur) gesto = null;
       }
@@ -2981,15 +3019,50 @@
       }, null, balao);
     }
 
-    S.professorFalar = function (texto, ms) {
+    // gestoFala: nome do gesto, ou false para não mexer (ex.: mão levantada).
+    // O gesto só recomeça quando o anterior terminou (cliques repetidos).
+    S.professorFalar = function (texto, ms, gestoFala) {
       if (!S.professor) return;
       if (!balao) criarBalao();
       balaoTexto.textContent = texto;
       balao.style.fontSize = S.toque || S.ui.compacto() ? '12px' : '14px';
       balaoAte = S.agora() + (ms || 3200);
-      S.gestoProfessor('aceno', 1.2);
+      if (gestoFala !== false && !gesto) S.gestoProfessor(gestoFala || 'aceno', 1.2);
       atualizarBalao();
+      // Se o professor estiver fora da tela, a fala aparece como aviso.
+      if (balao.style.display === 'none' && S.fase === 'jogo') S.aviso('Prof. Herick: "' + texto + '"', 'info', ms || 3200);
     };
+
+    S.professorOcupado = function () { return !!gesto; };
+
+    // ---- Toca aqui: depois da cena, o professor espera com a mão levantada.
+    var tocaAqui = null;
+    S.esperarTocaAqui = function () {
+      tocaAqui = { t: 0, avisou: false };
+      if (!gesto || gesto.tipo !== 'tocaAqui') S.gestoProfessor('tocaAqui', Infinity);
+    };
+    S.esperandoTocaAqui = function () { return !!tocaAqui; };
+    S.baterTocaAqui = function () {
+      if (!tocaAqui) return false;
+      tocaAqui = null;
+      S.gestoProfessor('toca', 0.7);
+      if (S.personagem) S.personagem.gestoAte = S.agora() + 700;
+      S.professorFalar('Isso aí! ✋', 2200, false);
+      return true;
+    };
+    function atualizarTocaAqui(dt) {
+      if (!tocaAqui || S.pausado || S.fase !== 'jogo') return;
+      tocaAqui.t += dt;
+      if (tocaAqui.t >= 15 && !tocaAqui.avisou) {
+        tocaAqui.avisou = true;
+        S.professorFalar('Não vai me deixar no vácuo, né?', 4200, false);
+      }
+      if (tocaAqui.t >= 30) {
+        tocaAqui = null;
+        S.gestoProfessor(null);
+        S.professorFalar('Bom, acho que você está focado em outra coisa...', 4800, false);
+      }
+    }
 
     S.esconderBalaoProfessor = function () {
       balaoAte = 0;
@@ -3558,7 +3631,7 @@
         var info = objs[id];
         var d = J.distancia(info);
         if (d > S.CFG.alcance) continue;
-        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' ? 0.6 : 0);
+        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' || id === 'cachola' ? 0.6 : 0);
         if (nota < melhorNota) {
           melhorNota = nota;
           melhor = info;
@@ -3572,7 +3645,8 @@
       switch (info.id) {
         case 'quadro': return 'Ver missões';
         case 'cartaz': return 'Ver cartaz T-568B';
-        case 'professor': return 'Falar com o professor Herick';
+        case 'professor': return S.esperandoTocaAqui() ? 'Bater o toca aqui com o professor ✋' : 'Falar com o professor Herick';
+        case 'cachola': return S.rotuloCachola();
         case 'porta': return 'Sair pela porta (seguir o professor)';
       }
       var f = S.faseAtual;
@@ -3653,6 +3727,7 @@
       }
       J.registrarAtividade();
       if (info.id === 'professor') return falarProfessor();
+      if (info.id === 'cachola') return S.usarCachola();
       if (info.id === 'porta') return sairPelaPorta();
       if (info.id === 'quadro') return S.minigames.quadro();
       if (info.id === 'cartaz') return S.minigames.cartaz();
@@ -3673,10 +3748,27 @@
     };
 
     function falarProfessor() {
+      if (S.baterTocaAqui()) return;
       var nome = S.primeiroNome();
       S.professorFalar(J.missoesFeitas() === 0
         ? 'Boa sorte com a atividade, ' + nome + '!'
         : 'Você está indo bem, ' + nome + '!', 3200);
+    }
+
+    // Primeiro cabo pronto: o professor comemora e levanta a mão.
+    function cenaTocaAqui() {
+      if (S.fase !== 'jogo' || S.ui.modalAberto() || !S.professor) return;
+      S.cenaCurta({
+        manterGesto: true,
+        tomadas: { prof: { pos: [2.3, 2.35, 4.45], alvo: [5.1, 1.45, 3.2] } },
+        falas: [
+          { quem: 'prof', tomada: 'prof', gesto: 'tocaAqui', texto: 'Boa, você conseguiu! Toca aqui!' }
+        ],
+        aoFim: function () {
+          S.esperarTocaAqui();
+          S.aviso('Cabo pronto! O professor está esperando o toca aqui ✋ (depois, encaixe o cabo num PC).', 'info', 4200);
+        }
+      });
     }
 
     function usarAlicate() {
@@ -3697,6 +3789,7 @@
         J.cabosCrimpados++;
         J.definirMao({ tipo: 'cabo' });
         J.atualizarMissoes();
+        if (J.cabosCrimpados === 1) setTimeout(S.protegido('tocaAqui', cenaTocaAqui), 250);
         var proximo = J.cabosCrimpados === 3
           ? 'Leve-o ao switch: porta Gigabit.'
           : 'Agora encaixe-o na placa de rede de um PC.';
@@ -5218,10 +5311,13 @@
           S.criarPersonagem(S.aluno.nome, S.aluno.genero);
           S.mundo.montarCaboMao();
           S.mundo.montarSeta();
+          S.criarCachola();
         }]
       ],
+      atualizar: function (dt) { S.atualizarCachola(dt); },
       desmontar: function () {
         if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
+        S.removerCachola();
       }
     });
 
@@ -5303,7 +5399,7 @@
       S.fase = 'jogo';
       S.pausado = false;
       S.teclas = {};
-      S.tempoInicio = S.agora();
+      S.zerarRelogio();
       S.jogo.progressoEm = S.agora();
       S.jogo.atualizarMissoes();
       S.ui.atualizarControlesToque();
@@ -5488,9 +5584,15 @@
 
     var est = null;
 
+    var FALANTES = {
+      prof: { nome: function () { return 'Prof. Herick'; }, cor: C.laranja, texto: '#10203A' },
+      aluno: { nome: function () { return S.aluno.nome; }, cor: '#4F9BFF', texto: '#071430' },
+      cachola: { nome: function () { return 'Cachola'; }, cor: '#39C46A', texto: '#071430' }
+    };
+
     // Etiquetas de nome somem durante a cena (atrapalham os closes).
     function etiquetas(visiveis) {
-      [S.personagem, S.professor].forEach(function (c) {
+      [S.personagem, S.professor, S.cachola && S.cachola()].forEach(function (c) {
         if (!c) return;
         c.raiz.children.forEach(function (o) {
           if (o.isSprite) o.visible = visiveis;
@@ -5640,23 +5742,27 @@
       ui.titulo.style.opacity = '0';
       ui.caixa.style.display = 'block';
       var prof = f.quem === 'prof';
-      ui.caixa.style.borderColor = prof ? C.laranja : '#4F9BFF';
-      ui.quem.textContent = prof ? 'Prof. Herick' : S.aluno.nome;
-      ui.quem.style.background = prof ? C.laranja : '#4F9BFF';
-      ui.quem.style.color = prof ? '#10203A' : '#071430';
+      var falante = FALANTES[f.quem] || FALANTES.aluno;
+      ui.caixa.style.borderColor = falante.cor;
+      ui.quem.textContent = falante.nome();
+      ui.quem.style.background = falante.cor;
+      ui.quem.style.color = falante.texto;
       ui.texto.textContent = '';
       ui.seguir.style.visibility = 'hidden';
       var t = est.tomadas[f.tomada];
       irPara(v3(t.pos), v3(t.alvo), i === 0 ? 0.6 : 1.1);
       var pr = S.professor || {};
       if (prof) {
-        S.gestoProfessor(f.gesto, f.gesto === 'aceno' ? 1.6 : 2.6);
+        var dur = { aceno: 1.6, tocaAqui: Infinity, explicar: 3.2 }[f.gesto] || 2.6;
+        S.gestoProfessor(f.gesto, dur);
         // Ao apontar algo, o professor olha para lá; senão olha o aluno.
-        pr.alvoFixo = f.gesto === 'apontar' ? v3(t.alvo) : null;
-      } else {
-        pr.alvoFixo = null;
+        pr.alvoFixo = f.olhar ? v3(f.olhar) : f.gesto === 'apontar' ? v3(t.alvo) : null;
+      } else if (!est.manterGesto) {
+        pr.alvoFixo = f.olhar ? v3(f.olhar) : null;
         S.gestoProfessor(null);
       }
+      // Ação de cena presa à fala (ex.: o gato acorda).
+      if (f.acao) S.protegido('cena:acao', f.acao)();
     }
 
     function avancar() {
@@ -5770,12 +5876,64 @@
       S.atualizarCena = atualizar;
     };
 
+    // ---- Cena curta no meio do jogo (Cachola, toca aqui…) ----------------
+    // Pausa o cronômetro enquanto roda e devolve o controle no fim.
+    S.cenaCurta = function (cfg) {
+      if (est) return false;
+      S.pausarRelogio();
+      S.fase = 'cena';
+      S.teclas = {};
+      S.joy.x = 0;
+      S.joy.z = 0;
+      S.ui.mostrarHud(false);
+      if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+      if (S.limparHover) S.limparHover();
+      var dirAlvo = new THREE.Vector3();
+      S.camera.getWorldDirection(dirAlvo);
+      est = {
+        aoFim: function () {
+          S.retomarRelogio();
+          S.fase = 'jogo';
+          S.pausado = false;
+          S.ui.mostrarHud(true);
+          S.ui.atualizarControlesToque();
+          if (cfg.aoFim) S.protegido('cenaCurta:fim', cfg.aoFim)();
+        },
+        falas: cfg.falas,
+        tomadas: tomadasDa(cfg),
+        etapa: 'dialogo',
+        virarAluno: false,
+        manterGesto: !!cfg.manterGesto,
+        tempo: 0,
+        alvoAtual: S.camera.position.clone().add(dirAlvo.multiplyScalar(4)),
+        ui: montarUi()
+      };
+      est.ui.titulo.textContent = '';
+      etiquetas(false);
+      if (cfg.aposFalas) {
+        est.aposFalas = function () {
+          est.etapa = 'seguir';
+          est.seguir = cfg.seguir || null;
+          cfg.aposFalas(function () {
+            if (est) setTimeout(function () { terminar(false); }, 350);
+          });
+        };
+      }
+      if (cfg.aoPular) est.aoPular = cfg.aoPular;
+      S.atualizarCena = atualizar;
+      mostrarFala(0);
+      return true;
+    };
+
+    S.emCena = function () { return !!est; };
+
     // ---- Cena final: o professor chama o aluno e sai pela porta ----------
     var camSeguir = null;
+    // Câmera acompanha quem está andando (professor ou o Cachola).
     function seguirProfessor(dt) {
-      var pr = S.professor;
+      var raiz = est.seguir || S.professor.raiz;
       if (!camSeguir) camSeguir = { pos: new THREE.Vector3(), alvo: new THREE.Vector3() };
-      var rp = pr.raiz.position;
+      var rp = raiz.position;
       var px = Math.max(-4.6, rp.x);
       camSeguir.pos.set(px * 0.6 + 0.4, 3.9, rp.z + 5.4);
       camSeguir.alvo.set(px, 1.0, rp.z - 0.4);
@@ -7398,10 +7556,397 @@
     });
   });
 
+
+  /* ================================================================== */
+  secao('K01-cachola', function () {
+    // Cachola: o gato preto de olhos verdes, mascote da plataforma Cachola
+    // do Senac. Dorme no canto da sala da fase 1; acordado, solta um fato
+    // científico curioso e "abre a cachola" (a cabeça) enquanto fala.
+    var FATOS = [
+      'Com o IPv6 existem cerca de 340 undecilhões de endereços IP. Dividindo pelos 8 bilhões de pessoas, dá uns 42 octilhões de endereços para cada uma!',
+      'O IPv4 tem só 4,3 bilhões de endereços: menos do que o número de pessoas no planeta. Por isso surgiram o NAT e o IPv6.',
+      'Dentro da fibra óptica a luz viaja a uns 200 mil km por segundo. Dá para dar cinco voltas na Terra em um segundo!',
+      'Mais de 95% dos dados que cruzam os oceanos passam por cabos submarinos, não por satélites.',
+      'Os pares do cabo UTP são trançados para cancelar interferências eletromagnéticas. É física pura dentro do seu cabo de rede!',
+      'A Ethernet foi inventada em 1973, por Robert Metcalfe, no laboratório Xerox PARC.',
+      'A primeira mensagem da ARPANET, em 1969, era para ser "LOGIN". O sistema travou depois do "LO".',
+      'O primeiro "bug" de computador registrado foi uma mariposa de verdade, presa num relé do computador Harvard Mark II, em 1947.',
+      'O DNS foi criado em 1983. Antes dele, os nomes de todos os computadores da rede ficavam num único arquivo, o HOSTS.TXT.',
+      'O Wi-Fi de 2,4 GHz usa a mesma faixa de frequência do forno de micro-ondas. Por isso o micro-ondas às vezes atrapalha o sinal.',
+      'Nós, gatos, ronronamos em frequências entre 25 e 150 Hz.',
+      'Gatos dormem, em média, de 12 a 16 horas por dia. Ou seja: eu estou trabalhando direitinho.',
+      'Gatos têm uma terceira pálpebra, a membrana nictitante, que protege e umedece os olhos.',
+      'Meus olhos brilham no escuro por causa do tapetum lucidum, uma camada que reflete a luz de volta para a retina.',
+      'Gatos pretos podem ficar meio avermelhados de tanto tomar sol: a luz desbota o pigmento escuro do pelo.',
+      'O cérebro humano tem cerca de 86 bilhões de neurônios.',
+      'Um raio aquece o ar a uns 30 mil graus Celsius: cerca de cinco vezes a temperatura da superfície do Sol.',
+      'O polvo tem três corações e sangue azul, por causa de uma proteína com cobre, a hemocianina.',
+      'A Lua se afasta da Terra cerca de 3,8 centímetros por ano. Medem isso com laser refletido em espelhos deixados lá.',
+      'A banana é levemente radioativa por causa do potássio-40. Mas relaxa: precisaria de milhões delas para fazer mal.'
+    ];
+    S.FATOS_CACHOLA = FATOS;
+
+    var POS = { x: 5.35, z: 0.9 };
+    var c = null;
+    var balao = null;
+    var balaoAte = 0;
+    var vTmp = null;
+
+    function mat(cor, op) { return S.mat(cor, op); }
+
+    S.criarCachola = function () {
+      var C = S.COR;
+      var preto = mat(0x15161a);
+      var pretoClaro = mat(0x24262c);
+      // Almofada laranja (Senac) onde ele dorme.
+      var almofada = S.cilindro(0.34, 0.36, 0.07, 8, mat(C.laranja), POS.x, 0.035, POS.z);
+      almofada.receiveShadow = true;
+      S.cilindro(0.26, 0.26, 0.075, 8, mat(0xffb15c), POS.x, 0.04, POS.z);
+      S.colisor(POS.x, POS.z, 0.6, 0.6);
+
+      var raiz = S.grupo(POS.x, 0.07, POS.z);
+      raiz.rotation.y = -0.75; // de frente para a sala (e para a câmera)
+      var tronco = S.caixa(0.19, 0.16, 0.36, preto, 0, 0.1, 0, raiz);
+      // Cabeça (com a "tampa" da cachola articulada atrás).
+      var cab = S.grupo(0, 0.12, 0.22, raiz);
+      S.caixa(0.18, 0.12, 0.15, preto, 0, 0, 0, cab);
+      S.caixa(0.08, 0.045, 0.04, pretoClaro, 0, -0.03, 0.085, cab, true);
+      S.caixa(0.022, 0.016, 0.01, mat(0xd98aa0), 0, -0.012, 0.106, cab, true); // nariz
+      var tampaPiv = S.grupo(0, 0.06, -0.075, cab);
+      var tampa = S.caixa(0.18, 0.035, 0.15, preto, 0, 0.0175, 0.075, tampaPiv);
+      [-0.055, 0.055].forEach(function (x) {
+        var orelha = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.08, 4), preto);
+        orelha.position.set(x, 0.07, 0.06);
+        orelha.rotation.y = Math.PI / 4;
+        orelha.castShadow = true;
+        tampaPiv.add(orelha);
+      });
+      // "Cérebro" que brilha quando ele abre a cachola.
+      var cerebro = S.caixa(0.12, 0.05, 0.1, S.matUnico(0xff8fb3, { emissive: 0xff5c95, emissiveIntensity: 0.9 }), 0, 0.055, 0, cab, true);
+      cerebro.visible = false;
+      // Olhos verdes (fechados = risquinho escuro).
+      var mOlho = S.matUnico(0x39ff6a, { emissive: 0x2bd458, emissiveIntensity: 0.8 });
+      var olhos = [-0.045, 0.045].map(function (x) {
+        return S.caixa(0.04, 0.03, 0.01, mOlho, x, 0.015, 0.078, cab, true);
+      });
+      // Patas.
+      var patas = [[-0.06, 0.13], [0.06, 0.13], [-0.06, -0.13], [0.06, -0.13]].map(function (p) {
+        var piv = S.grupo(p[0], 0.1, p[1], raiz);
+        S.caixa(0.05, 0.12, 0.05, preto, 0, -0.06, 0, piv);
+        return piv;
+      });
+      // Rabo em dois segmentos.
+      var rabo1 = S.grupo(0, 0.1, -0.18, raiz);
+      S.caixa(0.04, 0.04, 0.16, preto, 0, 0, -0.08, rabo1);
+      var rabo2 = S.grupo(0, 0, -0.16, rabo1);
+      S.caixa(0.035, 0.035, 0.14, preto, 0, 0, -0.07, rabo2);
+
+      // Etiqueta com o nome.
+      var etiqueta = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.texturaNome('Cachola', 'rgba(30,140,70,0.9)'), depthTest: false, transparent: true }));
+      etiqueta.scale.set(1.0, 0.155, 1);
+      etiqueta.position.set(0, 0.62, 0);
+      etiqueta.renderOrder = 10;
+      raiz.add(etiqueta);
+
+      // "Z"s subindo enquanto ele dorme.
+      var texZ = S.textura(16, 16, function (ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('z', w / 2, 13);
+      });
+      var zs = [0, 1, 2].map(function (i) {
+        var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: texZ, transparent: true, depthWrite: false }));
+        sp.scale.set(0.12, 0.12, 1);
+        S.adicionar(sp);
+        return { sp: sp, fase: i / 3 };
+      });
+
+      // Área de clique maior que o gato.
+      var alvo = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.7), new THREE.MeshBasicMaterial({ visible: false }));
+      alvo.position.set(0, 0.25, 0);
+      raiz.add(alvo);
+      c = {
+        raiz: raiz,
+        tronco: tronco,
+        cab: cab,
+        tampa: tampaPiv,
+        cerebro: cerebro,
+        olhos: olhos,
+        mOlho: mOlho,
+        patas: patas,
+        rabo1: rabo1,
+        rabo2: rabo2,
+        zs: zs,
+        estado: 'dormindo', // dormindo | sentado | falando | andando | foi
+        conversou: false,
+        cliques: 0,
+        t: 0,
+        passo: 0,
+        caminho: null,
+        colisor: S.colisores[S.colisores.length - 1]
+      };
+      c.info = S.interativo([alvo, tronco], {
+        id: 'cachola',
+        nome: 'Cachola (o gato)',
+        ancora: new THREE.Vector3(POS.x - 0.8, 0, POS.z)
+      });
+      definirOlhos(false);
+      atualizarPose(1);
+    };
+
+    S.removerCachola = function () {
+      c = null;
+      if (balao) balao.style.display = 'none';
+    };
+
+    function definirOlhos(abertos) {
+      c.olhos.forEach(function (o) { o.scale.y = abertos ? 1 : 0.25; });
+      c.mOlho.color.setHex(abertos ? 0x39ff6a : 0x0b0c0e);
+      c.mOlho.emissive.setHex(abertos ? 0x2bd458 : 0x000000);
+    }
+
+    // Poses: valores-alvo para tronco, cabeça, patas e rabo.
+    var POSES = {
+      dormindo: { troncoY: 0.08, troncoRot: 0, cabY: 0.08, cabZ: 0.2, cabRot: 0.35, patas: 0.15, rabo1: 1.3, rabo2: 1.2, raboX: 0 },
+      sentado: { troncoY: 0.15, troncoRot: -0.55, cabY: 0.33, cabZ: 0.16, cabRot: 0, patas: 1, rabo1: 1.0, rabo2: 0.6, raboX: 0 },
+      andando: { troncoY: 0.17, troncoRot: 0, cabY: 0.26, cabZ: 0.22, cabRot: -0.1, patas: 1, rabo1: 0, rabo2: 0.3, raboX: -0.9 }
+    };
+    function atualizarPose(k) {
+      var nome = c.estado === 'andando' ? 'andando' : (c.estado === 'dormindo' || c.estado === 'foi') ? 'dormindo' : 'sentado';
+      var p = POSES[nome];
+      function lerp(a, b) { return a + (b - a) * k; }
+      c.tronco.position.y = lerp(c.tronco.position.y, p.troncoY);
+      c.tronco.rotation.x = lerp(c.tronco.rotation.x, p.troncoRot);
+      c.cab.position.y = lerp(c.cab.position.y, p.cabY);
+      c.cab.position.z = lerp(c.cab.position.z, p.cabZ);
+      c.cab.rotation.x = lerp(c.cab.rotation.x, p.cabRot);
+      c.patas.forEach(function (pt) { pt.scale.y = lerp(pt.scale.y, p.patas); });
+      c.rabo1.rotation.y = lerp(c.rabo1.rotation.y, p.rabo1);
+      c.rabo2.rotation.y = lerp(c.rabo2.rotation.y, p.rabo2);
+      c.rabo1.rotation.x = lerp(c.rabo1.rotation.x, p.raboX);
+    }
+
+    S.atualizarCachola = function (dt) {
+      if (!c || c.estado === 'foi') return;
+      c.t += dt;
+      atualizarPose(Math.min(1, dt * 6));
+      var dormindo = c.estado === 'dormindo';
+      // Respiração e "Z"s.
+      c.tronco.scale.y = 1 + (dormindo ? Math.sin(c.t * 2.2) * 0.06 : 0);
+      c.zs.forEach(function (z) {
+        z.sp.visible = dormindo;
+        if (!dormindo) return;
+        var f = (c.t * 0.35 + z.fase) % 1;
+        z.sp.position.set(c.raiz.position.x + 0.05 + f * 0.15, 0.3 + f * 0.55, c.raiz.position.z + Math.sin(f * 6) * 0.05);
+        z.sp.material.opacity = Math.sin(f * Math.PI);
+        z.sp.scale.setScalar(0.08 + f * 0.08);
+      });
+      // Falando: abre a cachola, o cérebro pulsa, cabeça e rabo balançam.
+      var falando = c.estado === 'falando';
+      var alvoTampa = falando ? -1.15 : 0;
+      c.tampa.rotation.x += (alvoTampa - c.tampa.rotation.x) * Math.min(1, dt * 8);
+      c.cerebro.visible = c.tampa.rotation.x < -0.2;
+      if (c.cerebro.visible) {
+        var pulso = 1 + Math.sin(c.t * 9) * 0.12;
+        c.cerebro.scale.set(pulso, pulso, pulso);
+        c.cerebro.material.emissiveIntensity = 0.7 + Math.sin(c.t * 9) * 0.3;
+      }
+      if (falando) {
+        c.cab.rotation.z = Math.sin(c.t * 3) * 0.15;
+        c.rabo2.rotation.y += Math.sin(c.t * 6) * 0.04;
+      } else {
+        c.cab.rotation.z *= 1 - Math.min(1, dt * 6);
+      }
+      if (c.estado === 'andando' && c.caminho) andar(dt);
+      atualizarBalao();
+    };
+
+    // ---- Caminhada até a porta ----------------------------------------------
+    function andar(dt) {
+      var pos = c.raiz.position;
+      var alvo = c.caminho[0];
+      var dx = alvo[0] - pos.x;
+      var dz = alvo[1] - pos.z;
+      var d = Math.sqrt(dx * dx + dz * dz);
+      var passo = 2.0 * dt;
+      if (d <= passo) {
+        pos.x = alvo[0];
+        pos.z = alvo[1];
+        c.caminho.shift();
+      } else {
+        pos.x += dx / d * passo;
+        pos.z += dz / d * passo;
+        var ang = Math.atan2(dx, dz);
+        var dif = ang - c.raiz.rotation.y;
+        while (dif > Math.PI) dif -= Math.PI * 2;
+        while (dif < -Math.PI) dif += Math.PI * 2;
+        c.raiz.rotation.y += dif * Math.min(1, dt * 10);
+      }
+      c.passo += dt * 14;
+      c.patas.forEach(function (pt, i) {
+        pt.rotation.x = Math.sin(c.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.6;
+      });
+      if (pos.x < -2.5 && S.mundo.porta) S.mundo.abrirPorta();
+      if (!c.caminho.length) {
+        c.caminho = null;
+        c.estado = 'foi';
+        c.raiz.visible = false;
+        c.zs.forEach(function (z) { z.sp.visible = false; });
+        // Fecha a porta de novo (se ela ainda não foi liberada no fim da fase).
+        if (S.mundo.porta && !S.mundo.porta.liberada) S.mundo.porta.alvo = 0;
+        var fn = c.aoSair;
+        c.aoSair = null;
+        if (fn) fn();
+      }
+    }
+
+    function sairDaSala(aoSair) {
+      c.estado = 'andando';
+      c.raiz.position.y = 0;
+      c.aoSair = aoSair;
+      c.caminho = [[4.4, 0.9], [2.9, 2.45], [-4.6, 2.95], [-5.7, 3.0], [-7.0, 3.0]];
+      var i = S.colisores.indexOf(c.colisor);
+      if (i >= 0) S.colisores.splice(i, 1);
+      delete S.mundo.objetos.cachola;
+      for (var k = S.interativos.length - 1; k >= 0; k--) {
+        var info = S.interativos[k].userData.info;
+        if (info && info.id === 'cachola') S.interativos.splice(k, 1);
+      }
+    }
+
+    function sumir() {
+      if (!c || c.estado === 'foi') return;
+      if (c.estado !== 'andando') sairDaSala(null);
+      c.caminho = [];
+      c.raiz.position.set(-7, 0.07, 3);
+      andar(0);
+    }
+
+    // ---- Balão "ZzZz" -------------------------------------------------------
+    function falarBalao(texto, ms) {
+      if (!balao) {
+        balao = S.el('div', {
+          position: 'absolute',
+          zIndex: '6',
+          transform: 'translate(-50%, -100%)',
+          background: '#FFFFFF',
+          color: '#10203A',
+          border: '3px solid #1E8C46',
+          borderRadius: '12px',
+          padding: '5px 10px',
+          fontWeight: '700',
+          fontSize: '14px',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          display: 'none'
+        }, '', S.raiz);
+      }
+      balao.textContent = texto;
+      balaoAte = S.agora() + (ms || 1600);
+      atualizarBalao();
+    }
+    function atualizarBalao() {
+      if (!balao) return;
+      if (!c || S.agora() > balaoAte || S.pausado || c.estado === 'foi') {
+        balao.style.display = 'none';
+        return;
+      }
+      if (!vTmp) vTmp = new THREE.Vector3();
+      vTmp.set(c.raiz.position.x, 0.75, c.raiz.position.z).project(S.camera);
+      if (vTmp.z > 1 || Math.abs(vTmp.x) > 1.1 || Math.abs(vTmp.y) > 1.1) {
+        balao.style.display = 'none';
+        return;
+      }
+      balao.style.left = ((vTmp.x + 1) / 2 * S.raiz.clientWidth) + 'px';
+      balao.style.top = Math.max(50, (1 - vTmp.y) / 2 * S.raiz.clientHeight - 6) + 'px';
+      balao.style.display = 'block';
+    }
+
+    // ---- Interação ----------------------------------------------------------
+    S.rotuloCachola = function () {
+      if (!c) return 'Cachola';
+      return c.conversou ? 'Cutucar o Cachola' : 'Ver o gato';
+    };
+
+    S.usarCachola = function () {
+      if (!c || c.estado === 'foi' || S.emCena()) return;
+      if (!c.conversou) return cenaApresentacao();
+      c.cliques++;
+      if (c.cliques >= 10) return cenaVaiEmbora();
+      falarBalao(c.cliques >= 6 ? 'ZzZzZz… (grrr)' : 'ZzZzZz…', 1600);
+      c.tronco.scale.y = 1.12;
+    };
+
+    // Coloca o aluno ao lado do gato, olhando para ele.
+    function posicionarAluno() {
+      var p = S.personagem;
+      p.raiz.position.set(POS.x - 0.9, 0, POS.z - 0.25);
+      p.angulo = Math.PI / 2;
+      p.raiz.rotation.y = p.angulo;
+    }
+
+    var GATO = [POS.x, 0.35, POS.z];
+    var TOMADAS = {
+      gato: { pos: [POS.x - 0.75, 0.72, POS.z + 1.05], alvo: [POS.x, 0.3, POS.z] },
+      alunoGato: { pos: [POS.x + 0.35, 1.4, POS.z - 1.3], alvo: [POS.x - 0.9, 1.25, POS.z - 0.25] },
+      prof: { pos: [2.3, 2.35, 4.45], alvo: [5.1, 1.45, 3.2] }
+    };
+
+    function cenaApresentacao() {
+      posicionarAluno();
+      c.conversou = true;
+      var fato = FATOS[Math.floor(Math.random() * FATOS.length)];
+      S.cenaCurta({
+        tomadas: TOMADAS,
+        falas: [
+          { quem: 'aluno', tomada: 'alunoGato', texto: 'Que gato é esse?' },
+          { quem: 'prof', tomada: 'prof', gesto: 'explicar', olhar: GATO, texto: 'Esse é o Cachola, é o nosso mascote da plataforma Cachola do SENAC.' },
+          { quem: 'cachola', tomada: 'gato', texto: '!!', acao: function () {
+            c.estado = 'sentado';
+            definirOlhos(true);
+          } },
+          { quem: 'aluno', tomada: 'alunoGato', texto: 'Eita, ele acordou!' },
+          { quem: 'cachola', tomada: 'gato', texto: fato, acao: function () { c.estado = 'falando'; } },
+          { quem: 'aluno', tomada: 'alunoGato', texto: 'Eita! O que ele tá fazendo?', acao: function () { c.estado = 'falando'; } },
+          { quem: 'prof', tomada: 'prof', gesto: 'falar', olhar: GATO, texto: 'Ele está abrindo sua Cachola, ué!' },
+          { quem: 'aluno', tomada: 'gato', texto: 'Sinistro...', acao: function () {
+            c.estado = 'dormindo';
+            definirOlhos(false);
+          } }
+        ],
+        aoPular: function () {
+          c.estado = 'dormindo';
+          definirOlhos(false);
+        }
+      });
+    }
+
+    function cenaVaiEmbora() {
+      S.cenaCurta({
+        tomadas: TOMADAS,
+        seguir: c.raiz,
+        falas: [
+          { quem: 'cachola', tomada: 'gato', texto: 'Vou é dormir em outro lugar....', acao: function () {
+            c.estado = 'sentado';
+            definirOlhos(true);
+          } }
+        ],
+        aposFalas: function (fim) {
+          sairDaSala(fim);
+        },
+        aoPular: sumir
+      });
+    }
+
+    S.cachola = function () { return c; };
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola"];
   var painel = null;
   var timer = null;
   var gpu = null;
