@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.2.0',
+    versao: '2.3.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -1839,6 +1839,7 @@
       var placa = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), new THREE.MeshLambertMaterial({ map: texPlaca }));
       placa.position.set(placaX, 2.05, -P / 2 + 0.06);
       S.adicionar(placa);
+      S.mundo.placa = placa;
       var texNome = S.textura(128, 16, function (ctx, w, h) {
         ctx.fillStyle = '#0B4F9C';
         ctx.fillRect(0, 0, w, h);
@@ -2660,7 +2661,7 @@
       p.pernaE.rotation.x += (bal - p.pernaE.rotation.x) * k;
       p.pernaD.rotation.x += (-bal - p.pernaD.rotation.x) * k;
       p.bracoE.rotation.x += (-bal * 0.8 - p.bracoE.rotation.x) * k;
-      var alvoBracoD = p.gestoAte && S.agora() < p.gestoAte ? -2.85 : S.personagem.rolo.visible ? -0.5 : bal * 0.8;
+      var alvoBracoD = p.gestoAte && S.agora() < p.gestoAte ? -2.85 : typeof p.bracoFixo === 'number' ? p.bracoFixo : S.personagem.rolo.visible ? -0.5 : bal * 0.8;
       p.bracoD.rotation.x += (alvoBracoD - p.bracoD.rotation.x) * k;
       p.corpo.position.y = p.andando ? Math.abs(Math.sin(p.fase)) * 0.05 : Math.sin(S.agora() / 600) * 0.008;
     };
@@ -3715,7 +3716,7 @@
         var info = objs[id];
         var d = J.distancia(info);
         if (d > S.CFG.alcance) continue;
-        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' || id === 'cachola' ? 0.6 : 0);
+        var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' || id === 'cachola' || id === 'logoSenac' ? 0.6 : 0);
         if (nota < melhorNota) {
           melhorNota = nota;
           melhor = info;
@@ -3731,6 +3732,7 @@
         case 'cartaz': return 'Ver cartaz T-568B';
         case 'professor': return S.esperandoTocaAqui() ? 'Bater o toca aqui com o professor ✋' : 'Falar com o professor Herick';
         case 'cachola': return S.rotuloCachola();
+        case 'logoSenac': return 'Ver a logo do Senac';
         case 'porta': return 'Sair pela porta (seguir o professor)';
       }
       var f = S.faseAtual;
@@ -3810,6 +3812,8 @@
         return;
       }
       J.registrarAtividade();
+      if (S.segredo) S.segredo(info.id);
+      if (info.id === 'logoSenac') return S.aviso('Senac · a gente se vê amanhã! 🧡', 'info', 1500);
       if (info.id === 'professor') return falarProfessor();
       if (info.id === 'cachola') return S.usarCachola();
       if (info.id === 'porta') return sairPelaPorta();
@@ -5400,12 +5404,14 @@
           S.mundo.montarCaboMao();
           S.mundo.montarSeta();
           S.criarCachola();
+          S.prepararSegredo();
         }]
       ],
       atualizar: function (dt) { S.atualizarCachola(dt); },
       desmontar: function () {
         if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
         S.removerCachola();
+        S.removerCarlos();
       }
     });
 
@@ -5676,12 +5682,13 @@
     var FALANTES = {
       prof: { nome: function () { return 'Prof. Herick'; }, cor: C.laranja, texto: '#10203A' },
       aluno: { nome: function () { return S.aluno.nome; }, cor: '#4F9BFF', texto: '#071430' },
-      cachola: { nome: function () { return 'Cachola'; }, cor: '#39C46A', texto: '#071430' }
+      cachola: { nome: function () { return 'Cachola'; }, cor: '#39C46A', texto: '#071430' },
+      carlos: { nome: function () { return 'Prof. Carlos'; }, cor: '#C08A6A', texto: '#10203A' }
     };
 
     // Etiquetas de nome somem durante a cena (atrapalham os closes).
     function etiquetas(visiveis) {
-      [S.personagem, S.professor, S.cachola && S.cachola()].forEach(function (c) {
+      [S.personagem, S.professor, S.cachola && S.cachola(), S.carlos && S.carlos()].forEach(function (c) {
         if (!c) return;
         c.raiz.children.forEach(function (o) {
           if (o.isSprite) o.visible = visiveis;
@@ -8044,10 +8051,294 @@
     S.cachola = function () { return c; };
   });
 
+
+  /* ================================================================== */
+  secao('K02-segredo-carlos', function () {
+    // Easter egg da fase 1: PC-03 (3x) + PC-04 (1x) + logo do Senac (5x)
+    // chamam o professor Carlos, que entra pela porta com um "presente".
+    var PELE = '#EBB98F';
+    var CABELO = '#2B1A10';
+    var BARBA = '#3A2416';
+    var CAMISA = '#6E4B3A';
+    var JEANS = '#3E5C80';
+    var c = null;
+    var cont = null;
+
+    function px(ctx, cor, x, y, l, a) {
+      ctx.fillStyle = cor;
+      ctx.fillRect(x, y, l || 1, a || 1);
+    }
+
+    function texRosto() {
+      return S.textura(16, 16, function (ctx) {
+        px(ctx, PELE, 0, 0, 16, 16);
+        px(ctx, CABELO, 0, 0, 16, 2);
+        px(ctx, CABELO, 0, 2, 2, 1);
+        px(ctx, CABELO, 14, 2, 2, 1);
+        px(ctx, CABELO, 3, 5, 4, 1); // sobrancelhas
+        px(ctx, CABELO, 9, 5, 4, 1);
+        px(ctx, '#2E1A0F', 4, 7, 2, 2); // olhos
+        px(ctx, '#2E1A0F', 10, 7, 2, 2);
+        px(ctx, '#F1E6DA', 5, 7, 1, 1);
+        px(ctx, '#F1E6DA', 11, 7, 1, 1);
+        px(ctx, 'rgba(120,60,30,0.28)', 7, 8, 2, 3); // nariz
+        // Barba curta e bigode.
+        px(ctx, 'rgba(58,36,22,0.75)', 0, 8, 1, 6);
+        px(ctx, 'rgba(58,36,22,0.75)', 15, 8, 1, 6);
+        px(ctx, 'rgba(58,36,22,0.85)', 1, 12, 14, 4);
+        px(ctx, BARBA, 5, 11, 6, 1);
+        px(ctx, '#B06A58', 6, 12, 4, 1); // boca
+      });
+    }
+
+    function texLado(frenteEsq) {
+      return S.textura(16, 16, function (ctx) {
+        function p(cor, x, y, l, a) { px(ctx, cor, frenteEsq ? x : 16 - x - (l || 1), y, l, a); }
+        p(PELE, 0, 0, 16, 16);
+        p(CABELO, 0, 0, 16, 3);
+        p(CABELO, 10, 3, 6, 6);
+        p(CABELO, 5, 3, 2, 5);
+        p('rgba(58,36,22,0.8)', 0, 12, 8, 4);
+        p('#D9A47C', 8, 7, 2, 3);
+      });
+    }
+
+    function texPapel() {
+      return S.textura(32, 40, function (ctx, w, h) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#0B4F9C';
+        ctx.font = 'bold 7px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('50 QUESTÕES', w / 2, 8);
+        ctx.fillText('PORTUGOL', w / 2, 15);
+        ctx.fillStyle = '#9AA5B1';
+        for (var y = 20; y < 38; y += 3) ctx.fillRect(4, y, w - 8, 1);
+      });
+    }
+
+    function criar() {
+      var mPele = S.mat(parseInt(PELE.slice(1), 16));
+      var mCabelo = S.mat(parseInt(CABELO.slice(1), 16));
+      var mCamisa = S.mat(parseInt(CAMISA.slice(1), 16));
+      var mJeans = S.mat(parseInt(JEANS.slice(1), 16));
+      var mTenis = S.mat(0x2a2a2a);
+      var raiz = S.grupo(-7.0, 0, 3.0);
+      raiz.rotation.y = Math.PI / 2;
+      var corpo = S.grupo(0, 0, 0, raiz);
+      function perna(x) {
+        var piv = S.grupo(x, 0.74, 0, corpo);
+        S.caixa(0.23, 0.6, 0.25, mJeans, 0, -0.3, 0, piv);
+        S.caixa(0.25, 0.12, 0.33, mTenis, 0, -0.66, 0.04, piv);
+        return piv;
+      }
+      var pE = perna(-0.14);
+      var pD = perna(0.14);
+      S.caixa(0.64, 0.6, 0.36, mCamisa, 0, 1.04, 0, corpo);
+      function braco(x) {
+        var piv = S.grupo(x, 1.28, 0, corpo);
+        S.caixa(0.2, 0.26, 0.22, mCamisa, 0, -0.1, 0, piv);
+        S.caixa(0.16, 0.3, 0.17, mPele, 0, -0.37, 0, piv);
+        var mao = S.caixa(0.17, 0.15, 0.17, mPele, 0, -0.58, 0, piv);
+        return { piv: piv, mao: mao };
+      }
+      var bE = braco(-0.43);
+      var bD = braco(0.43);
+      S.caixa(0.2, 0.06, 0.18, mPele, 0, 1.37, 0, corpo);
+      var cab = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.52, 0.5), [
+        new THREE.MeshLambertMaterial({ map: texLado(true) }),
+        new THREE.MeshLambertMaterial({ map: texLado(false) }),
+        mCabelo, mPele,
+        new THREE.MeshLambertMaterial({ map: texRosto() }),
+        mCabelo
+      ]);
+      cab.position.set(0, 1.62, 0);
+      cab.castShadow = true;
+      corpo.add(cab);
+      // Cabelo curto com um topete.
+      S.caixa(0.58, 0.1, 0.54, mCabelo, 0, 1.92, -0.01, corpo);
+      S.caixa(0.36, 0.06, 0.2, mCabelo, -0.06, 1.98, 0.1, corpo, true);
+      S.caixa(0.58, 0.26, 0.06, mCabelo, 0, 1.78, -0.25, corpo, true);
+      // Papel na mão direita.
+      var papel = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.01, 0.23), [
+        S.mat(0xffffff), S.mat(0xffffff), new THREE.MeshLambertMaterial({ map: texPapel() }), S.mat(0xffffff), S.mat(0xffffff), S.mat(0xffffff)
+      ]);
+      papel.position.set(0, -0.62, 0.13);
+      papel.rotation.x = Math.PI / 2;
+      bD.piv.add(papel);
+      var etiqueta = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.texturaNome('Prof. Carlos', 'rgba(110,75,58,0.92)'), depthTest: false, transparent: true }));
+      etiqueta.scale.set(1.3, 0.2, 1);
+      etiqueta.position.set(0, 2.3, 0);
+      etiqueta.renderOrder = 10;
+      etiqueta.visible = false;
+      raiz.add(etiqueta);
+      c = { raiz: raiz, corpo: corpo, pE: pE, pD: pD, bE: bE.piv, bD: bD.piv, papel: papel, caminho: null, passo: 0, braco: 0 };
+    }
+
+    S.carlos = function () { return c; };
+    S.removerCarlos = function () { c = null; cont = null; };
+
+    // Anda pelos pontos do caminho; a porta abre quando ele se aproxima.
+    function andarPara(pontos, aoChegar) {
+      c.caminho = pontos.slice();
+      c.aoChegar = aoChegar;
+    }
+
+    function atualizar(dt) {
+      if (!c) return;
+      var anda = !!c.caminho;
+      if (anda) {
+        var pos = c.raiz.position;
+        var alvo = c.caminho[0];
+        var dx = alvo[0] - pos.x;
+        var dz = alvo[1] - pos.z;
+        var d = Math.sqrt(dx * dx + dz * dz);
+        var passo = 2.3 * dt;
+        if (d <= passo) {
+          pos.x = alvo[0];
+          pos.z = alvo[1];
+          c.caminho.shift();
+        } else {
+          pos.x += dx / d * passo;
+          pos.z += dz / d * passo;
+          var ang = Math.atan2(dx, dz);
+          var dif = ang - c.raiz.rotation.y;
+          while (dif > Math.PI) dif -= Math.PI * 2;
+          while (dif < -Math.PI) dif += Math.PI * 2;
+          c.raiz.rotation.y += dif * Math.min(1, dt * 10);
+        }
+        if (pos.x < -4 && S.mundo.porta) S.mundo.abrirPorta();
+        if (!c.caminho.length) {
+          c.caminho = null;
+          anda = false;
+          var fn = c.aoChegar;
+          c.aoChegar = null;
+          if (fn) fn();
+        }
+      }
+      c.passo += anda ? dt * 9 : 0;
+      var bal = anda ? Math.sin(c.passo) * 0.6 : 0;
+      var k = Math.min(1, dt * 12);
+      c.pE.rotation.x += (bal - c.pE.rotation.x) * k;
+      c.pD.rotation.x += (-bal - c.pD.rotation.x) * k;
+      c.bE.rotation.x += (-bal * 0.7 - c.bE.rotation.x) * k;
+      c.bD.rotation.x += ((c.braco || bal * 0.7) - c.bD.rotation.x) * k;
+      c.corpo.position.y = anda ? Math.abs(Math.sin(c.passo)) * 0.04 : 0;
+    }
+
+    // ---- Contagem do segredo ------------------------------------------------
+    S.prepararSegredo = function () {
+      cont = { pc3: 0, pc4: 0, logo: 0, feito: false };
+      if (S.mundo.placa) {
+        S.interativo(S.mundo.placa, {
+          id: 'logoSenac',
+          nome: 'Logo do Senac',
+          ancora: new THREE.Vector3(S.mundo.placa.position.x, 0, -3.7)
+        });
+      }
+    };
+
+    S.segredo = function (id) {
+      if (!cont || cont.feito || !S.faseAtual || S.faseAtual.id !== 'laboratorio') return;
+      if (id === 'pc:PC-03') cont.pc3++;
+      else if (id === 'pc:PC-04') cont.pc4++;
+      else if (id === 'logoSenac') cont.logo++;
+      else return;
+      if (cont.pc3 >= 3 && cont.pc4 >= 1 && cont.logo >= 5) {
+        cont.feito = true;
+        var tentar = S.protegido('segredo', function () {
+          if (S.fase !== 'jogo' || S.ui.modalAberto() || S.emCena()) {
+            setTimeout(tentar, 300);
+            return;
+          }
+          cena();
+        });
+        setTimeout(tentar, 600);
+      }
+    };
+
+    // ---- A cena ---------------------------------------------------------------
+    var ENCONTRO = { x: -2.5, z: 3.2 }; // onde o aluno espera
+    var PARADA = [-3.45, 3.15]; // onde o Carlos para, de frente para o aluno
+
+    function cena() {
+      if (!c) criar();
+      var p = S.personagem;
+      p.raiz.position.set(ENCONTRO.x, 0, ENCONTRO.z);
+      p.angulo = -Math.PI / 2;
+      p.raiz.rotation.y = p.angulo;
+      p.bracoFixo = null;
+      c.raiz.visible = true;
+      c.raiz.position.set(-7.0, 0, 3.0);
+      c.raiz.rotation.y = Math.PI / 2;
+      c.papel.visible = true;
+      c.braco = 0;
+      var papelNoAluno = false;
+      function entregarPapel() {
+        if (papelNoAluno) return;
+        papelNoAluno = true;
+        c.braco = 0;
+        p.maoD.add(c.papel);
+        c.papel.position.set(0, -0.08, 0.14);
+        p.bracoFixo = -1.0;
+      }
+      function chegar() {
+        c.caminho = null;
+        c.raiz.position.set(PARADA[0], 0, PARADA[1]);
+        c.raiz.rotation.y = Math.PI / 2;
+      }
+      function limpar() {
+        c.papel.visible = false;
+        p.bracoFixo = null;
+        c.raiz.visible = false;
+        c.caminho = null;
+        if (S.mundo.porta && !S.mundo.porta.liberada) S.mundo.porta.alvo = 0;
+      }
+      var nome = S.primeiroNome();
+      S.cenaCurta({
+        seguir: c.raiz,
+        tomadas: {
+          porta: { pos: [-1.3, 2.5, 4.4], alvo: [-5.2, 1.1, 2.95] },
+          carlos: { pos: [-1.6, 2.75, 4.5], alvo: [-3.45, 1.35, 3.1] },
+          aluno: { pos: [-4.35, 2.0, 2.45], alvo: [-2.5, 1.35, 3.2] },
+          dupla: { pos: [-2.95, 2.0, 5.7], alvo: [-2.95, 1.15, 3.15] }
+        },
+        falas: [
+          { quem: 'carlos', tomada: 'porta', texto: 'Ei, ' + nome + ', você está aqui!', acao: function () {
+            andarPara([[-5.4, 3.0], PARADA], chegar);
+          } },
+          { quem: 'aluno', tomada: 'aluno', texto: 'Professor Carlos?', acao: chegar },
+          { quem: 'carlos', tomada: 'carlos', texto: 'Tenho um presente para você.', acao: function () {
+            chegar();
+            c.braco = -1.35; // estende o braço com o papel
+          } },
+          { quem: 'aluno', tomada: 'dupla', texto: 'O que é isso?', acao: entregarPapel },
+          { quem: 'carlos', tomada: 'carlos', texto: '50tão. 50 questões em Portugol. Tem que me entregar hoje ainda.' },
+          { quem: 'aluno', tomada: 'aluno', texto: '....' }
+        ],
+        aposFalas: function (fim) {
+          entregarPapel();
+          andarPara([[-5.4, 3.0], [-7.2, 3.0]], function () {
+            limpar();
+            fim();
+          });
+        },
+        aoPular: limpar
+      });
+    }
+
+    // Integra ao laço da fase 1 (junto com o Cachola).
+    var atualizarCachola = S.atualizarCachola;
+    S.atualizarCachola = function (dt) {
+      atualizarCachola(dt);
+      atualizar(dt);
+    };
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos"];
   var painel = null;
   var timer = null;
   var gpu = null;
