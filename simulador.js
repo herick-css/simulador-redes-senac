@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '1.4.0',
+    versao: '1.5.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -241,6 +241,36 @@
     S.primeiroNome = function () {
       var n = ((S.aluno && S.aluno.nome) || 'aluno').trim().split(/\s+/)[0];
       return n.charAt(0).toUpperCase() + n.slice(1);
+    };
+
+    // Ícones desenhados em SVG: não dependem das fontes do aparelho
+    // (o símbolo ⏻ em texto não aparece em vários celulares).
+    var ICONES = {
+      energia: ['M12 3v8', 'M6.6 6.6a7.6 7.6 0 1 0 10.8 0'],
+      reset: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3', 'M19.6 3.8v4.2h-4.2'],
+      telaCheia: ['M4 9V4h5', 'M15 4h5v5', 'M20 15v5h-5', 'M9 20H4v-5']
+    };
+    S.icone = function (nome, tamanho, espessura) {
+      var NS = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('width', String(tamanho));
+      svg.setAttribute('height', String(tamanho));
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', String(espessura || 2.6));
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.style.display = 'block';
+      svg.style.margin = 'auto';
+      svg.style.pointerEvents = 'none';
+      (ICONES[nome] || []).forEach(function (d) {
+        var p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', d);
+        svg.appendChild(p);
+      });
+      return svg;
     };
 
     S.armazenar = function (chave, valor) {
@@ -1086,8 +1116,9 @@
         pointerEvents: 'none'
       }, '', hud.direita);
       if (S.toque && S.podeTelaCheia()) {
-        var bCheia = S.ui.botao('⛶', 'secundario', S.alternarTelaCheia, hud.direita);
-        S.estilo(bCheia, { padding: '6px 12px', fontSize: '16px' });
+        var bCheia = S.ui.botao('', 'secundario', S.alternarTelaCheia, hud.direita);
+        S.estilo(bCheia, { padding: '6px 10px', fontSize: '16px' });
+        bCheia.appendChild(S.icone('telaCheia', 18, 2.4));
         bCheia.setAttribute('aria-label', 'Tela cheia');
       }
       var bAjuda = S.ui.botao('?', 'secundario', function () { S.ui.mostrarComandos(false); }, hud.direita);
@@ -1607,20 +1638,39 @@
       var mListra = S.mat(C.laranja);
       var e = 0.12;
       S.caixa(L + e * 2, A, e, mParede, 0, A / 2, -P / 2 - e / 2);
-      S.caixa(e, A, P, mParede, -L / 2 - e / 2, A / 2, 0);
+      // Parede esquerda em partes: deixa o vão da porta (z 2,475 a 3,525).
+      var PORTA = { z0: 2.475, z1: 3.525, alt: 2.1 };
+      var trechosEsq = [[-P / 2, PORTA.z0], [PORTA.z1, P / 2]];
+      trechosEsq.forEach(function (t) {
+        S.caixa(e, A, t[1] - t[0], mParede, -L / 2 - e / 2, A / 2, (t[0] + t[1]) / 2);
+      });
+      S.caixa(e, A - PORTA.alt, PORTA.z1 - PORTA.z0, mParede, -L / 2 - e / 2, (A + PORTA.alt) / 2, (PORTA.z0 + PORTA.z1) / 2);
       S.caixa(e, A, P, mParede, L / 2 + e / 2, A / 2, 0);
       S.caixa(L + e * 2, 0.4, e, mParede, 0, 0.2, P / 2 + e / 2);
       // Faixa azul + listra laranja (identidade Senac).
       S.caixa(L, 0.95, 0.02, mFaixa, 0, 0.475, -P / 2 + 0.011, null, true);
-      S.caixa(0.02, 0.95, P, mFaixa, -L / 2 + 0.011, 0.475, 0, null, true);
+      trechosEsq.forEach(function (t) {
+        S.caixa(0.02, 0.95, t[1] - t[0], mFaixa, -L / 2 + 0.011, 0.475, (t[0] + t[1]) / 2, null, true);
+        S.caixa(0.03, 0.07, t[1] - t[0], mListra, -L / 2 + 0.015, 0.98, (t[0] + t[1]) / 2, null, true);
+      });
       S.caixa(0.02, 0.95, P, mFaixa, L / 2 - 0.011, 0.475, 0, null, true);
       S.caixa(L, 0.07, 0.03, mListra, 0, 0.98, -P / 2 + 0.015, null, true);
-      S.caixa(0.03, 0.07, P, mListra, -L / 2 + 0.015, 0.98, 0, null, true);
       S.caixa(0.03, 0.07, P, mListra, L / 2 - 0.015, 0.98, 0, null, true);
 
-      // Porta (parede esquerda) e janelas (direita).
-      S.caixa(0.06, 2.1, 1.05, S.mat(C.madeiraEscura), -L / 2 + 0.04, 1.05, 3.0);
-      S.caixa(0.08, 0.06, 0.18, S.mat(C.metal), -L / 2 + 0.09, 1.0, 2.65, null, true);
+      // Porta (parede esquerda) com dobradiça: abre para dentro da sala.
+      var dobradica = S.grupo(-L / 2 + 0.04, 0, PORTA.z0);
+      var folha = S.caixa(0.06, PORTA.alt, PORTA.z1 - PORTA.z0, S.mat(C.madeiraEscura), 0, PORTA.alt / 2, 0.525, dobradica);
+      var macaneta = S.caixa(0.08, 0.06, 0.18, S.mat(C.metal), 0.05, 1.0, 0.875, dobradica, true);
+      var mBatente = S.mat(C.metalEscuro);
+      S.caixa(0.1, PORTA.alt + 0.08, 0.06, mBatente, -L / 2 + 0.02, (PORTA.alt + 0.08) / 2, PORTA.z0 - 0.03, null, true);
+      S.caixa(0.1, PORTA.alt + 0.08, 0.06, mBatente, -L / 2 + 0.02, (PORTA.alt + 0.08) / 2, PORTA.z1 + 0.03, null, true);
+      S.caixa(0.1, 0.08, PORTA.z1 - PORTA.z0 + 0.12, mBatente, -L / 2 + 0.02, PORTA.alt + 0.04, 3.0, null, true);
+      // Corredor do lado de fora (aparece com a porta aberta).
+      S.caixa(2.2, 0.02, 1.4, S.mat(0x4a5466), -L / 2 - 1.2, 0.0, 3.0, null, true);
+      S.caixa(0.1, A, 1.4, S.mat(0x2c3647), -L / 2 - 2.3, A / 2, 3.0, null, true);
+      S.caixa(2.2, A, 0.1, S.mat(0x36415a), -L / 2 - 1.2, A / 2, 2.25, null, true);
+      S.caixa(2.2, A, 0.1, S.mat(0x36415a), -L / 2 - 1.2, A / 2, 3.75, null, true);
+      S.mundo.porta = { dobradica: dobradica, malhas: [folha, macaneta], angulo: 0, alvo: 0, liberada: false };
       var mVidro = S.mat(0xa9d6f5, { emissive: 0x4f86b5, emissiveIntensity: 0.35 });
       var mCaixilho = S.mat(C.metalEscuro);
       for (var j = 0; j < 3; j++) {
@@ -1675,6 +1725,31 @@
         id: 'quadro',
         nome: 'Quadro de missões',
         ancora: new THREE.Vector3(-1.7, 0, -3.7)
+      });
+    };
+
+    S.mundo.abrirPorta = function () {
+      if (S.mundo.porta) S.mundo.porta.alvo = 1.45;
+    };
+
+    S.mundo.atualizarPorta = function (dt) {
+      var p = S.mundo.porta;
+      if (!p || p.angulo === p.alvo) return;
+      p.angulo += (p.alvo - p.angulo) * Math.min(1, dt * 3.5);
+      if (Math.abs(p.alvo - p.angulo) < 0.002) p.angulo = p.alvo;
+      p.dobradica.rotation.y = p.angulo;
+    };
+
+    // A porta só vira objeto clicável quando a fase termina.
+    S.mundo.liberarPorta = function () {
+      var p = S.mundo.porta;
+      if (!p || p.liberada) return;
+      p.liberada = true;
+      S.mundo.abrirPorta();
+      S.interativo(p.malhas, {
+        id: 'porta',
+        nome: 'Porta (para o Laboratório 2)',
+        ancora: new THREE.Vector3(-5.1, 0, 3.0)
       });
     };
 
@@ -2628,8 +2703,8 @@
         partes.push(S.caixa(0.25, 0.1, 0.34, mSapato, 0, -0.66, 0.04, piv));
         return piv;
       }
-      perna(-0.14);
-      perna(0.14);
+      var pernaE = perna(-0.14);
+      var pernaD = perna(0.14);
 
       var mFrente = new THREE.MeshLambertMaterial({ map: texturaPeitoProf() });
       var mCostas = new THREE.MeshLambertMaterial({ map: texturaCostasProf() });
@@ -2688,8 +2763,13 @@
         cabeca: pivCabeca,
         bracoE: bracoE,
         bracoD: bracoD,
+        pernaE: pernaE,
+        pernaD: pernaD,
         yaw: 0,
-        alvoFixo: null
+        alvoFixo: null,
+        caminho: null,
+        passo: 0,
+        foi: false
       };
       S.interativo(partes, {
         id: 'professor',
@@ -2697,7 +2777,80 @@
         ancora: new THREE.Vector3(3.55, 0, 2.9)
       });
       S.colisor(POS.x, POS.z, 0.5, 0.4);
+      S.professor.colisor = S.colisores[S.colisores.length - 1];
     };
+
+    // Sai andando pelos pontos do caminho (contorna a mesa e vai até a porta).
+    S.professorSair = function (aoSair) {
+      var pr = S.professor;
+      if (!pr || pr.caminho || pr.foi) return;
+      pr.caminho = [[5.25, 2.2], [3.3, 2.3], [2.9, 3.05], [-5.0, 3.05], [-7.2, 3.05]];
+      pr.aoSair = aoSair;
+      pr.alvoFixo = null;
+      // Deixa de bloquear o caminho e de ser clicável.
+      var i = S.colisores.indexOf(pr.colisor);
+      if (i >= 0) S.colisores.splice(i, 1);
+      delete S.mundo.objetos.professor;
+      for (var k = S.interativos.length - 1; k >= 0; k--) {
+        var info = S.interativos[k].userData.info;
+        if (info && info.id === 'professor') S.interativos.splice(k, 1);
+      }
+      S.esconderBalaoProfessor();
+    };
+
+    // Pula a caminhada (quando o aluno pula a cena).
+    S.professorSumir = function () {
+      var pr = S.professor;
+      if (!pr || pr.foi) return;
+      if (!pr.caminho) S.professorSair(null);
+      pr.caminho = null;
+      pr.foi = true;
+      pr.raiz.visible = false;
+      S.mundo.abrirPorta();
+      var fn = pr.aoSair;
+      pr.aoSair = null;
+      if (fn) fn();
+    };
+
+    function andar(pr, dt) {
+      var pos = pr.raiz.position;
+      var alvo = pr.caminho[0];
+      var dx = alvo[0] - pos.x;
+      var dz = alvo[1] - pos.z;
+      var dist = Math.sqrt(dx * dx + dz * dz);
+      var passo = 2.4 * dt;
+      if (dist <= passo) {
+        pos.x = alvo[0];
+        pos.z = alvo[1];
+        pr.caminho.shift();
+      } else {
+        pos.x += dx / dist * passo;
+        pos.z += dz / dist * passo;
+        var ang = Math.atan2(dx, dz);
+        pr.raiz.rotation.y += difAngulo(pr.raiz.rotation.y, ang) * Math.min(1, dt * 9);
+      }
+      // A porta abre quando ele chega perto.
+      if (pos.x < -1.2) S.mundo.abrirPorta();
+      pr.passo += dt * 9;
+      var bal = Math.sin(pr.passo) * 0.6;
+      pr.pernaE.rotation.x = bal;
+      pr.pernaD.rotation.x = -bal;
+      pr.bracoE.rotation.x = -bal * 0.7;
+      pr.bracoD.rotation.x = bal * 0.7;
+      pr.bracoD.rotation.z = 0;
+      pr.corpo.position.y = Math.abs(Math.sin(pr.passo)) * 0.04;
+      pr.yaw *= 1 - Math.min(1, dt * 6);
+      pr.cabeca.rotation.y = pr.yaw;
+      pr.cabeca.rotation.x = 0;
+      if (!pr.caminho.length) {
+        pr.caminho = null;
+        pr.foi = true;
+        pr.raiz.visible = false;
+        var fn = pr.aoSair;
+        pr.aoSair = null;
+        if (fn) fn();
+      }
+    }
 
     // Gestos simples: 'aceno' (mão levantada balançando), 'apontar' e 'falar'.
     S.gestoProfessor = function (tipo, duracao) {
@@ -2713,12 +2866,16 @@
 
     S.atualizarProfessor = function (dt) {
       var pr = S.professor;
-      if (!pr) return;
+      if (!pr || pr.foi) return;
+      if (pr.caminho) {
+        andar(pr, dt);
+        return;
+      }
       // Cabeça segue o aluno (ou um ponto fixo durante a cena), com limite de giro.
       var alvo = pr.alvoFixo || (S.personagem && S.personagem.raiz.position);
       if (alvo) {
-        var mundo = Math.atan2(alvo.x - POS.x, alvo.z - POS.z);
-        var local = Math.max(-1.25, Math.min(1.25, difAngulo(POS.angulo, mundo)));
+        var mundo = Math.atan2(alvo.x - pr.raiz.position.x, alvo.z - pr.raiz.position.z);
+        var local = Math.max(-1.25, Math.min(1.25, difAngulo(pr.raiz.rotation.y, mundo)));
         pr.yaw += (local - pr.yaw) * Math.min(1, dt * 6);
         pr.cabeca.rotation.y = pr.yaw;
       }
@@ -2799,12 +2956,13 @@
 
     function atualizarBalao() {
       if (!balao) return;
-      if (S.agora() > balaoAte || S.pausado || !S.professor) {
+      if (S.agora() > balaoAte || S.pausado || !S.professor || S.professor.foi) {
         balao.style.display = 'none';
         return;
       }
       if (!vTmp) vTmp = new THREE.Vector3();
-      vTmp.set(POS.x, 2.45, POS.z).project(S.camera);
+      var rp = S.professor.raiz.position;
+      vTmp.set(rp.x, 2.45, rp.z).project(S.camera);
       if (vTmp.z > 1 || Math.abs(vTmp.x) > 1.1 || Math.abs(vTmp.y) > 1.1) {
         balao.style.display = 'none';
         return;
@@ -3214,7 +3372,7 @@
         feita: function () { return J.roteadorLigado; },
         alvos: function () { return ['roteador']; },
         dica1: 'O roteador fica na prateleira de cima do rack. Use-o e aperte o botão de energia.',
-        dica2: 'Procure o botão ⏻ no painel do roteador.'
+        dica2: 'Procure o botão de energia (vermelho, círculo com um traço) no painel do roteador.'
       },
       {
         id: 'ip1',
@@ -3267,7 +3425,9 @@
       J.indice = novo;
       S.mundo.desenharQuadro(lista, novo);
       if (novo === -1) {
-        S.ui.definirMissao(J.MISSOES.length, J.MISSOES.length, 'Todas as missões concluídas! Testando a rede…');
+        S.ui.definirMissao(J.MISSOES.length, J.MISSOES.length, J.saidaLiberada
+          ? 'Rede pronta! Siga o professor: saia pela porta (à esquerda).'
+          : 'Todas as missões concluídas! Testando a rede…');
         if (!J.concluido) J.concluirLaboratorio();
         return;
       }
@@ -3330,6 +3490,7 @@
       switch (info.id) {
         case 'quadro': return 'Ver missões';
         case 'professor': return 'Falar com o professor Herick';
+        case 'porta': return 'Sair pela porta (seguir o professor)';
         case 'cartaz': return 'Ver cartaz T-568B';
         case 'alicate': return 'Crimpar cabo';
         case 'switch':
@@ -3401,6 +3562,7 @@
       }
       J.registrarAtividade();
       if (info.id === 'professor') return falarProfessor();
+      if (info.id === 'porta') return sairPelaPorta();
       if (info.id === 'quadro') return S.minigames.quadro();
       if (info.id === 'cartaz') return S.minigames.cartaz();
       if (info.id === 'alicate') return usarAlicate();
@@ -3595,8 +3757,95 @@
       S.mundo.desenharTela(S.pcs['PC-01']);
       S.mundo.desenharTela(S.pcs['PC-02']);
       S.aviso('ping ' + b.ip + ' → resposta OK! A rede funciona.', 'ok', 3000);
-      setTimeout(S.protegido('fim', function () { S.ui.mostrarFim(); }), 2200);
+      // Espera fechar qualquer janela aberta e começa a cena de despedida.
+      var esperar = S.protegido('fim', function () {
+        if (S.ui.modalAberto() || S.fase !== 'jogo') {
+          setTimeout(esperar, 200);
+          return;
+        }
+        S.limparHover();
+        S.cenaFinal(S.protegido('fim:liberar', function () {
+          S.fase = 'jogo';
+          S.pausado = false;
+          S.ui.mostrarHud(true);
+          S.ui.atualizarControlesToque();
+          J.liberarSaida();
+        }));
+      });
+      setTimeout(esperar, 2200);
     };
+
+    // Depois que o professor sai, a porta vira o caminho para a próxima fase.
+    J.liberarSaida = function () {
+      J.saidaLiberada = true;
+      S.mundo.liberarPorta();
+      J.atualizarMissoes();
+      S.mundo.apontar(S.mundo.objetos.porta);
+      S.aviso('Siga o professor: clique na porta para ir ao Laboratório 2.', 'info', 4200);
+    };
+
+    // O aluno atravessa a porta; por enquanto isso encerra o jogo
+    // (a fase 2 ainda não existe).
+    function sairPelaPorta() {
+      if (J.saindo) return;
+      J.saindo = true;
+      S.fase = 'cena';
+      S.teclas = {};
+      S.ui.mostrarHud(false);
+      S.ui.atualizarControlesToque();
+      S.mundo.apontar(null);
+      S.limparHover();
+      var p = S.personagem;
+      var t = 0;
+      var naPorta = false;
+      var tFora = 0;
+      var cortina = S.ui.camada(40, {
+        background: '#000',
+        opacity: '0',
+        transition: 'opacity .6s ease',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#FFFFFF',
+        fontWeight: '700',
+        fontSize: '18px',
+        pointerEvents: 'none'
+      });
+      cortina.textContent = 'Indo para o Laboratório 2…';
+      S.atualizarCena = function (dt) {
+        t += dt;
+        var pos = p.raiz.position;
+        if (!naPorta) {
+          var dx = -5.3 - pos.x;
+          var dz = 3.0 - pos.z;
+          var d = Math.sqrt(dx * dx + dz * dz);
+          if (d < 0.15 || t > 4) {
+            naPorta = true;
+          } else {
+            S.joy.x = dx / d;
+            S.joy.z = dz / d;
+          }
+        }
+        if (naPorta) {
+          // Atravessa a porta (fora dos limites da sala).
+          S.joy.x = -1;
+          S.joy.z = 0;
+          pos.z += (3.0 - pos.z) * Math.min(1, dt * 6);
+          pos.x -= 2.6 * dt;
+          tFora += dt;
+          if (tFora > 0.25) cortina.style.opacity = '1';
+        }
+        S.atualizarMovimento(dt);
+        S.atualizarCamera(dt);
+        if (tFora > 1.1) {
+          S.atualizarCena = null;
+          S.joy.x = 0;
+          S.joy.z = 0;
+          S.ui.mostrarFim();
+          setTimeout(function () { cortina.remove(); }, 50);
+        }
+      };
+    }
   });
 
 
@@ -3851,7 +4100,7 @@
     var C = S.CSS;
     var MG = S.minigames;
 
-    // Frente do gabinete: o aluno precisa achar o botão de ligar (⏻).
+    // Frente do gabinete: o aluno precisa achar o botão de ligar (ícone de energia).
     MG.gabinete = function (pc, aoConcluir) {
       var m = S.ui.abrirModal('Gabinete do ' + pc.nome + ' · ligar o computador', { largura: '460px' });
       var ap = S.ui.compacto();
@@ -3904,7 +4153,7 @@
       painel.appendChild(linhaBotoes);
       var led = S.el('div', { width: '9px', height: '9px', borderRadius: '50%', background: '#2A3530', border: '1px solid #000' }, null, painel);
       linhaBotoes.appendChild(led);
-      function botaoRedondo(simbolo, tamanho, aria, aoClicar) {
+      function botaoRedondo(icone, tamanho, aria, aoClicar) {
         var b = S.el('button', {
           width: tamanho + 'px',
           height: tamanho + 'px',
@@ -3917,8 +4166,12 @@
           padding: '0',
           cursor: 'pointer',
           touchAction: 'manipulation',
-          lineHeight: '1'
-        }, simbolo, linhaBotoes);
+          lineHeight: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }, null, linhaBotoes);
+        b.appendChild(S.icone(icone, Math.round(tamanho * (icone === 'energia' ? 0.56 : 0.6))));
         b.type = 'button';
         b.setAttribute('aria-label', aria);
         b.addEventListener('click', S.protegido('gabinete:' + aria, function () {
@@ -3926,9 +4179,9 @@
         }));
         return b;
       }
-      // Ordem embaralhada: o aluno precisa reconhecer o símbolo ⏻.
+      // Ordem embaralhada: o aluno precisa reconhecer o símbolo de energia.
       var botoes = [
-        ['⏻', ap ? 42 : 50, 'Botão de energia', function (b) {
+        ['energia', ap ? 42 : 50, 'Botão de energia', function (b) {
           ligando = true;
           b.style.borderColor = '#39FF6A';
           led.style.background = '#39FF6A';
@@ -3939,10 +4192,10 @@
             aoConcluir();
           }, 800);
         }],
-        ['↺', ap ? 26 : 30, 'Botão de reset', function (b) {
+        ['reset', ap ? 26 : 30, 'Botão de reset', function (b) {
           S.jogo.erros++;
           b.style.borderColor = '#D63A33';
-          msg('✖ Esse é o Reset: ele reinicia um PC que já está ligado. Procure o botão ⏻.', 'erro');
+          msg('✖ Esse é o Reset: ele reinicia um PC que já está ligado. Procure o botão de energia (círculo com um traço em cima).', 'erro');
         }]
       ];
       S.embaralhar(botoes).forEach(function (bt) { botaoRedondo(bt[0], bt[1], bt[2], bt[3]); });
@@ -3954,7 +4207,7 @@
         u.addEventListener('click', function () { if (!ligando) msg('Portas USB frontais: pendrive, fone, carregador.', 'info'); });
       });
       var dica = S.el('div', { flex: '1 1 160px', fontSize: '12px', color: S.CSS.cinza, lineHeight: '1.45', alignSelf: 'center' }, null, area);
-      dica.textContent = 'O botão de ligar costuma ser o maior da frente do gabinete e tem o símbolo ⏻ (um círculo com um traço). O LED acende quando o PC liga.';
+      dica.textContent = 'O botão de ligar costuma ser o maior da frente do gabinete e tem o símbolo de energia: um círculo com um traço em cima. O LED acende quando o PC liga.';
     };
 
     // Traseira do gabinete: o aluno precisa achar a porta RJ45.
@@ -4172,8 +4425,13 @@
           fontWeight: '700',
           fontSize: nome === 'energia' ? '18px' : '10px',
           cursor: 'pointer',
-          touchAction: 'manipulation'
-        }, nome === 'energia' ? '⏻' : (J.portaRoteador === nome ? '●' : ''), col);
+          touchAction: 'manipulation',
+          padding: '0'
+        }, nome === 'energia' ? null : (J.portaRoteador === nome ? '●' : ''), col);
+        if (nome === 'energia') {
+          b.appendChild(S.icone('energia', 22, 2.8));
+          b.setAttribute('aria-label', 'Ligar o roteador');
+        }
         b.type = 'button';
         S.el('div', { fontSize: '11px', fontWeight: '700' }, rotulo, col);
         b.addEventListener('click', S.protegido('roteador:' + nome, aoClicar));
@@ -4483,7 +4741,8 @@
       var sessao = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       var t = S.ui.tela(30, '520px');
       S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO CONCLUÍDO', t.cartao);
-      S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 14px' }, 'A rede está funcionando! 🎉', t.cartao);
+      S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 4px' }, 'A rede está funcionando! 🎉', t.cartao);
+      S.el('div', { fontSize: '13px', color: C.cinza, marginBottom: '14px' }, 'O Laboratório 2 está em construção. Em breve!', t.cartao);
 
       var stats = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }, null, t.cartao);
       function stat(rotulo, valor, cor) {
@@ -4804,6 +5063,8 @@
           // Cena de abertura: câmera e personagens seguem o roteiro.
           if (S.atualizarCena) S.atualizarCena(dt);
           S.atualizarProfessor(dt);
+          S.mundo.atualizarPorta(dt);
+          S.mundo.atualizarSeta(agora / 1000);
           S.renderer.render(S.cena, S.camera);
           ajustarQualidade(agora);
           medir(agora);
@@ -4820,6 +5081,7 @@
         S.mundo.atualizarCaboMao();
         S.mundo.atualizarSeta(agora / 1000);
         S.atualizarProfessor(dt);
+        S.mundo.atualizarPorta(dt);
         S.jogo.atualizarDicas();
         S.jogo.atualizarPrompt();
         S.renderer.render(S.cena, S.camera);
@@ -4865,7 +5127,8 @@
       ferramentas: { pos: [-3.2, 2.3, 2.7], alvo: [-4.9, 0.85, 0.3] },
       switch: { pos: [3.7, 1.7, -1.9], alvo: [4.6, 1.05, -4.0] },
       roteador: { pos: [3.95, 1.85, -2.5], alvo: [4.6, 1.42, -4.0] },
-      quadro: { pos: [-1.7, 2.05, -0.55], alvo: [-1.7, 1.6, -4.5] }
+      quadro: { pos: [-1.7, 2.05, -0.55], alvo: [-1.7, 1.6, -4.5] },
+      despedida: { pos: [3.1, 2.2, 4.4], alvo: [5.1, 1.45, 3.2] }
     };
 
     function roteiro() {
@@ -5045,7 +5308,7 @@
       ui.seguir.style.visibility = 'hidden';
       var t = TOMADAS[f.tomada];
       irPara(v3(t.pos), v3(t.alvo), i === 0 ? 0.6 : 1.1);
-      var pr = S.professor;
+      var pr = S.professor || {};
       if (prof) {
         S.gestoProfessor(f.gesto, f.gesto === 'aceno' ? 1.6 : 2.6);
         // Ao apontar algo, o professor olha para lá; senão olha o aluno.
@@ -5057,7 +5320,7 @@
     }
 
     function avancar() {
-      if (!est || est.saindo) return;
+      if (!est || est.saindo || est.etapa === 'seguir') return;
       if (est.etapa === 'chegada') {
         chegar();
         return;
@@ -5067,7 +5330,12 @@
         return;
       }
       if (est.falaAtual + 1 < est.falas.length) mostrarFala(est.falaAtual + 1);
-      else terminar(false);
+      else if (est.aposFalas) {
+        var fn = est.aposFalas;
+        est.aposFalas = null;
+        est.ui.caixa.style.display = 'none';
+        fn();
+      } else terminar(false);
     }
 
     // Coloca o aluno diante do professor (no fim da caminhada ou ao pular).
@@ -5090,11 +5358,12 @@
         p.angulo = Math.PI / 2;
         p.raiz.rotation.y = p.angulo;
       }
+      if (pulou && est.aoPular) est.aoPular();
       S.joy.x = 0;
       S.joy.z = 0;
       est.saindo = true;
       est.etapa = 'saida';
-      S.professor.alvoFixo = null;
+      if (S.professor) S.professor.alvoFixo = null;
       var ui = est.ui;
       ui.caixa.style.display = 'none';
       ui.titulo.style.opacity = '0';
@@ -5126,6 +5395,7 @@
         aoFim: aoFim,
         falas: roteiro(),
         etapa: 'chegada',
+        virarAluno: true,
         tempo: 0,
         alvoAtual: v3(TOMADAS.abertura.alvo),
         ui: montarUi()
@@ -5138,6 +5408,57 @@
       var d = TOMADAS.dupla;
       irPara(v3(d.pos), v3(d.alvo), 3.4);
       S.atualizarCena = atualizar;
+    };
+
+    // ---- Cena final: o professor chama o aluno e sai pela porta ----------
+    var camSeguir = null;
+    function seguirProfessor(dt) {
+      var pr = S.professor;
+      if (!camSeguir) camSeguir = { pos: new THREE.Vector3(), alvo: new THREE.Vector3() };
+      var rp = pr.raiz.position;
+      var px = Math.max(-4.6, rp.x);
+      camSeguir.pos.set(px * 0.6 + 0.4, 3.9, rp.z + 5.4);
+      camSeguir.alvo.set(px, 1.0, rp.z - 0.4);
+      var k = 1 - Math.exp(-dt * 3);
+      S.camera.position.lerp(camSeguir.pos, k);
+      est.alvoAtual.lerp(camSeguir.alvo, k);
+      S.camera.lookAt(est.alvoAtual);
+    }
+
+    S.cenaFinal = function (aoFim) {
+      S.fase = 'cena';
+      S.teclas = {};
+      S.joy.x = 0;
+      S.joy.z = 0;
+      S.ui.mostrarHud(false);
+      if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+      var dirAlvo = new THREE.Vector3();
+      S.camera.getWorldDirection(dirAlvo);
+      est = {
+        aoFim: aoFim,
+        falas: [
+          { quem: 'prof', tomada: 'despedida', gesto: 'aceno', texto: 'Que bom que você conseguiu, ' + S.primeiroNome() + '! Vamos para o segundo laboratório agora! Siga-me!' }
+        ],
+        etapa: 'dialogo',
+        virarAluno: false,
+        tempo: 0,
+        alvoAtual: S.camera.position.clone().add(dirAlvo.multiplyScalar(4)),
+        ui: montarUi()
+      };
+      est.ui.titulo.textContent = 'MISSÕES CONCLUÍDAS!';
+      etiquetas(false);
+      // Depois da fala, o professor sai andando e a câmera acompanha.
+      est.aposFalas = function () {
+        est.etapa = 'seguir';
+        S.professorSair(function () {
+          if (est) setTimeout(function () { terminar(false); }, 350);
+        });
+      };
+      est.aoPular = function () {
+        S.professorSumir();
+      };
+      S.atualizarCena = atualizar;
+      mostrarFala(0);
     };
 
     function atualizar(dt) {
@@ -5157,9 +5478,11 @@
           S.joy.z = dz / dist * Math.max(0.35, f);
         }
       } else if (est.etapa === 'dialogo') {
-        // Vira o aluno de frente para o professor.
-        p.angulo += (Math.PI / 2 - p.angulo) * Math.min(1, dt * 8);
-        p.raiz.rotation.y = p.angulo;
+        // Na abertura o aluno fica de frente para o professor.
+        if (est.virarAluno) {
+          p.angulo += (Math.PI / 2 - p.angulo) * Math.min(1, dt * 8);
+          p.raiz.rotation.y = p.angulo;
+        }
         var f2 = est.falas[est.falaAtual];
         if (!est.completa) {
           est.letras = Math.min(f2.texto.length, est.letras + dt * 42);
@@ -5172,7 +5495,8 @@
       }
       S.atualizarMovimento(dt);
       if (est.etapa === 'dialogo') p.raiz.rotation.y = p.angulo;
-      atualizarCamera(dt);
+      if (est.etapa === 'seguir') seguirProfessor(dt);
+      else atualizarCamera(dt);
       if (est.etapa === 'saida') {
         est.fimEm -= dt;
         if (est.fimEm <= 0) concluir();
