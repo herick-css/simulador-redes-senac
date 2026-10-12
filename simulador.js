@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.3.0',
+    versao: '2.3.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -8104,16 +8104,22 @@
     }
 
     function texPapel() {
-      return S.textura(32, 40, function (ctx, w, h) {
+      return S.textura(64, 84, function (ctx, w, h) {
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = '#0B4F9C';
-        ctx.font = 'bold 7px Arial';
+        ctx.fillStyle = '#F7941D';
+        ctx.fillRect(0, 0, w, 4);
         ctx.textAlign = 'center';
-        ctx.fillText('50 QUESTÕES', w / 2, 8);
-        ctx.fillText('PORTUGOL', w / 2, 15);
+        ctx.fillStyle = '#0B4F9C';
+        ctx.font = 'bold 8px Arial';
+        ctx.fillText('50 QUESTÕES', w / 2, 15);
+        ctx.font = 'bold 11px Arial';
+        ctx.fillText('PORTUGOL', w / 2, 27);
         ctx.fillStyle = '#9AA5B1';
-        for (var y = 20; y < 38; y += 3) ctx.fillRect(4, y, w - 8, 1);
+        for (var y = 34; y < 70; y += 5) ctx.fillRect(6, y, w - 12, 1);
+        ctx.fillStyle = '#D63A33';
+        ctx.font = 'bold 7px Arial';
+        ctx.fillText('ENTREGA: HOJE!', w / 2, 79);
       });
     }
 
@@ -8159,12 +8165,17 @@
       S.caixa(0.58, 0.1, 0.54, mCabelo, 0, 1.92, -0.01, corpo);
       S.caixa(0.36, 0.06, 0.2, mCabelo, -0.06, 1.98, 0.1, corpo, true);
       S.caixa(0.58, 0.26, 0.06, mCabelo, 0, 1.78, -0.25, corpo, true);
-      // Papel na mão direita.
-      var papel = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.01, 0.23), [
-        S.mat(0xffffff), S.mat(0xffffff), new THREE.MeshLambertMaterial({ map: texPapel() }), S.mat(0xffffff), S.mat(0xffffff), S.mat(0xffffff)
-      ]);
-      papel.position.set(0, -0.62, 0.13);
-      papel.rotation.x = Math.PI / 2;
+      // Papel: frente com o texto e verso branco (dois planos, o texto
+      // nunca aparece espelhado).
+      var papel = new THREE.Group();
+      var frente = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.22), new THREE.MeshBasicMaterial({ map: texPapel() }));
+      var verso = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.22), new THREE.MeshBasicMaterial({ color: 0xf2f2f2 }));
+      verso.rotation.y = Math.PI;
+      verso.position.z = -0.002;
+      papel.add(frente);
+      papel.add(verso);
+      papel.position.set(0, -0.62, 0.14);
+      papel.rotation.x = -0.4;
       bD.piv.add(papel);
       var etiqueta = new THREE.Sprite(new THREE.SpriteMaterial({ map: S.texturaNome('Prof. Carlos', 'rgba(110,75,58,0.92)'), depthTest: false, transparent: true }));
       etiqueta.scale.set(1.3, 0.2, 1);
@@ -8193,7 +8204,7 @@
         var dx = alvo[0] - pos.x;
         var dz = alvo[1] - pos.z;
         var d = Math.sqrt(dx * dx + dz * dz);
-        var passo = 2.3 * dt;
+        var passo = (c.vel || 2.3) * dt;
         if (d <= passo) {
           pos.x = alvo[0];
           pos.z = alvo[1];
@@ -8228,7 +8239,7 @@
 
     // ---- Contagem do segredo ------------------------------------------------
     S.prepararSegredo = function () {
-      cont = { pc3: 0, pc4: 0, logo: 0, feito: false };
+      cont = { passo: 0, feito: false };
       if (S.mundo.placa) {
         S.interativo(S.mundo.placa, {
           id: 'logoSenac',
@@ -8238,13 +8249,15 @@
       }
     };
 
+    // Sequência obrigatória: PC-03 (3x) → PC-04 (1x) → logo do Senac (5x).
+    // Qualquer passo fora de ordem recomeça a contagem.
+    var SEQUENCIA = ['pc:PC-03', 'pc:PC-03', 'pc:PC-03', 'pc:PC-04', 'logoSenac', 'logoSenac', 'logoSenac', 'logoSenac', 'logoSenac'];
     S.segredo = function (id) {
       if (!cont || cont.feito || !S.faseAtual || S.faseAtual.id !== 'laboratorio') return;
-      if (id === 'pc:PC-03') cont.pc3++;
-      else if (id === 'pc:PC-04') cont.pc4++;
-      else if (id === 'logoSenac') cont.logo++;
-      else return;
-      if (cont.pc3 >= 3 && cont.pc4 >= 1 && cont.logo >= 5) {
+      if (id !== 'pc:PC-03' && id !== 'pc:PC-04' && id !== 'logoSenac') return;
+      if (SEQUENCIA[cont.passo || 0] === id) cont.passo = (cont.passo || 0) + 1;
+      else cont.passo = id === SEQUENCIA[0] ? 1 : 0;
+      if (cont.passo === SEQUENCIA.length) {
         cont.feito = true;
         var tentar = S.protegido('segredo', function () {
           if (S.fase !== 'jogo' || S.ui.modalAberto() || S.emCena()) {
@@ -8258,34 +8271,83 @@
     };
 
     // ---- A cena ---------------------------------------------------------------
-    var ENCONTRO = { x: -2.5, z: 3.2 }; // onde o aluno espera
-    var PARADA = [-3.45, 3.15]; // onde o Carlos para, de frente para o aluno
+    // O aluno fica perto da placa do Senac, de frente; o Carlos para a uma
+    // boa distância, só se aproxima para entregar o papel e depois volta.
+    var ALUNO = { x: 2.3, z: -3.6 };
+    var LONGE = [2.3, -1.35]; // onde o Carlos conversa (≈2,2 m do aluno)
+    var PERTO = [2.3, -2.65]; // onde ele para para entregar
+    var ENTRADA = [[-5.4, 3.0], [2.6, 3.0], [2.6, -0.8]];
 
     function cena() {
       if (!c) criar();
       var p = S.personagem;
-      p.raiz.position.set(ENCONTRO.x, 0, ENCONTRO.z);
-      p.angulo = -Math.PI / 2;
-      p.raiz.rotation.y = p.angulo;
+      p.raiz.position.set(ALUNO.x, 0, ALUNO.z);
+      p.angulo = 0; // de frente (para a câmera do jogo)
+      p.raiz.rotation.y = 0;
       p.bracoFixo = null;
       c.raiz.visible = true;
       c.raiz.position.set(-7.0, 0, 3.0);
       c.raiz.rotation.y = Math.PI / 2;
       c.papel.visible = true;
       c.braco = 0;
-      var papelNoAluno = false;
-      function entregarPapel() {
-        if (papelNoAluno) return;
-        papelNoAluno = true;
-        c.braco = 0;
-        p.maoD.add(c.papel);
-        c.papel.position.set(0, -0.08, 0.14);
-        p.bracoFixo = -1.0;
+      c.vel = 2.8;
+      var estado = { entregue: false, voltou: false };
+
+      function olharAluno() {
+        c.raiz.rotation.y = Math.PI; // de frente para o aluno
       }
-      function chegar() {
+      function noLugar() {
         c.caminho = null;
-        c.raiz.position.set(PARADA[0], 0, PARADA[1]);
-        c.raiz.rotation.y = Math.PI / 2;
+        c.raiz.position.set(LONGE[0], 0, LONGE[1]);
+        olharAluno();
+      }
+      function papelNaMao() {
+        p.maoD.add(c.papel);
+        c.papel.position.set(0, -0.06, 0.16);
+        c.papel.rotation.set(-0.5, 0, 0);
+      }
+      function entregar() {
+        if (estado.entregue) return;
+        estado.entregue = true;
+        papelNaMao();
+        p.bracoFixo = -1.0;
+        c.braco = 0;
+      }
+      // Aproxima, entrega e volta para o lugar.
+      function aproximarEEntregar() {
+        if (estado.entregue) return;
+        andarPara([PERTO], function () {
+          olharAluno();
+          c.braco = -1.35;
+          setTimeout(function () {
+            if (!c || !c.raiz.visible) return;
+            entregar();
+            setTimeout(function () {
+              if (!c || !c.raiz.visible) return;
+              andarPara([LONGE], function () {
+                olharAluno();
+                estado.voltou = true;
+              });
+            }, 450);
+          }, 600);
+        });
+      }
+      // Garante o estado final da entrega (se o aluno avançar rápido).
+      function concluirEntrega() {
+        entregar();
+        if (!estado.voltou) {
+          estado.voltou = true;
+          noLugar();
+        }
+      }
+      // Zoom: o papel fica na frente do aluno, virado para a câmera.
+      var CAM_PAPEL = [ALUNO.x + 0.12, 1.42, ALUNO.z + 0.82];
+      function mostrarPapel() {
+        concluirEntrega();
+        S.adicionar(c.papel);
+        c.papel.position.set(ALUNO.x + 0.08, 1.18, ALUNO.z + 0.34);
+        c.papel.rotation.set(0, 0, 0);
+        c.papel.lookAt(CAM_PAPEL[0], CAM_PAPEL[1], CAM_PAPEL[2]);
       }
       function limpar() {
         c.papel.visible = false;
@@ -8294,31 +8356,38 @@
         c.caminho = null;
         if (S.mundo.porta && !S.mundo.porta.liberada) S.mundo.porta.alvo = 0;
       }
+
       var nome = S.primeiroNome();
       S.cenaCurta({
         seguir: c.raiz,
         tomadas: {
-          porta: { pos: [-1.3, 2.5, 4.4], alvo: [-5.2, 1.1, 2.95] },
-          carlos: { pos: [-1.6, 2.75, 4.5], alvo: [-3.45, 1.35, 3.1] },
-          aluno: { pos: [-4.35, 2.0, 2.45], alvo: [-2.5, 1.35, 3.2] },
-          dupla: { pos: [-2.95, 2.0, 5.7], alvo: [-2.95, 1.15, 3.15] }
+          entrada: { pos: [0.6, 4.6, 6.2], alvo: [-0.6, 0.6, 0.6] },
+          dupla: { pos: [5.3, 2.1, -2.45], alvo: [2.3, 1.1, -2.5] },
+          carlos: { pos: [3.3, 2.65, -4.3], alvo: [2.3, 1.35, -1.35] },
+          aluno: { pos: [0.95, 2.5, -0.3], alvo: [2.3, 1.3, -3.6] },
+          papel: { pos: CAM_PAPEL, alvo: [ALUNO.x + 0.08, 1.18, ALUNO.z + 0.34] }
         },
         falas: [
-          { quem: 'carlos', tomada: 'porta', texto: 'Ei, ' + nome + ', você está aqui!', acao: function () {
-            andarPara([[-5.4, 3.0], PARADA], chegar);
+          { quem: 'carlos', tomada: 'entrada', texto: 'Ei, ' + nome + ', você está aqui!', acao: function () {
+            andarPara(ENTRADA.concat([LONGE]), olharAluno);
           } },
-          { quem: 'aluno', tomada: 'aluno', texto: 'Professor Carlos?', acao: chegar },
-          { quem: 'carlos', tomada: 'carlos', texto: 'Tenho um presente para você.', acao: function () {
-            chegar();
-            c.braco = -1.35; // estende o braço com o papel
+          { quem: 'aluno', tomada: 'aluno', texto: 'Professor Carlos?', acao: noLugar },
+          { quem: 'carlos', tomada: 'dupla', texto: 'Tenho um presente para você.', acao: function () {
+            noLugar();
+            aproximarEEntregar();
           } },
-          { quem: 'aluno', tomada: 'dupla', texto: 'O que é isso?', acao: entregarPapel },
-          { quem: 'carlos', tomada: 'carlos', texto: '50tão. 50 questões em Portugol. Tem que me entregar hoje ainda.' },
+          { quem: 'aluno', tomada: 'papel', texto: 'O que é isso?', acao: mostrarPapel },
+          { quem: 'carlos', tomada: 'carlos', texto: '50tão. 50 questões em Portugol. Tem que me entregar hoje ainda.', acao: function () {
+            concluirEntrega();
+            papelNaMao();
+          } },
           { quem: 'aluno', tomada: 'aluno', texto: '....' }
         ],
         aposFalas: function (fim) {
-          entregarPapel();
-          andarPara([[-5.4, 3.0], [-7.2, 3.0]], function () {
+          concluirEntrega();
+          papelNaMao();
+          var volta = ENTRADA.slice().reverse().concat([[-7.2, 3.0]]);
+          andarPara(volta, function () {
             limpar();
             fim();
           });
