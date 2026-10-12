@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.3.3',
+    versao: '2.3.4',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -5887,7 +5887,12 @@
         var fn = est.aposFalas;
         est.aposFalas = null;
         est.ui.caixa.style.display = 'none';
-        fn();
+        try {
+          fn();
+        } catch (e) {
+          registrarErro('cena:aposFalas', e);
+          terminar(true);
+        }
       } else terminar(false);
     }
 
@@ -5912,7 +5917,8 @@
         p.raiz.rotation.y = p.angulo;
       }
       if (est.alunoAlvo) alunoNoLugar();
-      if (pulou && est.aoPular) est.aoPular();
+      // Um erro ao pular nunca pode travar a cena.
+      if (pulou && est.aoPular) S.protegido('cena:pular', est.aoPular)();
       S.joy.x = 0;
       S.joy.z = 0;
       est.saindo = true;
@@ -7998,12 +8004,16 @@
       }
     }
 
+    // Pular a cena: o gato some direto (sem tentar andar por um caminho vazio).
     function sumir() {
       if (!c || c.estado === 'foi') return;
       if (c.estado !== 'andando') sairDaSala(null);
-      c.caminho = [];
-      c.raiz.position.set(-7, 0.07, 3);
-      andar(0);
+      c.aoSair = null;
+      c.caminho = null;
+      c.estado = 'foi';
+      c.raiz.visible = false;
+      c.zs.forEach(function (z) { z.sp.visible = false; });
+      if (S.mundo.porta && !S.mundo.porta.liberada) S.mundo.porta.alvo = 0;
     }
 
     // ---- Balão "ZzZz" -------------------------------------------------------
