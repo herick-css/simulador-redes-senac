@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.3.1',
+    versao: '2.3.3',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -2829,9 +2829,15 @@
     var balaoTexto = null;
     var vTmp = null;
 
+    // Herick reage ao que aconteceu na sala (Cachola foi embora, Carlos…).
+    var reacao = null;
+    S.reacaoProfessor = function (texto) { reacao = texto; };
+    S.falaReacaoProfessor = function () { return reacao; };
+
     S.criarProfessor = function () {
       gesto = null;
       tocaAqui = null;
+      reacao = null;
       mesaProfessor();
       var mPele = S.mat(parseInt(PELE.slice(1), 16));
       var mCabelo = S.mat(parseInt(CABELO.slice(1), 16));
@@ -3837,6 +3843,11 @@
 
     function falarProfessor() {
       if (S.baterTocaAqui()) return;
+      var reacao = S.falaReacaoProfessor();
+      if (reacao) {
+        S.professorFalar(reacao, 3400);
+        return;
+      }
       var nome = S.primeiroNome();
       S.professorFalar(J.missoesFeitas() === 0
         ? 'Boa sorte com a atividade, ' + nome + '!'
@@ -5900,6 +5911,7 @@
         p.angulo = Math.PI / 2;
         p.raiz.rotation.y = p.angulo;
       }
+      if (est.alunoAlvo) alunoNoLugar();
       if (pulou && est.aoPular) est.aoPular();
       S.joy.x = 0;
       S.joy.z = 0;
@@ -6016,12 +6028,72 @@
         };
       }
       if (cfg.aoPular) est.aoPular = cfg.aoPular;
+      // O aluno anda até o lugar da cena (em vez de ser "teletransportado").
+      if (cfg.posAluno) est.alunoAlvo = { x: cfg.posAluno.x, z: cfg.posAluno.z, angulo: cfg.posAluno.angulo, t: 0, chegou: false };
       S.atualizarCena = atualizar;
       mostrarFala(0);
       return true;
     };
 
     S.emCena = function () { return !!est; };
+
+    // ---- Caminhada do aluno até a marca da cena --------------------------
+    function difAng(a, b) {
+      var d = b - a;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    }
+    // Devolve true enquanto anda, 'virar' depois de chegar (girando).
+    function guiarAluno(dt) {
+      var a = est.alunoAlvo;
+      if (!a) return false;
+      var p = S.personagem;
+      if (a.chegou) return 'virar';
+      a.t += dt;
+      var dx = a.x - p.raiz.position.x;
+      var dz = a.z - p.raiz.position.z;
+      var d = Math.sqrt(dx * dx + dz * dz);
+      // Chegou (ou ficou preso em algum móvel por muito tempo): encaixa.
+      if (d < 0.08 || a.t > 3.5) {
+        p.raiz.position.x = a.x;
+        p.raiz.position.z = a.z;
+        S.joy.x = 0;
+        S.joy.z = 0;
+        a.chegou = true;
+        return 'virar';
+      }
+      var f = Math.max(0.35, Math.min(1, d / 0.5));
+      S.joy.x = dx / d * f;
+      S.joy.z = dz / d * f;
+      return true;
+    }
+    function virarAluno(dt) {
+      var a = est.alunoAlvo;
+      var p = S.personagem;
+      var dif = difAng(p.angulo, a.angulo);
+      p.angulo += dif * Math.min(1, dt * 9);
+      p.raiz.rotation.y = p.angulo;
+      if (Math.abs(dif) < 0.01) {
+        p.angulo = a.angulo;
+        p.raiz.rotation.y = p.angulo;
+        est.alunoAlvo = null;
+      }
+    }
+    // Termina a caminhada na hora (pulo da cena ou ação que precisa do aluno parado).
+    function alunoNoLugar() {
+      var a = est && est.alunoAlvo;
+      if (!a) return;
+      var p = S.personagem;
+      p.raiz.position.x = a.x;
+      p.raiz.position.z = a.z;
+      p.angulo = a.angulo;
+      p.raiz.rotation.y = a.angulo;
+      S.joy.x = 0;
+      S.joy.z = 0;
+      est.alunoAlvo = null;
+    }
+    S.alunoNoLugar = alunoNoLugar;
 
     // ---- Cena final: o professor chama o aluno e sai pela porta ----------
     var camSeguir = null;
@@ -6111,8 +6183,10 @@
           }
         }
       }
+      var andando = guiarAluno(dt);
       S.atualizarMovimento(dt);
-      if (est.etapa === 'dialogo') p.raiz.rotation.y = p.angulo;
+      if (andando === 'virar') virarAluno(dt);
+      else if (est.etapa === 'dialogo' && !andando) p.raiz.rotation.y = p.angulo;
       if (est.etapa === 'seguir') seguirProfessor(dt);
       else atualizarCamera(dt);
       if (est.etapa === 'saida') {
@@ -7987,13 +8061,8 @@
       c.tronco.scale.y = 1.12;
     };
 
-    // Coloca o aluno ao lado do gato, olhando para ele.
-    function posicionarAluno() {
-      var p = S.personagem;
-      p.raiz.position.set(POS.x - 0.9, 0, POS.z - 0.25);
-      p.angulo = Math.PI / 2;
-      p.raiz.rotation.y = p.angulo;
-    }
+    // Marca do aluno nas cenas: ao lado do gato, olhando para ele.
+    var MARCA_ALUNO = { x: POS.x - 0.9, z: POS.z - 0.25, angulo: Math.PI / 2 };
 
     var GATO = [POS.x, 0.35, POS.z];
     var TOMADAS = {
@@ -8003,11 +8072,11 @@
     };
 
     function cenaApresentacao() {
-      posicionarAluno();
       c.conversou = true;
       var fato = FATOS[Math.floor(Math.random() * FATOS.length)];
       S.cenaCurta({
         tomadas: TOMADAS,
+        posAluno: MARCA_ALUNO,
         falas: [
           { quem: 'aluno', tomada: 'alunoGato', texto: 'Que gato é esse?' },
           { quem: 'prof', tomada: 'prof', gesto: 'explicar', olhar: GATO, texto: 'Esse é o Cachola, é o nosso mascote da plataforma Cachola do SENAC.' },
@@ -8044,7 +8113,10 @@
         aposFalas: function (fim) {
           sairDaSala(fim);
         },
-        aoPular: sumir
+        aoPular: sumir,
+        aoFim: function () {
+          if (S.reacaoProfessor) S.reacaoProfessor('Vacilo com o Cachola, hein...');
+        }
       });
     }
 
@@ -8273,17 +8345,14 @@
     // ---- A cena ---------------------------------------------------------------
     // O aluno fica perto da placa do Senac, de frente; o Carlos para a uma
     // boa distância, só se aproxima para entregar o papel e depois volta.
-    var ALUNO = { x: 2.3, z: -3.6 };
-    var LONGE = [2.3, -1.35]; // onde o Carlos conversa (≈2,2 m do aluno)
-    var PERTO = [2.3, -2.65]; // onde ele para para entregar
-    var ENTRADA = [[-5.4, 3.0], [2.6, 3.0], [2.6, -0.8]];
+    var ALUNO = { x: 3.1, z: -3.6 };
+    var LONGE = [3.1, -1.35]; // onde o Carlos conversa (≈2,2 m do aluno)
+    var PERTO = [3.1, -2.65]; // onde ele para para entregar
+    var ENTRADA = [[-5.4, 3.0], [3.2, 2.3], [3.2, -0.8]];
 
     function cena() {
       if (!c) criar();
       var p = S.personagem;
-      p.raiz.position.set(ALUNO.x, 0, ALUNO.z);
-      p.angulo = 0; // de frente (para a câmera do jogo)
-      p.raiz.rotation.y = 0;
       p.bracoFixo = null;
       c.raiz.visible = true;
       c.raiz.position.set(-7.0, 0, 3.0);
@@ -8343,6 +8412,7 @@
       // Zoom: o papel fica na frente do aluno, virado para a câmera.
       var CAM_PAPEL = [ALUNO.x + 0.12, 1.42, ALUNO.z + 0.82];
       function mostrarPapel() {
+        S.alunoNoLugar();
         concluirEntrega();
         S.adicionar(c.papel);
         c.papel.position.set(ALUNO.x + 0.08, 1.18, ALUNO.z + 0.34);
@@ -8360,11 +8430,16 @@
       var nome = S.primeiroNome();
       S.cenaCurta({
         seguir: c.raiz,
+        // O aluno anda até perto da placa e fica de frente (para a câmera do jogo).
+        posAluno: { x: ALUNO.x, z: ALUNO.z, angulo: 0 },
+        aoFim: function () {
+          if (S.reacaoProfessor) S.reacaoProfessor('O professor Carlos é assim mesmo, liga não...');
+        },
         tomadas: {
           entrada: { pos: [0.6, 4.6, 6.2], alvo: [-0.6, 0.6, 0.6] },
-          dupla: { pos: [5.3, 2.1, -2.45], alvo: [2.3, 1.1, -2.5] },
-          carlos: { pos: [3.3, 2.65, -4.3], alvo: [2.3, 1.35, -1.35] },
-          aluno: { pos: [0.95, 2.5, -0.3], alvo: [2.3, 1.3, -3.6] },
+          dupla: { pos: [5.8, 2.15, -2.45], alvo: [3.1, 1.1, -2.5] },
+          carlos: { pos: [3.95, 2.65, -4.3], alvo: [3.1, 1.35, -1.35] },
+          aluno: { pos: [1.75, 2.5, -0.3], alvo: [3.1, 1.3, -3.6] },
           papel: { pos: CAM_PAPEL, alvo: [ALUNO.x + 0.08, 1.18, ALUNO.z + 0.34] }
         },
         falas: [
