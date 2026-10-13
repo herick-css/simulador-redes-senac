@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '2.3.4',
+    versao: '3.0.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -979,11 +979,11 @@
       S.el('div', { fontSize: ap ? '18px' : '22px', fontWeight: '700', marginBottom: '4px' }, 'Escolha o laboratório', t.cartao);
       S.el('div', { color: C.cinza, fontSize: '13px', marginBottom: ap ? '8px' : '14px' }, 'Cada laboratório tem o seu próprio ranking.', t.cartao);
       var lista = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
-      ['laboratorio', 'servidores'].forEach(function (id) {
+      ['laboratorio', 'servidores', 'cabeamento'].forEach(function (id) {
         var f = S.fases[id];
         if (!f) return;
         var b = S.el('button', {
-          flex: '1 1 240px',
+          flex: '1 1 170px',
           textAlign: 'left',
           background: '#071733',
           border: '3px solid ' + C.borda,
@@ -1409,8 +1409,9 @@
 
       // Abas: um ranking por fase.
       var abas = S.el('div', { display: 'flex', gap: '6px', marginBottom: '4px' }, null, t.cartao);
-      var botoesAba = [1, 2].map(function (n) {
-        var b = S.ui.botao('Fase ' + n + (n === 1 ? ' · Rede local' : ' · Servidor'), 'secundario', function () {
+      var NOMES_FASE = { 1: 'Rede local', 2: 'Servidor', 3: 'Cabeamento' };
+      var botoesAba = [1, 2, 3].map(function (n) {
+        var b = S.ui.botao('Fase ' + n + ' · ' + NOMES_FASE[n], 'secundario', function () {
           fase = n;
           marcarAbas();
           desenhar();
@@ -4064,7 +4065,8 @@
       S.mundo.liberarPorta();
       J.atualizarMissoes();
       S.mundo.apontar(S.mundo.objetos.porta);
-      S.aviso('Siga o professor: clique na porta para ir ao Laboratório 2.', 'info', 4200);
+      var prox = (S.faseAtual && S.faseAtual.numero || 1) + 1;
+      S.aviso('Siga o professor: clique na porta para ir ao Laboratório ' + prox + '.', 'info', 4200);
     };
 
     // O aluno atravessa a porta; por enquanto isso encerra o jogo
@@ -4094,7 +4096,7 @@
         fontSize: '18px',
         pointerEvents: 'none'
       });
-      cortina.textContent = 'Indo para o Laboratório 2…';
+      cortina.textContent = 'Indo para o Laboratório ' + ((S.faseAtual && S.faseAtual.numero || 1) + 1) + '…';
       S.atualizarCena = function (dt) {
         t += dt;
         var pos = p.raiz.position;
@@ -4124,7 +4126,7 @@
           S.atualizarCena = null;
           S.joy.x = 0;
           S.joy.z = 0;
-          S.ui.mostrarFim(1);
+          S.ui.mostrarFim(S.faseAtual && S.faseAtual.numero || 1);
           setTimeout(function () { cortina.remove(); }, 50);
         }
       };
@@ -5222,7 +5224,7 @@
       var sessao = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       var t = S.ui.tela(30, '520px');
       S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO ' + numFase + ' CONCLUÍDO', t.cartao);
-      S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 14px' }, numFase === 2 ? 'Servidor no ar! 🎉' : 'A rede está funcionando! 🎉', t.cartao);
+      S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 14px' }, numFase === 3 ? 'Cabeamento completo! 🎉' : numFase === 2 ? 'Servidor no ar! 🎉' : 'A rede está funcionando! 🎉', t.cartao);
 
       var stats = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }, null, t.cartao);
       function stat(rotulo, valor, cor) {
@@ -6820,9 +6822,14 @@
       MG.desktopFase2(pc);
     }
 
+    // Fim da fase 2: o professor chama o aluno para o Lab 3 e sai pela porta.
     F2.concluir = function () {
       J.encerrarFase('Site aberto pelo nome, com HTTPS!', function () {
-        S.ui.mostrarFim(2);
+        S.fase = 'jogo';
+        S.pausado = false;
+        S.ui.mostrarHud(true);
+        S.ui.atualizarControlesToque();
+        J.liberarSaida();
       });
     };
 
@@ -6842,7 +6849,9 @@
     // Keystone: a etiqueta tem duas linhas de cores (A e B). O aluno encaixa
     // cada fio no contato certo seguindo a linha B (T-568B), bate com a
     // punch down e encaixa no espelho.
-    MG.keystone = function (t, aoConcluir) {
+    // opcoes.semPatch: só monta a tomada (o patch cord vem depois, na fase 3).
+    MG.keystone = function (t, aoConcluir, opcoes) {
+      opcoes = opcoes || {};
       var m = S.ui.abrirModal('Tomada keystone · ponto ' + t.n + ' (' + t.pc + ')', { largura: '760px' });
       var ap = S.ui.compacto();
       var erros = 0;
@@ -6937,7 +6946,7 @@
       var acoes = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }, null, m.corpo);
       var bBater = S.ui.botao('Bater os fios com a punch down', 'primario', bater, acoes);
       bBater.style.display = 'none';
-      var bEncaixar = S.ui.botao('Encaixar no espelho e ligar o patch cord do ' + t.pc + ' ▶', 'primario', encaixar, acoes);
+      var bEncaixar = S.ui.botao(opcoes.semPatch ? 'Encaixar a keystone no espelho ▶' : 'Encaixar no espelho e ligar o patch cord do ' + t.pc + ' ▶', 'primario', encaixar, acoes);
       bEncaixar.style.display = 'none';
 
       function colocar(i) {
@@ -6986,7 +6995,7 @@
 
       function encaixar() {
         bEncaixar.style.display = 'none';
-        msg('✔ Keystone encaixada no espelho e ' + t.pc + ' ligado com patch cord!', 'ok');
+        msg(opcoes.semPatch ? '✔ Tomada ' + t.n + ' montada e encaixada no espelho!' : '✔ Keystone encaixada no espelho e ' + t.pc + ' ligado com patch cord!', 'ok');
         setTimeout(function () {
           m.fechar(true);
           aoConcluir();
@@ -7664,6 +7673,7 @@
     S.registrarFase('servidores', {
       numero: 2,
       nome: 'Laboratório 2 · Servidor',
+      proxima: 'cabeamento',
       titulo: 'Servidor',
       resumoCurto: 'Instale tomadas keystone e configure um servidor com DHCP, DNS e HTTPS. Depois, abra o site pelo nome.',
       missaoCurta: 'Ligue o servidor, instale as keystones, configure DHCP, DNS e HTTPS e abra o site pelo nome num PC.',
@@ -7724,12 +7734,12 @@
         }
       },
       final: {
-        sair: false,
+        sair: true,
         falas: function () {
           var n = S.primeiroNome();
           return [
             { quem: 'prof', tomada: 'despedida', gesto: 'aceno', texto: 'Parabéns, ' + n + '! O PC pegou IP pelo DHCP, achou o servidor pelo DNS e abriu o site com HTTPS.' },
-            { quem: 'prof', tomada: 'despedida', gesto: 'falar', texto: 'Isso é uma rede de empresa de verdade. Você mandou muito bem!' }
+            { quem: 'prof', tomada: 'despedida', gesto: 'falar', texto: 'Agora vem o último desafio: cabeamento estruturado. Siga-me!' }
           ];
         }
       }
@@ -8489,10 +8499,1012 @@
     };
   });
 
+
+  /* ================================================================== */
+  secao('F3A-sala-cabeamento', function () {
+    // Fase 3: cabeamento estruturado. Seis PCs na parede do fundo, o rack
+    // com o switch no canto, três pontos de presilha, seis pontos de rede e
+    // quatro trechos de canaleta. O servidor (DHCP) fica em outra sala.
+    var F3 = S.f3 = {
+      BANCADA_Z: -2.6,
+      PAREDE_Z: -4.5,
+      FIO_Y: 0.85, // acima das bancadas: dá para ver por cima dos monitores
+      SAIDA_X: 4.6, // onde os cabos saem do rack para a parede
+      FIM_X: -4.7,
+      PCS: [-4.75, -3.2, -1.65, -0.1, 1.45, 3.0].map(function (x, i) {
+        return { nome: 'PC-0' + (i + 1), x: x, tomadaX: x + 0.4 };
+      }),
+      PRESILHAS: [
+        { id: 'A', x: 4.05 },
+        { id: 'B', x: 1.08 },
+        { id: 'C', x: -2.03 }
+      ],
+      TRECHOS: [[4.62, 2.26], [2.26, -0.03], [-0.03, -2.32], [-2.32, -4.72]]
+    };
+    var ZP = F3.PAREDE_Z + 0.07; // frente da parede (onde ficam fios e caixas)
+
+    function txt(ctx, t, x, y, cor, fonte) {
+      ctx.fillStyle = cor;
+      ctx.font = fonte;
+      ctx.textAlign = 'center';
+      ctx.fillText(t, x, y);
+    }
+
+    function hitbox(l, a, p, pai, x, y, z) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(l, a, p), new THREE.MeshBasicMaterial({ visible: false }));
+      m.position.set(x || 0, y || 0, z || 0);
+      pai.add(m);
+      return m;
+    }
+
+    // ---- Rack com o switch e a porta da sala do servidor ------------------
+    function montarRack() {
+      var C = S.COR;
+      var rx = 4.95;
+      var rz = -3.95;
+      var g = S.grupo(rx, 0, rz);
+      var mRack = S.mat(C.metalEscuro);
+      [[-0.3, -0.28], [0.3, -0.28], [-0.3, 0.28], [0.3, 0.28]].forEach(function (p) {
+        S.caixa(0.05, 1.8, 0.05, mRack, p[0], 0.9, p[1], g);
+      });
+      S.caixa(0.66, 0.05, 0.62, mRack, 0, 1.8, 0, g);
+      S.caixa(0.66, 0.08, 0.62, mRack, 0, 0.04, 0, g);
+      S.caixa(0.6, 1.75, 0.02, mRack, 0, 0.9, -0.28, g, true);
+      S.colisor(rx, rz, 0.75, 0.7);
+      F3.texSwitch = S.textura(256, 28, null);
+      var mLado = S.mat(0x3a434f);
+      var sw = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.32), [mLado, mLado, mLado, mLado, new THREE.MeshLambertMaterial({ map: F3.texSwitch }), mLado]);
+      sw.position.set(0, 1.0, 0);
+      sw.castShadow = true;
+      g.add(sw);
+      F3.infoSwitch = S.interativo([sw, hitbox(0.7, 0.5, 0.5, g, 0, 1.0, 0.1)], {
+        id: 'switch3',
+        nome: 'Switch (24 Fast + 2 Gigabit)',
+        ancora: new THREE.Vector3(rx - 0.4, 0, rz + 1.15)
+      });
+      // Cabo de uplink que vai para a sala do servidor (parede da direita).
+      var curva = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(rx + 0.2, 1.0, rz + 0.1),
+        new THREE.Vector3(rx + 0.35, 1.5, rz + 0.2),
+        new THREE.Vector3(5.9, 1.9, rz + 0.4),
+        new THREE.Vector3(5.98, 1.9, -3.2)
+      ]);
+      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 12, 0.02, 4), S.mat(C.laranja)));
+
+      // Porta (fechada) da sala do servidor, com placa.
+      S.caixa(0.06, 2.1, 1.0, S.mat(C.madeiraEscura), 5.95, 1.05, -2.45, null, true);
+      S.caixa(0.08, 0.06, 0.16, S.mat(C.metal), 5.9, 1.0, -2.1, null, true);
+      var texPlaca = S.textura(128, 32, function (ctx, w, h) {
+        ctx.fillStyle = '#0B4F9C';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#F7941D';
+        ctx.fillRect(0, h - 3, w, 3);
+        txt(ctx, 'SALA DO SERVIDOR', w / 2, 13, '#FFFFFF', 'bold 10px Arial');
+        txt(ctx, 'DHCP ativo · 192.168.0.10', w / 2, 25, '#6BF08E', '8px Arial');
+      });
+      var placa = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.24), new THREE.MeshLambertMaterial({ map: texPlaca }));
+      placa.position.set(5.9, 2.35, -2.45);
+      placa.rotation.y = -Math.PI / 2;
+      S.adicionar(placa);
+      F3.desenharSwitch();
+    }
+
+    F3.desenharSwitch = function () {
+      if (!F3.texSwitch) return;
+      F3.texSwitch.redesenhar(function (ctx, w, h) {
+        ctx.fillStyle = '#3A434F';
+        ctx.fillRect(0, 0, w, h);
+        for (var i = 0; i < 24; i++) {
+          var col = Math.floor(i / 2);
+          var x = 6 + col * 17;
+          var y = i % 2 ? 15 : 4;
+          ctx.fillStyle = '#0A0C0F';
+          ctx.fillRect(x, y, 12, 9);
+          var usada = F3.portas && F3.portas.indexOf('Fa0/' + (i + 1)) >= 0;
+          if (usada) {
+            ctx.fillStyle = '#2D7FE0';
+            ctx.fillRect(x + 3, y + 2, 6, 5);
+            ctx.fillStyle = F3.pcsComLink && F3.pcsComLink('Fa0/' + (i + 1)) ? '#39FF6A' : '#FFB020';
+            ctx.fillRect(x, y - 2, 3, 2);
+          }
+        }
+        // Gigabit: Gi0/1 é o uplink do servidor.
+        ctx.fillStyle = '#7A4A10';
+        ctx.fillRect(214, 4, 16, 20);
+        ctx.fillRect(234, 4, 16, 20);
+        ctx.fillStyle = '#F7941D';
+        ctx.fillRect(218, 8, 8, 10);
+        ctx.fillStyle = '#39FF6A';
+        ctx.fillRect(214, 1, 4, 2);
+      });
+    };
+
+    // ---- Pontos de presilha (marcados na parede) ---------------------------
+    function montarPresilhas() {
+      var texX = S.textura(16, 16, function (ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = '#D63A33';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(3, 3);
+        ctx.lineTo(13, 13);
+        ctx.moveTo(13, 3);
+        ctx.lineTo(3, 13);
+        ctx.stroke();
+      });
+      F3.presilhas = F3.PRESILHAS.map(function (p, i) {
+        var g = S.grupo(p.x, F3.FIO_Y, ZP);
+        var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), new THREE.MeshBasicMaterial({ map: texX, transparent: true }));
+        marca.position.z = 0.005;
+        g.add(marca);
+        var pecas = [];
+        for (var k = 0; k < 6; k++) {
+          var pc = S.caixa(0.022, 0.06, 0.03, S.mat(0xf2f4f7), -0.07 + k * 0.028, 0, 0.02, g, true);
+          S.caixa(0.01, 0.01, 0.012, S.mat(0x9aa4b0), -0.07 + k * 0.028, 0.035, 0.03, g, true);
+          pc.visible = false;
+          pecas.push(pc);
+        }
+        var alvo = hitbox(0.5, 0.6, 0.3, g, 0, 0.1, 0.1);
+        var pres = { id: p.id, n: i + 1, x: p.x, grupo: g, marca: marca, pecas: pecas, pregadas: 0, pronta: false, passou: false };
+        pres.info = S.interativo([alvo, marca], {
+          id: 'presilha:' + p.id,
+          nome: 'Ponto de fixação ' + p.id,
+          presilha: pres,
+          ancora: new THREE.Vector3(p.x, 0, -1.75)
+        });
+        return pres;
+      });
+    }
+
+    F3.pregarVisual = function (pres) {
+      pres.pecas.forEach(function (pc, k) { pc.visible = k < pres.pregadas; });
+      pres.marca.visible = !pres.pronta;
+    };
+
+    // ---- Pontos de rede (onde chegam os cabos e ficam as tomadas) ----------
+    function montarPontos() {
+      var C = S.COR;
+      F3.tomadas = F3.PCS.map(function (p, i) {
+        var g = S.grupo(p.tomadaX, F3.FIO_Y, ZP + 0.02);
+        var caixa = S.caixa(0.12, 0.14, 0.05, S.mat(0x8a96a6), 0, 0, 0, g, true);
+        var ponta = S.cilindro(0.014, 0.014, 0.24, 5, S.mat(C.caboAzul), 0.03, -0.13, 0.04, g);
+        ponta.rotation.z = 0.35;
+        ponta.visible = false;
+        var espelho = S.caixa(0.12, 0.16, 0.03, S.mat(0xffffff), 0, 0, 0.01, g, true);
+        var ks = S.caixa(0.05, 0.05, 0.02, S.mat(C.caboAzul), 0, 0.02, 0.03, g, true);
+        espelho.visible = false;
+        ks.visible = false;
+        var etiqueta = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.05), new THREE.MeshBasicMaterial({
+          map: S.textura(32, 16, function (ctx, w, h) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, w, h);
+            txt(ctx, 'P' + (i + 1), w / 2, 12, '#0B4F9C', 'bold 11px Arial');
+          })
+        }));
+        etiqueta.position.set(0, 0.12, 0.03);
+        g.add(etiqueta);
+        var alvo = hitbox(0.45, 0.55, 0.3, g, 0, 0.05, 0.1);
+        var t = { n: i + 1, pc: p.nome, x: p.tomadaX, z: ZP, grupo: g, caixa: caixa, ponta: ponta, espelho: espelho, ks: ks, cabo: false, instalada: false, patch: false };
+        t.info = S.interativo([alvo, caixa], {
+          id: 'ponto:' + (i + 1),
+          nome: 'Ponto de rede ' + (i + 1) + ' (' + p.nome + ')',
+          ponto: t,
+          ancora: new THREE.Vector3(p.tomadaX, 0, -1.75)
+        });
+        return t;
+      });
+    }
+
+    F3.caboNoPonto = function (t) {
+      t.cabo = true;
+      t.ponta.visible = true;
+    };
+    F3.tomadaPronta = function (t) {
+      t.instalada = true;
+      t.caixa.visible = false;
+      t.ponta.visible = false;
+      t.espelho.visible = true;
+      t.ks.visible = true;
+    };
+    // Patch cord do PC até a tomada.
+    F3.ligarPatch = function (t) {
+      t.patch = true;
+      var pc = S.pcs[t.pc];
+      var a = S.posMundo(pc.porta);
+      var b = new THREE.Vector3(t.x, F3.FIO_Y - 0.03, t.z + 0.08);
+      var curva = new THREE.CatmullRomCurve3([
+        a,
+        new THREE.Vector3(a.x, a.y - 0.12, a.z - 0.35),
+        new THREE.Vector3((a.x + b.x) / 2, Math.min(a.y, b.y) - 0.2, (a.z + b.z) / 2),
+        new THREE.Vector3(b.x, b.y - 0.15, b.z + 0.3),
+        b
+      ]);
+      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 24, 0.016, 4), S.mat(0xf2c200)));
+      pc.estado.conectado = true;
+      pc.estado.portaSwitch = 'ponto ' + t.n;
+      S.mundo.desenharTela(pc);
+      F3.desenharSwitch();
+    };
+
+    // ---- Feixe de cabos na parede (refeito a cada avanço) -----------------
+    var tuboFeixe = null;
+    F3.redesenharFeixe = function (ateX) {
+      if (tuboFeixe) {
+        tuboFeixe.parent.remove(tuboFeixe);
+        S.liberar(tuboFeixe);
+        tuboFeixe = null;
+      }
+      if (ateX === null || ateX === undefined) return;
+      var y = F3.FIO_Y;
+      var curva = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(4.95, 0.98, -3.75),
+        new THREE.Vector3(4.75, 0.9, -4.25),
+        new THREE.Vector3(F3.SAIDA_X, y, ZP),
+        new THREE.Vector3(ateX, y, ZP)
+      ]);
+      tuboFeixe = new THREE.Mesh(new THREE.TubeGeometry(curva, 32, 0.03, 5), S.mat(S.COR.caboAzul));
+      S.adicionar(tuboFeixe);
+    };
+
+    // ---- Canaleta em 4 trechos ---------------------------------------------
+    function montarCanaleta() {
+      var mFantasma = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false });
+      F3.trechos = F3.TRECHOS.map(function (tr, i) {
+        var larg = tr[0] - tr[1];
+        var cx = (tr[0] + tr[1]) / 2;
+        var g = S.grupo(cx, F3.FIO_Y, ZP - 0.01);
+        var fantasma = new THREE.Mesh(new THREE.BoxGeometry(larg, 0.1, 0.07), mFantasma.clone());
+        fantasma.visible = false;
+        g.add(fantasma);
+        var solida = S.caixa(larg, 0.1, 0.07, S.mat(0xf2f4f7), 0, 0, 0, g, true);
+        solida.visible = false;
+        var alvo = hitbox(larg, 0.5, 0.3, g, 0, 0.05, 0.1);
+        var t = { n: i + 1, de: tr[0], ate: tr[1], grupo: g, fantasma: fantasma, solida: solida, pronta: false };
+        t.info = S.interativo([alvo], {
+          id: 'canaleta:' + (i + 1),
+          nome: 'Trecho ' + (i + 1) + ' da canaleta',
+          trecho: t,
+          ancora: new THREE.Vector3(cx, 0, -1.75)
+        });
+        return t;
+      });
+    }
+    F3.mostrarGuiasCanaleta = function (sim) {
+      (F3.trechos || []).forEach(function (t) { t.fantasma.visible = sim && !t.pronta; });
+    };
+    F3.canaletaPronta = function (t) {
+      t.pronta = true;
+      t.fantasma.visible = false;
+      t.solida.visible = true;
+    };
+
+    // ---- Bancada: martelo + presilhas, keystones, patch cords --------------
+    function montarBancada() {
+      var C = S.COR;
+      var bx = -4.9;
+      var bz = 0.9;
+      var g = S.grupo(bx, 0, bz);
+      var mPe = S.mat(C.metalEscuro);
+      S.caixa(1.6, 0.05, 0.8, S.mat(C.madeira), 0, 0.76, 0, g);
+      S.caixa(0.05, 0.74, 0.7, mPe, -0.72, 0.37, 0, g);
+      S.caixa(0.05, 0.74, 0.7, mPe, 0.72, 0.37, 0, g);
+      S.colisor(bx, bz, 1.6, 0.8);
+      var topo = S.grupo(0, 0.785, 0, g);
+      // Martelo e caixinha de presilhas (à esquerda).
+      var cabo = S.caixa(0.04, 0.03, 0.26, S.mat(C.madeiraEscura), -0.55, 0.02, 0.12, topo);
+      var cabeca = S.caixa(0.12, 0.05, 0.05, S.mat(C.metal), -0.55, 0.03, 0.0, topo);
+      var caixaPres = S.caixa(0.16, 0.06, 0.12, S.mat(0xd9dee4), -0.32, 0.03, 0.15, topo);
+      F3.kitPresilhas = [cabo, cabeca, caixaPres];
+      S.interativo([cabo, cabeca, caixaPres], {
+        id: 'kitPresilhas',
+        nome: 'Martelo e presilhas',
+        ancora: new THREE.Vector3(bx - 0.35, 0, bz + 0.9)
+      });
+      // Keystones + punch down (meio).
+      var ks = [];
+      for (var i = 0; i < 3; i++) ks.push(S.caixa(0.06, 0.05, 0.06, S.mat(C.caboAzul), 0.02 + i * 0.08, 0.03, 0.18, topo));
+      var punch = S.caixa(0.05, 0.05, 0.2, S.mat(0xf2c200), 0.12, 0.03, 0.0, topo);
+      F3.kitKeystone = ks.concat([punch]);
+      S.interativo(F3.kitKeystone, {
+        id: 'kitKeystone3',
+        nome: 'Keystones e punch down',
+        ancora: new THREE.Vector3(bx + 0.1, 0, bz + 0.9)
+      });
+      // Patch cords (rolo amarelo, à direita).
+      var rolo = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.04, 4, 10), S.mat(0xf2c200));
+      rolo.rotation.x = Math.PI / 2;
+      rolo.position.set(0.52, 0.05, 0.1);
+      rolo.castShadow = true;
+      topo.add(rolo);
+      F3.kitPatch = [rolo];
+      S.interativo([rolo], {
+        id: 'kitPatch',
+        nome: 'Patch cords prontos',
+        ancora: new THREE.Vector3(bx + 0.55, 0, bz + 0.9)
+      });
+      S.mundo.criarCartaz(g, bx, bz);
+    }
+
+    F3.montarSala = function () {
+      S.mundo.montarSala({ quadroX: -0.9, placaX: -4.3, janelas: [-0.2, 2.5] });
+    };
+    F3.montarEquipamentos = function () {
+      montarRack();
+      F3.PCS.forEach(function (p) {
+        S.mundo.criarPc(p.nome, p.x, F3.BANCADA_Z, true, 1.5);
+      });
+      montarPresilhas();
+      montarPontos();
+      montarCanaleta();
+      montarBancada();
+    };
+    F3.limpar = function () {
+      tuboFeixe = null;
+      F3.texSwitch = null;
+      F3.presilhas = F3.tomadas = F3.trechos = null;
+    };
+  });
+
+
+  /* ================================================================== */
+  secao('F3B-estado-e-missoes', function () {
+    var F3 = S.f3;
+
+    F3.reiniciar = function () {
+      F3.kitPres = false;
+      F3.kitKs = false;
+      F3.kitPatchOk = false;
+      F3.portas = [];
+      F3.restantes = 0; // cabos ainda na mão (feixe)
+      F3.feixeAte = null; // até onde o feixe já foi preso na parede (x)
+    };
+    F3.reiniciar();
+
+    function pcs() { return F3.PCS.map(function (p) { return S.pcs[p.nome].estado; }); }
+    function conta(lista, fn) { return (lista || []).filter(fn).length; }
+    F3.presilhasProntas = function () { return conta(F3.presilhas, function (p) { return p.pronta; }); };
+    F3.cabosNosPontos = function () { return conta(F3.tomadas, function (t) { return t.cabo; }); };
+    F3.canaletasProntas = function () { return conta(F3.trechos, function (t) { return t.pronta; }); };
+    F3.tomadasProntas = function () { return conta(F3.tomadas, function (t) { return t.instalada; }); };
+    F3.patches = function () { return conta(F3.tomadas, function (t) { return t.patch; }); };
+    F3.pcsComLink = function (porta) {
+      var i = F3.portas.indexOf(porta);
+      if (i < 0 || !F3.tomadas) return false;
+      var t = F3.tomadas[i];
+      return t && t.patch && S.pcs[t.pc].estado.ligado;
+    };
+
+    // Ordem do caminho, do switch (direita) para a esquerda.
+    F3.rota = function () {
+      var itens = [];
+      (F3.presilhas || []).forEach(function (p) { itens.push({ tipo: 'presilha', x: p.x, obj: p }); });
+      (F3.tomadas || []).forEach(function (t) { itens.push({ tipo: 'ponto', x: t.x, obj: t }); });
+      return itens.sort(function (a, b) { return b.x - a.x; });
+    };
+    // Para chegar num ponto, o feixe precisa ter passado pelas presilhas antes dele.
+    F3.presilhasAntes = function (x) {
+      return (F3.presilhas || []).filter(function (p) { return p.x > x; });
+    };
+    F3.ancoraFeixe = function () {
+      var passadas = (F3.presilhas || []).filter(function (p) { return p.passou; });
+      var x = passadas.length ? Math.min.apply(null, passadas.map(function (p) { return p.x; })) : F3.SAIDA_X;
+      return new THREE.Vector3(x, F3.FIO_Y, F3.PAREDE_Z + 0.08);
+    };
+
+    function proximoDaRota() {
+      var r = F3.rota();
+      for (var i = 0; i < r.length; i++) {
+        var it = r[i];
+        if (it.tipo === 'presilha' && !it.obj.passou) return 'presilha:' + it.obj.id;
+        if (it.tipo === 'ponto' && !it.obj.cabo) return 'ponto:' + it.obj.n;
+      }
+      return null;
+    }
+
+    F3.MISSOES = [
+      {
+        id: 'kitPres',
+        quadro: 'Pegar martelo e presilhas',
+        texto: 'Pegue o martelo e as presilhas na bancada perto da porta.',
+        feita: function () { return F3.kitPres || F3.presilhasProntas() === 3; },
+        alvos: function () { return ['kitPresilhas']; },
+        dica1: 'A bancada fica à esquerda, perto da porta de entrada.',
+        dica2: 'Use o martelo e a caixinha de presilhas na bancada.'
+      },
+      {
+        id: 'presilhas',
+        quadro: 'Pregar presilhas (3 pontos)',
+        texto: function () { return 'Pregue 6 presilhas em cada ponto marcado com X na parede (' + F3.presilhasProntas() + '/3).'; },
+        feita: function () { return F3.presilhasProntas() === 3; },
+        alvos: function () { return (F3.presilhas || []).filter(function (p) { return !p.pronta; }).map(function (p) { return 'presilha:' + p.id; }); },
+        dica1: 'Os X vermelhos ficam na parede do fundo, atrás dos PCs, logo abaixo do quadro.',
+        dica2: 'Martele quando o marcador estiver na faixa verde.'
+      },
+      {
+        id: 'switch',
+        quadro: '6 cabos no switch',
+        texto: 'Conecte os 6 cabos no switch do rack, em portas Fast.',
+        feita: function () { return F3.portas.length === 6; },
+        alvos: function () { return ['switch3']; },
+        dica1: 'O switch está no rack, no canto do fundo à direita.',
+        dica2: 'Use portas Fast (Fa0/1 a Fa0/24). A Gigabit laranja é o uplink do servidor.'
+      },
+      {
+        id: 'feixe',
+        quadro: 'Passar o feixe até os 6 pontos',
+        texto: function () { return 'Passe o feixe pelas presilhas e deixe um cabo em cada ponto de rede (' + F3.cabosNosPontos() + '/6).'; },
+        feita: function () { return F3.cabosNosPontos() === 6; },
+        alvos: function () { var a = proximoDaRota(); return a ? [a] : []; },
+        dica1: 'Saindo do switch, vá pela parede: presilha A, pontos 6 e 5, presilha B, pontos 4 e 3, presilha C, pontos 2 e 1.',
+        dica2: 'Um ponto só recebe cabo depois que o feixe passa pelas presilhas entre ele e o switch.'
+      },
+      {
+        id: 'canaleta',
+        quadro: 'Canaleta nos 4 trechos',
+        texto: function () { return 'Esconda os cabos: instale a canaleta nos 4 trechos da parede (' + F3.canaletasProntas() + '/4).'; },
+        feita: function () { return F3.canaletasProntas() === 4; },
+        alvos: function () { return (F3.trechos || []).filter(function (t) { return !t.pronta; }).map(function (t) { return 'canaleta:' + t.n; }); },
+        dica1: 'Os trechos aparecem como uma faixa branca transparente sobre os cabos.',
+        dica2: 'Em cada trecho: fixe a base e feche a tampa.'
+      },
+      {
+        id: 'kitKs',
+        quadro: 'Pegar keystones',
+        texto: 'Pegue as keystones e a ferramenta punch down na bancada.',
+        feita: function () { return F3.kitKs || F3.tomadasProntas() === 6; },
+        alvos: function () { return ['kitKeystone3']; },
+        dica1: 'Estão no meio da bancada de ferramentas.',
+        dica2: 'Caixinha azul com as keystones e a punch down amarela.'
+      },
+      {
+        id: 'keystones',
+        quadro: 'Montar 6 tomadas keystone',
+        texto: function () { return 'Monte as tomadas keystone nos 6 pontos (' + F3.tomadasProntas() + '/6).'; },
+        feita: function () { return F3.tomadasProntas() === 6; },
+        alvos: function () { return (F3.tomadas || []).filter(function (t) { return !t.instalada; }).map(function (t) { return 'ponto:' + t.n; }); },
+        dica1: 'Siga a linha B da etiqueta da keystone (T-568B).',
+        dica2: 'Branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom.'
+      },
+      {
+        id: 'patch',
+        quadro: 'Patch cords nos 6 PCs',
+        texto: function () { return (F3.kitPatchOk ? 'Ligue cada PC à sua tomada com um patch cord' : 'Pegue os patch cords na bancada e ligue os PCs às tomadas') + ' (' + F3.patches() + '/6).'; },
+        feita: function () { return F3.patches() === 6; },
+        alvos: function () {
+          if (!F3.kitPatchOk) return ['kitPatch'];
+          return (F3.tomadas || []).filter(function (t) { return !t.patch; }).map(function (t) { return 'ponto:' + t.n; });
+        },
+        dica1: 'O rolo amarelo de patch cords fica na bancada.',
+        dica2: 'Use cada ponto de rede: o patch cord liga a tomada ao PC da frente.'
+      },
+      {
+        id: 'ligar',
+        quadro: 'Ligar os 6 PCs',
+        texto: function () { return 'Ligue os seis computadores (' + conta(pcs(), function (e) { return e.ligado; }) + '/6).'; },
+        feita: function () { return conta(pcs(), function (e) { return e.ligado; }) === 6; },
+        alvos: function () { return F3.PCS.filter(function (p) { return !S.pcs[p.nome].estado.ligado; }).map(function (p) { return 'pc:' + p.nome; }); },
+        dica1: 'Use cada PC e aperte o botão de energia do gabinete.',
+        dica2: 'O botão de energia tem o círculo com um traço em cima.'
+      },
+      {
+        id: 'dhcp',
+        quadro: 'IP automático nos 6 PCs',
+        texto: function () { return 'Em cada PC, peça IP automático ao servidor DHCP (' + conta(pcs(), function (e) { return e.dhcp; }) + '/6).'; },
+        feita: function () { return conta(pcs(), function (e) { return e.dhcp; }) === 6; },
+        alvos: function () { return F3.PCS.filter(function (p) { return !S.pcs[p.nome].estado.dhcp; }).map(function (p) { return 'pc:' + p.nome; }); },
+        dica1: 'Use o PC já ligado e clique em "Obter IP automaticamente".',
+        dica2: 'O servidor da outra sala entrega IPs a partir de 192.168.0.100.'
+      }
+    ];
+  });
+
+  /* ================================================================== */
+  secao('F3C-acoes', function () {
+    var F3 = S.f3;
+    var J = S.jogo;
+    var MG = S.minigames;
+
+    function rotuloMao() {
+      if (!J.mao) return;
+      if (J.mao.tipo === 'feixe') J.definirMao({ tipo: 'feixe', rotulo: 'Feixe com ' + F3.restantes + ' cabo' + (F3.restantes > 1 ? 's' : '') });
+    }
+
+    F3.rotulo = function (info) {
+      var mao = J.mao;
+      if (info.id === 'kitPresilhas') return F3.kitPres ? 'Martelo e presilhas (já pegou)' : 'Pegar martelo e presilhas';
+      if (info.id === 'kitKeystone3') return F3.kitKs ? 'Keystones (já pegou)' : 'Pegar keystones e punch down';
+      if (info.id === 'kitPatch') return F3.kitPatchOk ? 'Patch cords (já pegou)' : 'Pegar patch cords';
+      if (info.id === 'switch3') return F3.portas.length < 6 ? 'Conectar os 6 cabos no switch' : 'Ver switch';
+      if (info.presilha) {
+        var p = info.presilha;
+        if (!p.pronta) return 'Pregar presilhas no ponto ' + p.id;
+        return mao && mao.tipo === 'feixe' && !p.passou ? 'Passar o feixe pela presilha ' + p.id : 'Presilhas ' + p.id;
+      }
+      if (info.ponto) {
+        var t = info.ponto;
+        if (!t.cabo) return mao && mao.tipo === 'feixe' ? 'Deixar um cabo no ponto ' + t.n : 'Ponto de rede ' + t.n;
+        if (!t.instalada) return 'Montar a tomada do ponto ' + t.n;
+        if (!t.patch) return 'Ligar patch cord no ' + t.pc;
+        return 'Ponto ' + t.n + ' (pronto)';
+      }
+      if (info.trecho) return info.trecho.pronta ? 'Canaleta (instalada)' : 'Instalar a canaleta (trecho ' + info.trecho.n + ')';
+      if (info.pc) return info.pc.estado.ligado ? 'Usar ' + info.pc.nome : 'Ligar ' + info.pc.nome;
+      return null;
+    };
+
+    F3.usar = function (info) {
+      if (info.id === 'kitPresilhas') return pegar('kitPres', F3.kitPresilhas, 'Você pegou o martelo e as presilhas. Pregue nos pontos marcados com X na parede.');
+      if (info.id === 'kitKeystone3') {
+        if (F3.canaletasProntas() < 4) return S.aviso('Primeiro passe os cabos e esconda tudo na canaleta.', 'alerta', 3200);
+        return pegar('kitKs', F3.kitKeystone, 'Você pegou as keystones e a punch down. Monte as tomadas nos 6 pontos.');
+      }
+      if (info.id === 'kitPatch') {
+        if (F3.tomadasProntas() < 6) return S.aviso('Os patch cords entram depois que as 6 tomadas estiverem montadas.', 'alerta', 3200);
+        return pegar('kitPatchOk', F3.kitPatch, 'Você pegou 6 patch cords. Ligue cada PC à tomada atrás dele.');
+      }
+      if (info.id === 'switch3') return usarSwitch();
+      if (info.presilha) return usarPresilha(info.presilha);
+      if (info.ponto) return usarPonto(info.ponto);
+      if (info.trecho) return usarTrecho(info.trecho);
+      if (info.pc) return usarPc(info.pc);
+    };
+
+    function pegar(flag, malhas, texto) {
+      if (F3[flag]) return S.aviso('Você já pegou isso.', 'info');
+      F3[flag] = true;
+      (malhas || []).forEach(function (m) { m.visible = false; });
+      S.aviso(texto, 'ok', 3400);
+      J.atualizarMissoes();
+    }
+
+    function usarPresilha(p) {
+      if (!p.pronta) {
+        if (!F3.kitPres) return S.aviso('Pegue o martelo e as presilhas na bancada primeiro.', 'alerta', 3000);
+        MG.martelo(p, function () {
+          p.pronta = true;
+          F3.pregarVisual(p);
+          S.aviso('Presilhas do ponto ' + p.id + ' pregadas!', 'ok', 2400);
+          J.atualizarMissoes();
+        });
+        return;
+      }
+      if (!J.mao || J.mao.tipo !== 'feixe') {
+        return S.aviso(p.passou ? 'O feixe já passa por aqui.' : F3.portas.length < 6 ? 'Conecte os 6 cabos no switch para começar a passar o feixe.' : 'Presilhas prontas para receber o feixe.', 'info', 2600);
+      }
+      if (p.passou) return S.aviso('O feixe já passou por esta presilha.', 'info');
+      var antes = F3.presilhasAntes(p.x).filter(function (q) { return !q.passou; });
+      if (antes.length) {
+        J.errou('Passe o feixe na ordem: primeiro pela presilha ' + antes[antes.length - 1].id + ', mais perto do switch.');
+        return;
+      }
+      p.passou = true;
+      F3.feixeAte = Math.min(F3.feixeAte === null ? F3.SAIDA_X : F3.feixeAte, p.x);
+      F3.redesenharFeixe(F3.feixeAte);
+      S.mundo.definirCaboMao(F3.ancoraFeixe());
+      S.aviso('Feixe preso na presilha ' + p.id + '.', 'ok', 2000);
+      J.progresso();
+    }
+
+    function usarPonto(t) {
+      var mao = J.mao;
+      if (!t.cabo) {
+        if (!mao || mao.tipo !== 'feixe') {
+          return S.aviso(F3.portas.length < 6 ? 'O cabo deste ponto sai do switch: conecte os 6 cabos no rack primeiro.' : 'Traga o feixe de cabos até aqui.', 'info', 3000);
+        }
+        var faltam = F3.presilhasAntes(t.x).filter(function (q) { return !q.passou; });
+        if (faltam.length) {
+          J.errou('O cabo ficaria solto: passe antes pela presilha ' + faltam[faltam.length - 1].id + '.');
+          return;
+        }
+        F3.caboNoPonto(t);
+        F3.restantes--;
+        F3.feixeAte = Math.min(F3.feixeAte === null ? F3.SAIDA_X : F3.feixeAte, t.x);
+        F3.redesenharFeixe(F3.feixeAte);
+        if (F3.restantes <= 0) {
+          J.definirMao(null);
+          F3.mostrarGuiasCanaleta(true);
+          S.aviso('Os 6 cabos chegaram! Agora esconda tudo na canaleta.', 'ok', 3400);
+        } else {
+          rotuloMao();
+          S.mundo.definirCaboMao(F3.ancoraFeixe());
+          S.aviso('Cabo deixado no ponto ' + t.n + '. Faltam ' + F3.restantes + '.', 'ok', 2200);
+        }
+        J.atualizarMissoes();
+        return;
+      }
+      if (!t.instalada) {
+        if (F3.canaletasProntas() < 4) return S.aviso('Primeiro esconda os cabos na canaleta.', 'alerta', 3000);
+        if (!F3.kitKs) return S.aviso('Pegue as keystones e a punch down na bancada.', 'alerta', 3000);
+        MG.keystone(t, function () {
+          F3.tomadaPronta(t);
+          S.aviso('Tomada ' + t.n + ' montada!', 'ok', 2200);
+          J.atualizarMissoes();
+        }, { semPatch: true });
+        return;
+      }
+      if (!t.patch) {
+        if (!F3.kitPatchOk) return S.aviso('Pegue os patch cords na bancada.', 'alerta', 3000);
+        F3.ligarPatch(t);
+        S.aviso(t.pc + ' ligado à tomada ' + t.n + ' com patch cord.', 'ok', 2400);
+        J.atualizarMissoes();
+        return;
+      }
+      S.aviso('Ponto ' + t.n + ': tudo pronto.', 'info');
+    }
+
+    function usarTrecho(tr) {
+      if (tr.pronta) return S.aviso('Este trecho já tem canaleta.', 'info');
+      if (F3.cabosNosPontos() < 6) return S.aviso('A canaleta entra depois que os 6 cabos estiverem no lugar.', 'alerta', 3000);
+      MG.canaleta(tr, function () {
+        F3.canaletaPronta(tr);
+        S.aviso('Trecho ' + tr.n + ' com canaleta!', 'ok', 2200);
+        J.atualizarMissoes();
+      });
+    }
+
+    function usarSwitch() {
+      if (F3.portas.length === 6) return S.aviso('Os 6 cabos já estão no switch.', 'info');
+      MG.switch3(function (portas) {
+        F3.portas = portas;
+        F3.restantes = 6;
+        F3.feixeAte = F3.SAIDA_X;
+        F3.desenharSwitch();
+        F3.redesenharFeixe(F3.SAIDA_X);
+        J.definirMao({ tipo: 'feixe', rotulo: 'Feixe com 6 cabos' });
+        S.mundo.definirCaboMao(F3.ancoraFeixe());
+        S.aviso('6 cabos no switch! Leve o feixe pela parede: presilha A primeiro.', 'ok', 3600);
+        J.atualizarMissoes();
+      });
+    }
+
+    function usarPc(pc) {
+      if (!pc.estado.ligado) {
+        MG.gabinete(pc, function () {
+          S.ligarPc(pc, true);
+          F3.desenharSwitch();
+          S.aviso(pc.nome + ' ligado.', 'ok', 2000);
+          J.atualizarMissoes();
+        });
+        return;
+      }
+      MG.dhcpRapido(pc);
+    }
+
+    F3.concluir = function () {
+      J.encerrarFase('Os 6 PCs estão na rede!', function () {
+        S.ui.mostrarFim(3);
+      });
+    };
+
+    F3.resumo = function () {
+      return 'Switch: ' + F3.portas.join(', ') + ' · Presilhas A, B e C · Canaleta em 4 trechos · ' +
+        F3.PCS.map(function (p) { return p.nome + ' ' + S.pcs[p.nome].estado.ip; }).join(' · ');
+    };
+  });
+
+  /* ================================================================== */
+  secao('F3D-minigames', function () {
+    var C = S.CSS;
+    var MG = S.minigames;
+    var J = S.jogo;
+
+    // Martelo: o marcador sobe e desce; martele quando ele estiver no verde.
+    MG.martelo = function (pres, aoConcluir) {
+      var m = S.ui.abrirModal('Ponto de fixação ' + pres.id + ' · pregar 6 presilhas', { largura: '560px' });
+      var ap = S.ui.compacto();
+      S.el('div', { marginBottom: '8px' }, 'Martele quando o marcador estiver na faixa verde. Fora dela a presilha entorta.', m.corpo);
+      var area = S.el('div', { display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center' }, null, m.corpo);
+      var alt = ap ? 150 : 220;
+      var trilho = S.el('div', {
+        position: 'relative',
+        width: '46px',
+        height: alt + 'px',
+        background: '#1B2B44',
+        border: '3px solid #071430',
+        borderRadius: '8px',
+        flex: '0 0 auto',
+        overflow: 'hidden'
+      }, null, area);
+      var verde = S.el('div', { position: 'absolute', left: '0', right: '0', background: '#2EAA4A', boxShadow: 'inset 0 0 0 2px #6BF08E' }, null, trilho);
+      var marcador = S.el('div', { position: 'absolute', left: '-2px', right: '-2px', height: '6px', background: C.laranja, border: '2px solid #071430', marginTop: '-5px' }, null, trilho);
+      var lado = S.el('div', { display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }, null, area);
+      var linhaPres = S.el('div', { display: 'flex', gap: '6px' }, null, lado);
+      var icones = [];
+      for (var i = 0; i < 6; i++) {
+        icones.push(S.el('div', { width: '18px', height: '30px', borderRadius: '4px', border: '2px dashed #4A5D7A', boxSizing: 'border-box' }, null, linhaPres));
+      }
+      var bMart = S.ui.botao('🔨 Martelar', 'primario', martelar, lado);
+      S.estilo(bMart, { fontSize: ap ? '16px' : '18px', padding: ap ? '10px 22px' : '14px 30px' });
+      bMart.setAttribute('aria-label', 'Martelar');
+      S.el('div', { fontSize: '12px', color: C.cinza }, S.toque ? 'Toque no botão' : 'Clique ou aperte Espaço', lado);
+      var msg = MG.mensagem(m.corpo);
+      var feitas = 0;
+      var zona = { ini: 0, fim: 0 };
+      var t0 = performance.now();
+      var vel = 1.3;
+      var trava = 0;
+
+      function novaZona() {
+        var tam = 0.2 - feitas * 0.012;
+        zona.ini = 0.08 + Math.random() * (0.84 - tam);
+        zona.fim = zona.ini + tam;
+        verde.style.top = (zona.ini * 100) + '%';
+        verde.style.height = ((zona.fim - zona.ini) * 100) + '%';
+      }
+      function posicao() {
+        var t = (performance.now() - t0) / 1000;
+        return (Math.sin(t * vel * Math.PI) + 1) / 2;
+      }
+      function laco() {
+        if (!m.fundo.isConnected) return;
+        marcador.style.top = (posicao() * 100) + '%';
+        requestAnimationFrame(laco);
+      }
+      function martelar() {
+        if (feitas >= 6 || performance.now() < trava) return;
+        var p = posicao();
+        if (p >= zona.ini && p <= zona.fim) {
+          S.estilo(icones[feitas], { background: '#F2F4F7', border: '2px solid #071430' });
+          feitas++;
+          pres.pregadas = feitas;
+          msg('Pá! Presilha ' + feitas + '/6 firme.', 'ok');
+          if (feitas === 6) {
+            msg('✔ As 6 presilhas do ponto ' + pres.id + ' estão pregadas!', 'ok');
+            setTimeout(function () { m.fechar(true); aoConcluir(); }, 700);
+            return;
+          }
+          vel += 0.12;
+          novaZona();
+        } else {
+          J.erros++;
+          trava = performance.now() + 450;
+          msg('✖ Torta! A presilha entortou. Martele com o marcador no verde.', 'erro');
+          trilho.style.borderColor = '#D63A33';
+          setTimeout(function () { trilho.style.borderColor = '#071430'; }, 300);
+        }
+      }
+      function tecla(ev) {
+        if (!m.fundo.isConnected) {
+          window.removeEventListener('keydown', tecla);
+          return;
+        }
+        if (ev.key === ' ' || ev.key === 'Enter') {
+          ev.preventDefault();
+          if (!ev.repeat) martelar();
+        }
+      }
+      window.addEventListener('keydown', tecla);
+      novaZona();
+      laco();
+      MG.marteloAtual = { zona: zona, posicao: posicao, martelar: martelar };
+    };
+
+    // Switch: 6 cabos em portas Fast (a Gi0/1 já é o uplink do servidor).
+    MG.switch3 = function (aoConcluir) {
+      var m = S.ui.abrirModal('Switch · conectar os 6 cabos', { largura: '700px' });
+      S.el('div', { marginBottom: '8px' }, 'Encaixe os 6 cabos em portas Fast Ethernet. As Gigabit (laranja) são para uplink.', m.corpo);
+      var painel = S.el('div', {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(13, minmax(0, 1fr))',
+        gap: '4px',
+        background: '#3A434F',
+        border: '3px solid #071430',
+        borderRadius: '8px',
+        padding: '8px'
+      }, null, m.corpo);
+      var msg = MG.mensagem(m.corpo);
+      var escolhidas = [];
+      function porta(nome, rotulo, giga, usada) {
+        var b = S.el('button', {
+          height: '34px',
+          background: usada ? C.laranja : giga ? '#7A4A10' : '#0A0C0F',
+          border: '2px solid ' + (giga ? C.laranja : '#5B6675'),
+          borderRadius: '3px',
+          color: '#FFFFFF',
+          fontSize: '10px',
+          fontWeight: '700',
+          cursor: 'pointer',
+          padding: '0',
+          touchAction: 'manipulation'
+        }, rotulo, painel);
+        b.type = 'button';
+        b.setAttribute('aria-label', nome);
+        b.addEventListener('click', S.protegido('switch3', function () {
+          if (usada) return msg('Gi0/1 já está ocupada: é o uplink que leva até o servidor.', 'info');
+          if (giga) {
+            J.erros++;
+            return msg('✖ As portas Gigabit ficam para uplink. Os PCs vão em portas Fast.', 'erro');
+          }
+          if (escolhidas.indexOf(nome) >= 0) return msg('Essa porta já tem cabo.', 'info');
+          escolhidas.push(nome);
+          b.style.background = '#2D7FE0';
+          b.textContent = '●';
+          msg('Cabo ' + escolhidas.length + '/6 em ' + nome + '.', 'ok');
+          if (escolhidas.length === 6) {
+            setTimeout(function () { m.fechar(true); aoConcluir(escolhidas.slice()); }, 600);
+          }
+        }));
+      }
+      for (var i = 1; i <= 24; i++) {
+        porta('Fa0/' + i, String(i), false, false);
+        if (i === 12) porta('Gi0/1', 'G1', true, true);
+        if (i === 24) porta('Gi0/2', 'G2', true, false);
+      }
+    };
+
+    // Canaleta: fixa a base sob os cabos e fecha a tampa.
+    MG.canaleta = function (tr, aoConcluir) {
+      var m = S.ui.abrirModal('Canaleta · trecho ' + tr.n + ' de 4', { largura: '560px' });
+      S.el('div', { marginBottom: '8px' }, 'Primeiro fixe a base na parede, por trás dos cabos. Depois encaixe a tampa.', m.corpo);
+      var parede = S.el('div', {
+        position: 'relative',
+        height: '120px',
+        background: '#E4E9EF',
+        border: '3px solid #071430',
+        borderRadius: '8px',
+        overflow: 'hidden'
+      }, null, m.corpo);
+      S.el('div', { position: 'absolute', left: '0', right: '0', bottom: '0', height: '40px', background: '#0B4F9C' }, null, parede);
+      var base = S.el('div', { position: 'absolute', left: '6%', right: '6%', top: '38px', height: '34px', border: '4px solid #FFFFFF', borderTop: 'none', borderRadius: '0 0 4px 4px', boxSizing: 'border-box', opacity: '0', transition: 'opacity .3s' }, null, parede);
+      for (var i = 0; i < 6; i++) {
+        S.el('div', { position: 'absolute', left: '0', right: '0', top: (44 + i * 4) + 'px', height: '3px', background: '#2D7FE0' }, null, parede);
+      }
+      var tampa = S.el('div', { position: 'absolute', left: '6%', right: '6%', top: '34px', height: '40px', background: '#F2F4F7', border: '2px solid #9AA5B1', borderRadius: '4px', boxSizing: 'border-box', transform: 'translateY(-90px)', transition: 'transform .35s ease' }, null, parede);
+      var msg = MG.mensagem(m.corpo);
+      var acoes = S.el('div', { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }, null, m.corpo);
+      var bBase = S.ui.botao('1. Fixar a base', 'primario', function () {
+        base.style.opacity = '1';
+        bBase.disabled = true;
+        bBase.style.opacity = '0.5';
+        bTampa.disabled = false;
+        bTampa.style.opacity = '1';
+        msg('Base parafusada na parede, com os cabos dentro.', 'ok');
+      }, acoes);
+      var bTampa = S.ui.botao('2. Fechar a tampa', 'primario', function () {
+        if (bTampa.disabled) return;
+        tampa.style.transform = 'translateY(0)';
+        bTampa.disabled = true;
+        msg('✔ Tampa encaixada: cabos escondidos e protegidos!', 'ok');
+        setTimeout(function () { m.fechar(true); aoConcluir(); }, 700);
+      }, acoes);
+      bTampa.disabled = true;
+      bTampa.style.opacity = '0.5';
+    };
+
+    // PC da fase 3: um clique pede IP ao DHCP do servidor da outra sala.
+    MG.dhcpRapido = function (pc) {
+      var e = pc.estado;
+      var m = S.ui.abrirModal(pc.nome + ' · rede', { largura: '480px' });
+      var caixa = S.el('div', {
+        background: '#F2F5F9',
+        color: '#10203A',
+        border: '3px solid #071430',
+        borderRadius: '8px',
+        padding: '12px 14px',
+        fontFamily: C.mono,
+        fontSize: '13px',
+        whiteSpace: 'pre-wrap',
+        minHeight: '60px'
+      }, e.dhcp ? 'IP ' + e.ip + ' (DHCP)\nGateway ' + e.gateway + ' · DNS ' + e.dns : 'Sem endereço IP.', m.corpo);
+      var msg = MG.mensagem(m.corpo);
+      var acoes = S.el('div', { marginTop: '10px' }, null, m.corpo);
+      var b = S.ui.botao(e.dhcp ? '🔄 Renovar IP' : '🔄 Obter IP automaticamente', 'primario', function () {
+        if (!e.conectado) {
+          msg('Sem cabo: ligue o patch cord deste PC na tomada atrás dele.', 'erro');
+          return;
+        }
+        b.disabled = true;
+        caixa.textContent = 'DHCP Discover…';
+        var linhas = ['DHCP Discover…', 'DHCP Offer (servidor 192.168.0.10)', 'DHCP Request', 'DHCP Ack'];
+        linhas.forEach(function (l, i) {
+          setTimeout(function () {
+            if (!m.fundo.isConnected) return;
+            caixa.textContent = linhas.slice(0, i + 1).join('\n');
+            if (i === linhas.length - 1) concluir();
+          }, 280 * (i + 1));
+        });
+      }, acoes);
+      function concluir() {
+        if (!e.dhcp) {
+          var usados = S.f3.PCS.map(function (p) { return S.pcs[p.nome].estado.ip; });
+          var n = 100;
+          while (usados.indexOf('192.168.0.' + n) >= 0) n++;
+          e.ip = '192.168.0.' + n;
+          e.mascara = '255.255.255.0';
+          e.gateway = '192.168.0.1';
+          e.dns = '192.168.0.10';
+          e.dhcp = true;
+          e.configurado = true;
+        }
+        caixa.textContent += '\n\nIP ' + e.ip + ' · Máscara ' + e.mascara + '\nGateway ' + e.gateway + ' · DNS ' + e.dns;
+        S.mundo.desenharTela(pc);
+        S.f3.desenharSwitch();
+        msg('✔ ' + pc.nome + ' recebeu o IP ' + e.ip + '!', 'ok');
+        b.disabled = false;
+        b.textContent = '🔄 Renovar IP';
+        J.atualizarMissoes();
+      }
+    };
+  });
+
+  /* ================================================================== */
+  secao('F3E-registro-da-fase', function () {
+    var F3 = S.f3;
+
+    S.registrarFase('cabeamento', {
+      numero: 3,
+      nome: 'Laboratório 3 · Cabeamento estruturado',
+      titulo: 'Cabeamento',
+      resumoCurto: 'Pregue presilhas, passe 6 cabos do switch até a parede, instale canaleta e tomadas e coloque 6 PCs na rede.',
+      missaoCurta: 'Pregue presilhas, passe o feixe de 6 cabos, instale canaleta e keystones, ligue os PCs e peça IP automático.',
+      missaoLonga: 'Faça o cabeamento estruturado de 6 computadores: pregue as presilhas na parede, conecte 6 cabos no switch, passe o feixe até os 6 pontos, esconda tudo na canaleta, monte as tomadas keystone, ligue os patch cords e coloque os PCs na rede com IP automático.',
+      usar: F3.usar,
+      rotulo: F3.rotulo,
+      concluir: function () { F3.concluir(); },
+      resumo: F3.resumo,
+      textoConcluido: 'Cabeamento estruturado completo!',
+      etapas: [
+        ['Preparando as missões…', function () {
+          F3.reiniciar();
+          S.jogo.reiniciar(F3.MISSOES);
+        }],
+        ['Construindo o laboratório 3…', function () { F3.montarSala(); }],
+        ['Instalando o rack, a parede e os 6 PCs…', function () { F3.montarEquipamentos(); }],
+        ['Chamando o professor e o aluno…', function () {
+          S.criarProfessor();
+          S.criarPersonagem(S.aluno.nome, S.aluno.genero);
+          S.mundo.montarCaboMao();
+          S.mundo.montarSeta();
+        }]
+      ],
+      desmontar: function () {
+        if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
+        F3.limpar();
+      },
+      abertura: {
+        titulo: 'LABORATÓRIO 3 · CABEAMENTO',
+        portaAberta: true,
+        inicio: { x: -5.35, z: 3.0 },
+        tomadas: {
+          abertura: { pos: [-1.2, 4.6, 8.6], alvo: [-4.2, 0.8, 2.4] },
+          rack: { pos: [2.7, 2.3, -0.7], alvo: [4.95, 1.0, -3.95] },
+          presilhas: { pos: [1.0, 2.5, -1.2], alvo: [2.6, 0.85, -4.45] },
+          parede: { pos: [-0.3, 3.0, -0.6], alvo: [-0.3, 0.85, -4.45] },
+          bancada: { pos: [-3.3, 2.1, 3.2], alvo: [-4.9, 0.85, 0.9] },
+          pcs: { pos: [-0.9, 3.1, 1.6], alvo: [-0.9, 0.9, -2.6] }
+        },
+        falas: function () {
+          var n = S.primeiroNome();
+          return [
+            { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Último laboratório, ' + n + '! Agora é cabeamento estruturado: seis computadores com tudo organizado.' },
+            { quem: 'prof', tomada: 'rack', gesto: 'apontar', texto: 'O servidor já está pronto, na outra sala. É deste switch que saem os seis cabos, um para cada PC.' },
+            { quem: 'prof', tomada: 'bancada', gesto: 'apontar', texto: 'Pegue o martelo e as presilhas na bancada. Lá também ficam as keystones e os patch cords.' },
+            { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Pregue as presilhas nos três pontos marcados com X na parede. Martele no verde, senão entorta!' },
+            { quem: 'prof', tomada: 'parede', gesto: 'explicar', texto: 'Depois conecte os seis cabos no switch e leve o feixe pela parede, passando pelas presilhas e deixando um cabo em cada ponto.' },
+            { quem: 'prof', tomada: 'parede', gesto: 'falar', texto: 'Com os cabos no lugar, esconda tudo na canaleta e monte as seis tomadas keystone.' },
+            { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'Por fim, ligue os PCs nas tomadas com os patch cords, ligue os computadores e peça IP automático.' },
+            { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Boa sorte, ' + n + '!' },
+            { quem: 'aluno', tomada: 'aluno', texto: 'Bora organizar esses cabos!' }
+          ];
+        }
+      },
+      final: {
+        sair: false,
+        falas: function () {
+          var n = S.primeiroNome();
+          return [
+            { quem: 'prof', tomada: 'despedida', gesto: 'aceno', texto: 'Parabéns, ' + n + '! Cabeamento estruturado completo: seis PCs na rede e nenhum fio aparecendo.' },
+            { quem: 'prof', tomada: 'despedida', gesto: 'falar', texto: 'Você concluiu os três laboratórios. Já pode se considerar um técnico de redes!' }
+          ];
+        }
+      }
+    });
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
   var painel = null;
   var timer = null;
   var gpu = null;
