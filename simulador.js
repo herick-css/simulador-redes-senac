@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.0.0',
+    versao: '3.1.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -1747,6 +1747,7 @@
       opcoes = opcoes || {};
       var quadroX = opcoes.quadroX !== undefined ? opcoes.quadroX : -1.7;
       var placaX = opcoes.placaX !== undefined ? opcoes.placaX : 2.3;
+      var quadroY = opcoes.quadroY || 1.75;
       var C = S.COR;
       var L = S.SALA.largura;
       var P = S.SALA.profundidade;
@@ -1855,11 +1856,11 @@
 
       // Quadro branco: lista de missões que vai sendo riscada.
       S.mundo.texQuadro = S.textura(256, 128, null);
-      S.caixa(3.1, 1.62, 0.05, S.mat(C.metal), quadroX, 1.75, -P / 2 + 0.03, null, true);
+      S.caixa(3.1, 1.62, 0.05, S.mat(C.metal), quadroX, quadroY, -P / 2 + 0.03, null, true);
       var quadro = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.52), new THREE.MeshLambertMaterial({ map: S.mundo.texQuadro }));
-      quadro.position.set(quadroX, 1.75, -P / 2 + 0.06);
+      quadro.position.set(quadroX, quadroY, -P / 2 + 0.06);
       S.adicionar(quadro);
-      S.caixa(1.0, 0.04, 0.08, S.mat(C.metal), quadroX, 0.95, -P / 2 + 0.07, null, true);
+      S.caixa(1.0, 0.04, 0.08, S.mat(C.metal), quadroX, quadroY - 0.8, -P / 2 + 0.07, null, true);
       S.interativo(quadro, {
         id: 'quadro',
         nome: 'Quadro de missões',
@@ -1981,9 +1982,12 @@
       });
     };
 
-    function bancada(x, z, largura, interativa) {
+    // rot: giro da bancada (0 = encostada na parede do fundo).
+    function bancada(x, z, largura, interativa, rot) {
       var C = S.COR;
       var g = S.grupo(x, 0, z);
+      rot = rot || 0;
+      g.rotation.y = rot;
       var mTampo = S.mat(C.madeira);
       var mPe = S.mat(C.metalEscuro);
       S.caixa(largura, 0.05, 0.8, mTampo, 0, 0.76, 0, g);
@@ -1991,7 +1995,8 @@
       S.caixa(0.05, 0.74, 0.7, mPe, -dx, 0.37, 0, g);
       S.caixa(0.05, 0.74, 0.7, mPe, dx, 0.37, 0, g);
       S.caixa(largura - 0.15, 0.25, 0.02, mPe, 0, 0.55, -0.33, g, true);
-      S.colisor(x, z, largura, 0.8);
+      if (Math.abs(Math.sin(rot)) > 0.5) S.colisor(x, z, 0.8, largura);
+      else S.colisor(x, z, largura, 0.8);
       if (interativa !== false) {
         // Cadeira simples.
         var mCad = S.mat(C.azul);
@@ -2005,9 +2010,10 @@
       return g;
     }
 
-    function criarPc(nome, x, z, ativo, largura) {
+    function criarPc(nome, x, z, ativo, largura, rot) {
       var C = S.COR;
-      var b = bancada(x, z, largura || 2.0, true);
+      rot = rot || 0;
+      var b = bancada(x, z, largura || 2.0, true, rot);
       var g = S.grupo(-0.3, 0.785, -0.1, b);
       var mPreto = S.mat(C.plastico);
       var mClaro = S.mat(C.plasticoClaro);
@@ -2039,7 +2045,8 @@
         id: 'pc:' + nome,
         nome: ativo ? nome : nome + ' (em manutenção)',
         pc: pc,
-        ancora: new THREE.Vector3(x - 0.2, 0, z + 0.85)
+        // Ponto em frente à cadeira (local -0.2, 0.85), girado com a bancada.
+        ancora: new THREE.Vector3(x - 0.2 * Math.cos(rot) + 0.85 * Math.sin(rot), 0, z + 0.2 * Math.sin(rot) + 0.85 * Math.cos(rot))
       });
       S.pcs[nome] = pc;
       return pc;
@@ -8502,26 +8509,60 @@
 
   /* ================================================================== */
   secao('F3A-sala-cabeamento', function () {
-    // Fase 3: cabeamento estruturado. Seis PCs na parede do fundo, o rack
-    // com o switch no canto, três pontos de presilha, seis pontos de rede e
-    // quatro trechos de canaleta. O servidor (DHCP) fica em outra sala.
+    // Fase 3: cabeamento estruturado em "L". Três PCs na parede do fundo e
+    // três na parede da esquerda. O feixe sai do rack (canto do fundo, à
+    // direita), corre pela parede do fundo, vira o canto e segue pela
+    // parede da esquerda. Tudo na parede é posicionado por "s": a distância
+    // percorrida ao longo da rota, a partir da saída do rack.
     var F3 = S.f3 = {
-      BANCADA_Z: -2.6,
-      PAREDE_Z: -4.5,
       FIO_Y: 0.85, // acima das bancadas: dá para ver por cima dos monitores
-      SAIDA_X: 4.6, // onde os cabos saem do rack para a parede
-      FIM_X: -4.7,
-      PCS: [-4.75, -3.2, -1.65, -0.1, 1.45, 3.0].map(function (x, i) {
-        return { nome: 'PC-0' + (i + 1), x: x, tomadaX: x + 0.4 };
-      }),
-      PRESILHAS: [
-        { id: 'A', x: 4.05 },
-        { id: 'B', x: 1.08 },
-        { id: 'C', x: -2.03 }
+      ZP: -4.43, // frente da parede do fundo
+      XP: -5.93, // frente da parede da esquerda
+      SAIDA_X: 4.6, // onde os cabos saem do rack para a parede (s = 0)
+      CANTO: 10.53, // s do canto do fundo à esquerda
+      S_FIM: 16.3,
+      PCS: [
+        { nome: 'PC-01', x: 3.1, z: -2.6, parede: 'fundo' },
+        { nome: 'PC-02', x: 1.35, z: -2.6, parede: 'fundo' },
+        { nome: 'PC-03', x: -0.4, z: -2.6, parede: 'fundo' },
+        { nome: 'PC-04', x: -4.1, z: -2.2, parede: 'esquerda' },
+        { nome: 'PC-05', x: -4.1, z: -0.4, parede: 'esquerda' },
+        { nome: 'PC-06', x: -4.1, z: 1.4, parede: 'esquerda' }
       ],
-      TRECHOS: [[4.62, 2.26], [2.26, -0.03], [-0.03, -2.32], [-2.32, -4.72]]
+      // Ordem da rota: A, P1, P2, P3, B, (canto), P4, C, P5, P6.
+      PRESILHAS: [
+        { id: 'A', s: 0.45 },
+        { id: 'B', s: 5.9 },
+        { id: 'C', s: 13.26 }
+      ],
+      TRECHOS: [[0, 5.0], [5.0, 10.53], [10.53, 13.4], [13.4, 16.3]]
     };
-    var ZP = F3.PAREDE_Z + 0.07; // frente da parede (onde ficam fios e caixas)
+    // Tomada de cada PC: fica do lado do gabinete (40 cm).
+    F3.PCS.forEach(function (p) {
+      p.rot = p.parede === 'esquerda' ? Math.PI / 2 : 0;
+      p.s = p.parede === 'esquerda' ? F3.CANTO + (p.z - 0.4 - F3.ZP) : F3.SAIDA_X - (p.x + 0.4);
+    });
+
+    // Posição na parede para um "s" da rota.
+    F3.naRota = function (s) {
+      if (s <= F3.CANTO) {
+        var x = F3.SAIDA_X - s;
+        return { x: x, z: F3.ZP, rot: 0, normal: new THREE.Vector3(0, 0, 1), ancora: new THREE.Vector3(x, 0, -1.75) };
+      }
+      var z = F3.ZP + (s - F3.CANTO);
+      return { x: F3.XP, z: z, rot: Math.PI / 2, normal: new THREE.Vector3(1, 0, 0), ancora: new THREE.Vector3(-3.25, 0, z) };
+    };
+    F3.pontoRota = function (s, y, afastar) {
+      var r = F3.naRota(s);
+      return new THREE.Vector3(r.x, y, r.z).addScaledVector(r.normal, afastar || 0);
+    };
+    // Grupo encostado na parede, girado para "olhar" para dentro da sala.
+    function grupoParede(s, desloc) {
+      var r = F3.naRota(s);
+      var g = S.grupo(r.x + r.normal.x * (desloc || 0), F3.FIO_Y, r.z + r.normal.z * (desloc || 0));
+      g.rotation.y = r.rot;
+      return g;
+    }
 
     function txt(ctx, t, x, y, cor, fonte) {
       ctx.fillStyle = cor;
@@ -8562,14 +8603,23 @@
         nome: 'Switch (24 Fast + 2 Gigabit)',
         ancora: new THREE.Vector3(rx - 0.4, 0, rz + 1.15)
       });
-      // Cabo de uplink que vai para a sala do servidor (parede da direita).
+      // Uplink do servidor: sai da Gi0/1, sobe por cima do switch até o
+      // teto e segue pela eletrocalha até a parede da sala do servidor.
+      var ux = rx + 0.18;
+      var uz = rz + 0.38;
+      var mUplink = S.mat(C.laranja);
       var curva = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(rx + 0.2, 1.0, rz + 0.1),
-        new THREE.Vector3(rx + 0.35, 1.5, rz + 0.2),
-        new THREE.Vector3(5.9, 1.9, rz + 0.4),
-        new THREE.Vector3(5.98, 1.9, -3.2)
+        new THREE.Vector3(ux, 1.0, rz + 0.17),
+        new THREE.Vector3(ux, 1.05, rz + 0.3),
+        new THREE.Vector3(ux, 1.2, uz),
+        new THREE.Vector3(ux, 2.0, uz),
+        new THREE.Vector3(ux, 2.84, uz)
       ]);
-      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 12, 0.02, 4), S.mat(C.laranja)));
+      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 16, 0.022, 4), mUplink));
+      var mCalha = S.mat(0x9aa4b0);
+      S.caixa(0.08, 0.16, 0.08, mCalha, ux, 2.92, uz, null, true); // descida do teto
+      S.caixa(6.0 - ux + 0.05, 0.06, 0.2, mCalha, (ux + 6.0) / 2, 2.97, uz, null, true); // eletrocalha
+      S.caixa(6.0 - ux, 0.03, 0.03, mUplink, (ux + 6.0) / 2, 2.925, uz, null, true);
 
       // Porta (fechada) da sala do servidor, com placa.
       S.caixa(0.06, 2.1, 1.0, S.mat(C.madeiraEscura), 5.95, 1.05, -2.45, null, true);
@@ -8619,7 +8669,8 @@
       });
     };
 
-    // ---- Pontos de presilha (marcados na parede) ---------------------------
+    // ---- Pontos de fixação (X na parede), 3 presilhas em cada -------------
+    F3.PREGOS = 3;
     function montarPresilhas() {
       var texX = S.textura(16, 16, function (ctx, w, h) {
         ctx.clearRect(0, 0, w, h);
@@ -8633,31 +8684,34 @@
         ctx.stroke();
       });
       F3.presilhas = F3.PRESILHAS.map(function (p, i) {
-        var g = S.grupo(p.x, F3.FIO_Y, ZP);
-        var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), new THREE.MeshBasicMaterial({ map: texX, transparent: true }));
+        var r = F3.naRota(p.s);
+        var g = grupoParede(p.s);
+        var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshBasicMaterial({ map: texX, transparent: true }));
         marca.position.z = 0.005;
         g.add(marca);
         var pecas = [];
-        for (var k = 0; k < 6; k++) {
-          var pc = S.caixa(0.022, 0.06, 0.03, S.mat(0xf2f4f7), -0.07 + k * 0.028, 0, 0.02, g, true);
-          S.caixa(0.01, 0.01, 0.012, S.mat(0x9aa4b0), -0.07 + k * 0.028, 0.035, 0.03, g, true);
+        for (var k = 0; k < F3.PREGOS; k++) {
+          var px = (k - (F3.PREGOS - 1) / 2) * 0.07;
+          var pc = S.caixa(0.03, 0.07, 0.035, S.mat(0xf2f4f7), px, 0, 0.02, g, true);
+          var prego = S.caixa(0.012, 0.012, 0.014, S.mat(0x9aa4b0), px, 0.04, 0.032, g, true);
           pc.visible = false;
-          pecas.push(pc);
+          prego.visible = false;
+          pecas.push(pc, prego);
         }
-        var alvo = hitbox(0.5, 0.6, 0.3, g, 0, 0.1, 0.1);
-        var pres = { id: p.id, n: i + 1, x: p.x, grupo: g, marca: marca, pecas: pecas, pregadas: 0, pronta: false, passou: false };
+        var alvo = hitbox(0.42, 0.36, 0.3, g, 0, 0, 0.1);
+        var pres = { id: p.id, n: i + 1, s: p.s, x: r.x, z: r.z, grupo: g, marca: marca, pecas: pecas, pregadas: 0, pronta: false, passou: false };
         pres.info = S.interativo([alvo, marca], {
           id: 'presilha:' + p.id,
           nome: 'Ponto de fixação ' + p.id,
           presilha: pres,
-          ancora: new THREE.Vector3(p.x, 0, -1.75)
+          ancora: r.ancora
         });
         return pres;
       });
     }
 
     F3.pregarVisual = function (pres) {
-      pres.pecas.forEach(function (pc, k) { pc.visible = k < pres.pregadas; });
+      pres.pecas.forEach(function (pc, k) { pc.visible = Math.floor(k / 2) < pres.pregadas; });
       pres.marca.visible = !pres.pronta;
     };
 
@@ -8665,7 +8719,8 @@
     function montarPontos() {
       var C = S.COR;
       F3.tomadas = F3.PCS.map(function (p, i) {
-        var g = S.grupo(p.tomadaX, F3.FIO_Y, ZP + 0.02);
+        var r = F3.naRota(p.s);
+        var g = grupoParede(p.s, 0.02);
         var caixa = S.caixa(0.12, 0.14, 0.05, S.mat(0x8a96a6), 0, 0, 0, g, true);
         var ponta = S.cilindro(0.014, 0.014, 0.24, 5, S.mat(C.caboAzul), 0.03, -0.13, 0.04, g);
         ponta.rotation.z = 0.35;
@@ -8683,13 +8738,13 @@
         }));
         etiqueta.position.set(0, 0.12, 0.03);
         g.add(etiqueta);
-        var alvo = hitbox(0.45, 0.55, 0.3, g, 0, 0.05, 0.1);
-        var t = { n: i + 1, pc: p.nome, x: p.tomadaX, z: ZP, grupo: g, caixa: caixa, ponta: ponta, espelho: espelho, ks: ks, cabo: false, instalada: false, patch: false };
+        var alvo = hitbox(0.4, 0.4, 0.3, g, 0, 0, 0.1);
+        var t = { n: i + 1, pc: p.nome, s: p.s, x: r.x, z: r.z, normal: r.normal, grupo: g, caixa: caixa, ponta: ponta, espelho: espelho, ks: ks, cabo: false, instalada: false, patch: false };
         t.info = S.interativo([alvo, caixa], {
           id: 'ponto:' + (i + 1),
           nome: 'Ponto de rede ' + (i + 1) + ' (' + p.nome + ')',
           ponto: t,
-          ancora: new THREE.Vector3(p.tomadaX, 0, -1.75)
+          ancora: r.ancora
         });
         return t;
       });
@@ -8706,17 +8761,18 @@
       t.espelho.visible = true;
       t.ks.visible = true;
     };
-    // Patch cord do PC até a tomada.
+    // Patch cord do PC até a tomada (na parede atrás da bancada).
     F3.ligarPatch = function (t) {
       t.patch = true;
       var pc = S.pcs[t.pc];
+      var n = t.normal;
       var a = S.posMundo(pc.porta);
-      var b = new THREE.Vector3(t.x, F3.FIO_Y - 0.03, t.z + 0.08);
+      var b = new THREE.Vector3(t.x, F3.FIO_Y - 0.03, t.z).addScaledVector(n, 0.1);
       var curva = new THREE.CatmullRomCurve3([
         a,
-        new THREE.Vector3(a.x, a.y - 0.12, a.z - 0.35),
+        a.clone().addScaledVector(n, -0.35).add(new THREE.Vector3(0, -0.12, 0)),
         new THREE.Vector3((a.x + b.x) / 2, Math.min(a.y, b.y) - 0.2, (a.z + b.z) / 2),
-        new THREE.Vector3(b.x, b.y - 0.15, b.z + 0.3),
+        b.clone().addScaledVector(n, 0.3).add(new THREE.Vector3(0, -0.15, 0)),
         b
       ]);
       S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 24, 0.016, 4), S.mat(0xf2c200)));
@@ -8728,21 +8784,29 @@
 
     // ---- Feixe de cabos na parede (refeito a cada avanço) -----------------
     var tuboFeixe = null;
-    F3.redesenharFeixe = function (ateX) {
+    F3.redesenharFeixe = function (ateS) {
       if (tuboFeixe) {
         tuboFeixe.parent.remove(tuboFeixe);
         S.liberar(tuboFeixe);
         tuboFeixe = null;
       }
-      if (ateX === null || ateX === undefined) return;
+      if (ateS === null || ateS === undefined) return;
       var y = F3.FIO_Y;
-      var curva = new THREE.CatmullRomCurve3([
+      var pts = [
         new THREE.Vector3(4.95, 0.98, -3.75),
         new THREE.Vector3(4.75, 0.9, -4.25),
-        new THREE.Vector3(F3.SAIDA_X, y, ZP),
-        new THREE.Vector3(ateX, y, ZP)
-      ]);
-      tuboFeixe = new THREE.Mesh(new THREE.TubeGeometry(curva, 32, 0.03, 5), S.mat(S.COR.caboAzul));
+        F3.pontoRota(0, y, 0)
+      ];
+      // Vira o canto com dois pontos colados nele (curva justa).
+      if (ateS > F3.CANTO - 0.12) {
+        pts.push(F3.pontoRota(F3.CANTO - 0.12, y, 0));
+        pts.push(new THREE.Vector3(F3.XP + 0.02, y, F3.ZP + 0.02));
+        if (ateS > F3.CANTO + 0.12) pts.push(F3.pontoRota(F3.CANTO + 0.12, y, 0));
+      }
+      var fim = F3.pontoRota(Math.max(0.05, ateS), y, 0);
+      if (fim.distanceTo(pts[pts.length - 1]) > 0.04) pts.push(fim);
+      var curva = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+      tuboFeixe = new THREE.Mesh(new THREE.TubeGeometry(curva, 48, 0.03, 5), S.mat(S.COR.caboAzul));
       S.adicionar(tuboFeixe);
     };
 
@@ -8750,21 +8814,23 @@
     function montarCanaleta() {
       var mFantasma = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false });
       F3.trechos = F3.TRECHOS.map(function (tr, i) {
-        var larg = tr[0] - tr[1];
-        var cx = (tr[0] + tr[1]) / 2;
-        var g = S.grupo(cx, F3.FIO_Y, ZP - 0.01);
+        var larg = tr[1] - tr[0];
+        var meio = (tr[0] + tr[1]) / 2;
+        // O trecho todo fica numa parede só: usa o lado do meio.
+        var r = F3.naRota(meio);
+        var g = grupoParede(meio, -0.01);
         var fantasma = new THREE.Mesh(new THREE.BoxGeometry(larg, 0.1, 0.07), mFantasma.clone());
         fantasma.visible = false;
         g.add(fantasma);
         var solida = S.caixa(larg, 0.1, 0.07, S.mat(0xf2f4f7), 0, 0, 0, g, true);
         solida.visible = false;
-        var alvo = hitbox(larg, 0.5, 0.3, g, 0, 0.05, 0.1);
+        var alvo = hitbox(larg, 0.3, 0.3, g, 0, 0, 0.1);
         var t = { n: i + 1, de: tr[0], ate: tr[1], grupo: g, fantasma: fantasma, solida: solida, pronta: false };
         t.info = S.interativo([alvo], {
           id: 'canaleta:' + (i + 1),
           nome: 'Trecho ' + (i + 1) + ' da canaleta',
           trecho: t,
-          ancora: new THREE.Vector3(cx, 0, -1.75)
+          ancora: r.ancora
         });
         return t;
       });
@@ -8779,10 +8845,12 @@
     };
 
     // ---- Bancada: martelo + presilhas, keystones, patch cords --------------
+    // Fica do lado direito, perto da mesa do professor.
+    F3.BANCADA = { x: 4.6, z: 1.2 };
     function montarBancada() {
       var C = S.COR;
-      var bx = -4.9;
-      var bz = 0.9;
+      var bx = F3.BANCADA.x;
+      var bz = F3.BANCADA.z;
       var g = S.grupo(bx, 0, bz);
       var mPe = S.mat(C.metalEscuro);
       S.caixa(1.6, 0.05, 0.8, S.mat(C.madeira), 0, 0.76, 0, g);
@@ -8820,18 +8888,19 @@
       S.interativo([rolo], {
         id: 'kitPatch',
         nome: 'Patch cords prontos',
-        ancora: new THREE.Vector3(bx + 0.55, 0, bz + 0.9)
+        ancora: new THREE.Vector3(bx + 0.45, 0, bz + 0.9)
       });
       S.mundo.criarCartaz(g, bx, bz);
     }
 
+    // Quadro no canto esquerdo do fundo, mais alto: longe dos X e das tomadas.
     F3.montarSala = function () {
-      S.mundo.montarSala({ quadroX: -0.9, placaX: -4.3, janelas: [-0.2, 2.5] });
+      S.mundo.montarSala({ quadroX: -3.9, quadroY: 1.98, placaX: 1.35, janelas: [-0.2, 2.6] });
     };
     F3.montarEquipamentos = function () {
       montarRack();
       F3.PCS.forEach(function (p) {
-        S.mundo.criarPc(p.nome, p.x, F3.BANCADA_Z, true, 1.5);
+        S.mundo.criarPc(p.nome, p.x, p.z, true, 1.5, p.rot);
       });
       montarPresilhas();
       montarPontos();
@@ -8856,7 +8925,7 @@
       F3.kitPatchOk = false;
       F3.portas = [];
       F3.restantes = 0; // cabos ainda na mão (feixe)
-      F3.feixeAte = null; // até onde o feixe já foi preso na parede (x)
+      F3.feixeAte = null; // até onde o feixe já foi preso na parede (s da rota)
     };
     F3.reiniciar();
 
@@ -8874,21 +8943,21 @@
       return t && t.patch && S.pcs[t.pc].estado.ligado;
     };
 
-    // Ordem do caminho, do switch (direita) para a esquerda.
+    // Ordem do caminho, a partir do switch (s crescente).
     F3.rota = function () {
       var itens = [];
-      (F3.presilhas || []).forEach(function (p) { itens.push({ tipo: 'presilha', x: p.x, obj: p }); });
-      (F3.tomadas || []).forEach(function (t) { itens.push({ tipo: 'ponto', x: t.x, obj: t }); });
-      return itens.sort(function (a, b) { return b.x - a.x; });
+      (F3.presilhas || []).forEach(function (p) { itens.push({ tipo: 'presilha', s: p.s, obj: p }); });
+      (F3.tomadas || []).forEach(function (t) { itens.push({ tipo: 'ponto', s: t.s, obj: t }); });
+      return itens.sort(function (a, b) { return a.s - b.s; });
     };
     // Para chegar num ponto, o feixe precisa ter passado pelas presilhas antes dele.
-    F3.presilhasAntes = function (x) {
-      return (F3.presilhas || []).filter(function (p) { return p.x > x; });
+    F3.presilhasAntes = function (s) {
+      return (F3.presilhas || []).filter(function (p) { return p.s < s; });
     };
     F3.ancoraFeixe = function () {
       var passadas = (F3.presilhas || []).filter(function (p) { return p.passou; });
-      var x = passadas.length ? Math.min.apply(null, passadas.map(function (p) { return p.x; })) : F3.SAIDA_X;
-      return new THREE.Vector3(x, F3.FIO_Y, F3.PAREDE_Z + 0.08);
+      var s = passadas.length ? Math.max.apply(null, passadas.map(function (p) { return p.s; })) : 0;
+      return F3.pontoRota(s, F3.FIO_Y, 0.08);
     };
 
     function proximoDaRota() {
@@ -8905,20 +8974,20 @@
       {
         id: 'kitPres',
         quadro: 'Pegar martelo e presilhas',
-        texto: 'Pegue o martelo e as presilhas na bancada perto da porta.',
+        texto: 'Pegue o martelo e as presilhas na bancada da direita.',
         feita: function () { return F3.kitPres || F3.presilhasProntas() === 3; },
         alvos: function () { return ['kitPresilhas']; },
-        dica1: 'A bancada fica à esquerda, perto da porta de entrada.',
+        dica1: 'A bancada de ferramentas fica à direita, perto da mesa do professor.',
         dica2: 'Use o martelo e a caixinha de presilhas na bancada.'
       },
       {
         id: 'presilhas',
         quadro: 'Pregar presilhas (3 pontos)',
-        texto: function () { return 'Pregue 6 presilhas em cada ponto marcado com X na parede (' + F3.presilhasProntas() + '/3).'; },
+        texto: function () { return 'Pregue 3 presilhas em cada X marcado na parede (' + F3.presilhasProntas() + '/3).'; },
         feita: function () { return F3.presilhasProntas() === 3; },
         alvos: function () { return (F3.presilhas || []).filter(function (p) { return !p.pronta; }).map(function (p) { return 'presilha:' + p.id; }); },
-        dica1: 'Os X vermelhos ficam na parede do fundo, atrás dos PCs, logo abaixo do quadro.',
-        dica2: 'Martele quando o marcador estiver na faixa verde.'
+        dica1: 'Os X vermelhos ficam atrás das bancadas: A e B na parede do fundo, C na parede da esquerda.',
+        dica2: 'Martele quando o marcador estiver dentro da faixa verde.'
       },
       {
         id: 'switch',
@@ -8935,7 +9004,7 @@
         texto: function () { return 'Passe o feixe pelas presilhas e deixe um cabo em cada ponto de rede (' + F3.cabosNosPontos() + '/6).'; },
         feita: function () { return F3.cabosNosPontos() === 6; },
         alvos: function () { var a = proximoDaRota(); return a ? [a] : []; },
-        dica1: 'Saindo do switch, vá pela parede: presilha A, pontos 6 e 5, presilha B, pontos 4 e 3, presilha C, pontos 2 e 1.',
+        dica1: 'Saindo do switch: presilha A, pontos 1, 2 e 3, presilha B, ponto 4, presilha C, pontos 5 e 6.',
         dica2: 'Um ponto só recebe cabo depois que o feixe passa pelas presilhas entre ele e o switch.'
       },
       {
@@ -8953,7 +9022,7 @@
         texto: 'Pegue as keystones e a ferramenta punch down na bancada.',
         feita: function () { return F3.kitKs || F3.tomadasProntas() === 6; },
         alvos: function () { return ['kitKeystone3']; },
-        dica1: 'Estão no meio da bancada de ferramentas.',
+        dica1: 'Estão no meio da bancada de ferramentas, à direita.',
         dica2: 'Caixinha azul com as keystones e a punch down amarela.'
       },
       {
@@ -9072,13 +9141,13 @@
         return S.aviso(p.passou ? 'O feixe já passa por aqui.' : F3.portas.length < 6 ? 'Conecte os 6 cabos no switch para começar a passar o feixe.' : 'Presilhas prontas para receber o feixe.', 'info', 2600);
       }
       if (p.passou) return S.aviso('O feixe já passou por esta presilha.', 'info');
-      var antes = F3.presilhasAntes(p.x).filter(function (q) { return !q.passou; });
+      var antes = F3.presilhasAntes(p.s).filter(function (q) { return !q.passou; });
       if (antes.length) {
-        J.errou('Passe o feixe na ordem: primeiro pela presilha ' + antes[antes.length - 1].id + ', mais perto do switch.');
+        J.errou('Passe o feixe na ordem: primeiro pela presilha ' + antes[0].id + ', mais perto do switch.');
         return;
       }
       p.passou = true;
-      F3.feixeAte = Math.min(F3.feixeAte === null ? F3.SAIDA_X : F3.feixeAte, p.x);
+      F3.feixeAte = Math.max(F3.feixeAte || 0, p.s);
       F3.redesenharFeixe(F3.feixeAte);
       S.mundo.definirCaboMao(F3.ancoraFeixe());
       S.aviso('Feixe preso na presilha ' + p.id + '.', 'ok', 2000);
@@ -9091,14 +9160,14 @@
         if (!mao || mao.tipo !== 'feixe') {
           return S.aviso(F3.portas.length < 6 ? 'O cabo deste ponto sai do switch: conecte os 6 cabos no rack primeiro.' : 'Traga o feixe de cabos até aqui.', 'info', 3000);
         }
-        var faltam = F3.presilhasAntes(t.x).filter(function (q) { return !q.passou; });
+        var faltam = F3.presilhasAntes(t.s).filter(function (q) { return !q.passou; });
         if (faltam.length) {
-          J.errou('O cabo ficaria solto: passe antes pela presilha ' + faltam[faltam.length - 1].id + '.');
+          J.errou('O cabo ficaria solto: passe antes pela presilha ' + faltam[0].id + '.');
           return;
         }
         F3.caboNoPonto(t);
         F3.restantes--;
-        F3.feixeAte = Math.min(F3.feixeAte === null ? F3.SAIDA_X : F3.feixeAte, t.x);
+        F3.feixeAte = Math.max(F3.feixeAte || 0, t.s);
         F3.redesenharFeixe(F3.feixeAte);
         if (F3.restantes <= 0) {
           J.definirMao(null);
@@ -9147,9 +9216,9 @@
       MG.switch3(function (portas) {
         F3.portas = portas;
         F3.restantes = 6;
-        F3.feixeAte = F3.SAIDA_X;
+        F3.feixeAte = 0;
         F3.desenharSwitch();
-        F3.redesenharFeixe(F3.SAIDA_X);
+        F3.redesenharFeixe(0);
         J.definirMao({ tipo: 'feixe', rotulo: 'Feixe com 6 cabos' });
         S.mundo.definirCaboMao(F3.ancoraFeixe());
         S.aviso('6 cabos no switch! Leve o feixe pela parede: presilha A primeiro.', 'ok', 3600);
@@ -9188,81 +9257,124 @@
     var MG = S.minigames;
     var J = S.jogo;
 
-    // Martelo: o marcador sobe e desce; martele quando ele estiver no verde.
+    // Martelo: o marcador sobe e desce em velocidade constante; martele com
+    // ele dentro da faixa verde. O acerto é conferido na posição que está na
+    // tela (a mesma que o aluno vê) e a batida conta no momento em que o
+    // dedo/botão desce, sem esperar soltar.
     MG.martelo = function (pres, aoConcluir) {
-      var m = S.ui.abrirModal('Ponto de fixação ' + pres.id + ' · pregar 6 presilhas', { largura: '560px' });
+      var TOTAL = S.f3.PREGOS || 3;
+      var VEL = [0.75, 0.88, 1.0]; // fração do trilho por segundo
+      var TAM = [0.26, 0.22, 0.19]; // tamanho da faixa verde
+      var FOLGA = 0.025;
+      var m = S.ui.abrirModal('Ponto ' + pres.id + ' · pregar ' + TOTAL + ' presilhas', { largura: '540px' });
       var ap = S.ui.compacto();
       S.el('div', { marginBottom: '8px' }, 'Martele quando o marcador estiver na faixa verde. Fora dela a presilha entorta.', m.corpo);
-      var area = S.el('div', { display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center' }, null, m.corpo);
-      var alt = ap ? 150 : 220;
+      var area = S.el('div', { display: 'flex', gap: '18px', alignItems: 'center', justifyContent: 'center' }, null, m.corpo);
+      var alt = ap ? 150 : 210;
       var trilho = S.el('div', {
         position: 'relative',
-        width: '46px',
+        width: '52px',
         height: alt + 'px',
         background: '#1B2B44',
         border: '3px solid #071430',
         borderRadius: '8px',
         flex: '0 0 auto',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        touchAction: 'none',
+        cursor: 'pointer'
       }, null, area);
       var verde = S.el('div', { position: 'absolute', left: '0', right: '0', background: '#2EAA4A', boxShadow: 'inset 0 0 0 2px #6BF08E' }, null, trilho);
-      var marcador = S.el('div', { position: 'absolute', left: '-2px', right: '-2px', height: '6px', background: C.laranja, border: '2px solid #071430', marginTop: '-5px' }, null, trilho);
+      var marcador = S.el('div', { position: 'absolute', left: '-2px', right: '-2px', top: '0', height: '8px', background: C.laranja, border: '2px solid #071430', boxSizing: 'border-box', willChange: 'transform' }, null, trilho);
       var lado = S.el('div', { display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }, null, area);
-      var linhaPres = S.el('div', { display: 'flex', gap: '6px' }, null, lado);
+      // Pedaço de parede com as presilhas aparecendo a cada batida certa.
+      var parede = S.el('div', { position: 'relative', width: '150px', height: '54px', background: '#E4E9EF', border: '3px solid #071430', borderRadius: '6px', overflow: 'hidden' }, null, lado);
+      S.el('div', { position: 'absolute', left: '0', right: '0', top: '22px', height: '6px', background: '#2D7FE0', opacity: '0.35' }, null, parede);
       var icones = [];
-      for (var i = 0; i < 6; i++) {
-        icones.push(S.el('div', { width: '18px', height: '30px', borderRadius: '4px', border: '2px dashed #4A5D7A', boxSizing: 'border-box' }, null, linhaPres));
+      for (var i = 0; i < TOTAL; i++) {
+        var slot = S.el('div', { position: 'absolute', top: '10px', left: (20 + i * 44) + 'px', width: '22px', height: '30px', borderRadius: '4px', border: '2px dashed #8A96A6', boxSizing: 'border-box' }, null, parede);
+        icones.push(slot);
       }
-      var bMart = S.ui.botao('🔨 Martelar', 'primario', martelar, lado);
-      S.estilo(bMart, { fontSize: ap ? '16px' : '18px', padding: ap ? '10px 22px' : '14px 30px' });
+      var bMart = S.ui.botao('🔨 Martelar', 'primario', null, lado);
+      S.estilo(bMart, { fontSize: ap ? '16px' : '18px', padding: ap ? '10px 22px' : '14px 30px', touchAction: 'none' });
       bMart.setAttribute('aria-label', 'Martelar');
-      S.el('div', { fontSize: '12px', color: C.cinza }, S.toque ? 'Toque no botão' : 'Clique ou aperte Espaço', lado);
+      S.el('div', { fontSize: '12px', color: C.cinza }, S.toque ? 'Toque no botão ou na barra' : 'Clique, toque ou aperte Espaço', lado);
       var msg = MG.mensagem(m.corpo);
       var feitas = 0;
       var zona = { ini: 0, fim: 0 };
-      var t0 = performance.now();
-      var vel = 1.3;
+      var pos = Math.random() * 0.3;
+      function marcarIcone(k) {
+        S.estilo(icones[k], { background: '#F2F4F7', border: '3px solid #071430', boxShadow: 'inset 0 -6px 0 #9AA4B0' });
+        S.el('div', { width: '8px', height: '8px', margin: '3px auto 0', borderRadius: '50%', background: '#5B6675' }, null, icones[k]);
+      }
+      // Se o aluno fechou no meio, continua de onde parou.
+      while (feitas < Math.min(TOTAL - 1, pres.pregadas || 0)) marcarIcone(feitas++);
+      var dir = 1;
+      var ultimo = performance.now();
+      var congelaAte = 0;
       var trava = 0;
 
       function novaZona() {
-        var tam = 0.2 - feitas * 0.012;
-        zona.ini = 0.08 + Math.random() * (0.84 - tam);
+        var tam = TAM[Math.min(feitas, TAM.length - 1)];
+        // Longe de onde o marcador está agora, para não ganhar de graça.
+        var tent = 0;
+        do {
+          zona.ini = 0.06 + Math.random() * (0.88 - tam);
+          tent++;
+        } while (tent < 8 && pos >= zona.ini - 0.08 && pos <= zona.ini + tam + 0.08);
         zona.fim = zona.ini + tam;
         verde.style.top = (zona.ini * 100) + '%';
         verde.style.height = ((zona.fim - zona.ini) * 100) + '%';
       }
-      function posicao() {
-        var t = (performance.now() - t0) / 1000;
-        return (Math.sin(t * vel * Math.PI) + 1) / 2;
+      function desenhar() {
+        var y = pos * (alt - 6) - 4;
+        marcador.style.transform = 'translateY(' + y.toFixed(1) + 'px)';
       }
-      function laco() {
+      function laco(agora) {
         if (!m.fundo.isConnected) return;
-        marcador.style.top = (posicao() * 100) + '%';
+        var dt = Math.min(0.05, Math.max(0, (agora - ultimo) / 1000));
+        ultimo = agora;
+        if (agora >= congelaAte && feitas < TOTAL) {
+          pos += dir * VEL[Math.min(feitas, VEL.length - 1)] * dt;
+          if (pos >= 1) { pos = 2 - pos; dir = -1; }
+          if (pos <= 0) { pos = -pos; dir = 1; }
+          desenhar();
+        }
         requestAnimationFrame(laco);
       }
       function martelar() {
-        if (feitas >= 6 || performance.now() < trava) return;
-        var p = posicao();
-        if (p >= zona.ini && p <= zona.fim) {
-          S.estilo(icones[feitas], { background: '#F2F4F7', border: '2px solid #071430' });
+        var agora = performance.now();
+        if (feitas >= TOTAL || agora < trava || agora < congelaAte) return;
+        if (pos >= zona.ini - FOLGA && pos <= zona.fim + FOLGA) {
+          marcarIcone(feitas);
           feitas++;
           pres.pregadas = feitas;
-          msg('Pá! Presilha ' + feitas + '/6 firme.', 'ok');
-          if (feitas === 6) {
-            msg('✔ As 6 presilhas do ponto ' + pres.id + ' estão pregadas!', 'ok');
-            setTimeout(function () { m.fechar(true); aoConcluir(); }, 700);
+          S.f3.pregarVisual(pres);
+          verde.style.background = '#6BF08E';
+          setTimeout(function () { verde.style.background = '#2EAA4A'; }, 180);
+          if (feitas === TOTAL) {
+            msg('✔ As ' + TOTAL + ' presilhas do ponto ' + pres.id + ' estão pregadas!', 'ok');
+            setTimeout(function () { m.fechar(true); aoConcluir(); }, 650);
             return;
           }
-          vel += 0.12;
+          msg('Pá! Presilha ' + feitas + '/' + TOTAL + ' firme.', 'ok');
+          congelaAte = agora + 300;
           novaZona();
         } else {
           J.erros++;
-          trava = performance.now() + 450;
-          msg('✖ Torta! A presilha entortou. Martele com o marcador no verde.', 'erro');
+          trava = agora + 450;
+          msg('✖ Torta! Martele com o marcador dentro do verde.', 'erro');
           trilho.style.borderColor = '#D63A33';
           setTimeout(function () { trilho.style.borderColor = '#071430'; }, 300);
         }
       }
+      // Conta na descida do dedo/botão do mouse (o "click" só vem ao soltar).
+      function aoApertar(ev) {
+        if (ev.button !== undefined && ev.button > 0) return;
+        ev.preventDefault();
+        S.protegido('martelo', martelar)();
+      }
+      bMart.addEventListener('pointerdown', aoApertar);
+      trilho.addEventListener('pointerdown', aoApertar);
       function tecla(ev) {
         if (!m.fundo.isConnected) {
           window.removeEventListener('keydown', tecla);
@@ -9275,8 +9387,9 @@
       }
       window.addEventListener('keydown', tecla);
       novaZona();
-      laco();
-      MG.marteloAtual = { zona: zona, posicao: posicao, martelar: martelar };
+      desenhar();
+      requestAnimationFrame(function (t) { ultimo = t; laco(t); });
+      MG.marteloAtual = { zona: zona, posicao: function () { return pos; }, martelar: martelar };
     };
 
     // Switch: 6 cabos em portas Fast (a Gi0/1 já é o uplink do servidor).
@@ -9467,11 +9580,11 @@
         inicio: { x: -5.35, z: 3.0 },
         tomadas: {
           abertura: { pos: [-1.2, 4.6, 8.6], alvo: [-4.2, 0.8, 2.4] },
-          rack: { pos: [2.7, 2.3, -0.7], alvo: [4.95, 1.0, -3.95] },
-          presilhas: { pos: [1.0, 2.5, -1.2], alvo: [2.6, 0.85, -4.45] },
-          parede: { pos: [-0.3, 3.0, -0.6], alvo: [-0.3, 0.85, -4.45] },
-          bancada: { pos: [-3.3, 2.1, 3.2], alvo: [-4.9, 0.85, 0.9] },
-          pcs: { pos: [-0.9, 3.1, 1.6], alvo: [-0.9, 0.9, -2.6] }
+          rack: { pos: [2.5, 2.6, -0.4], alvo: [4.95, 1.7, -3.95] },
+          presilhas: { pos: [0.6, 3.6, 1.6], alvo: [-1.6, 0.85, -3.6] },
+          parede: { pos: [1.6, 4.2, 3.2], alvo: [-2.4, 0.85, -2.6] },
+          bancada: { pos: [2.3, 2.7, 2.2], alvo: [4.7, 0.8, 1.0] },
+          pcs: { pos: [1.2, 5.0, 4.6], alvo: [-1.4, 0.6, -1.6] }
         },
         falas: function () {
           var n = S.primeiroNome();
@@ -9479,10 +9592,10 @@
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Último laboratório, ' + n + '! Agora é cabeamento estruturado: seis computadores com tudo organizado.' },
             { quem: 'prof', tomada: 'rack', gesto: 'apontar', texto: 'O servidor já está pronto, na outra sala. É deste switch que saem os seis cabos, um para cada PC.' },
             { quem: 'prof', tomada: 'bancada', gesto: 'apontar', texto: 'Pegue o martelo e as presilhas na bancada. Lá também ficam as keystones e os patch cords.' },
-            { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Pregue as presilhas nos três pontos marcados com X na parede. Martele no verde, senão entorta!' },
+            { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Tem três X marcados na parede: dois no fundo e um na lateral. Em cada X você prega três presilhas. Martele no verde, senão entorta!' },
             { quem: 'prof', tomada: 'parede', gesto: 'explicar', texto: 'Depois conecte os seis cabos no switch e leve o feixe pela parede, passando pelas presilhas e deixando um cabo em cada ponto.' },
             { quem: 'prof', tomada: 'parede', gesto: 'falar', texto: 'Com os cabos no lugar, esconda tudo na canaleta e monte as seis tomadas keystone.' },
-            { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'Por fim, ligue os PCs nas tomadas com os patch cords, ligue os computadores e peça IP automático.' },
+            { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'São três PCs no fundo e três na lateral. Por fim, ligue cada um na tomada com um patch cord, ligue os computadores e peça IP automático.' },
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Boa sorte, ' + n + '!' },
             { quem: 'aluno', tomada: 'aluno', texto: 'Bora organizar esses cabos!' }
           ];
