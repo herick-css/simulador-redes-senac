@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.5.0',
+    versao: '3.5.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -9912,7 +9912,7 @@
           return (F3.tomadas || []).filter(function (t) { return !t.patch; }).map(function (t) { return 'ponto:' + t.n; });
         },
         dica1: 'O rolo amarelo de patch cords fica na bancada.',
-        dica2: 'Use cada ponto de rede: o patch cord liga a tomada ao PC da frente.'
+        dica2: 'Em cada ponto: encaixe na keystone e depois na porta RJ45 (a maior, de 8 contatos) atrás do PC. A RJ11 é de telefone.'
       },
       {
         id: 'ligar',
@@ -10084,9 +10084,11 @@
       }
       if (!t.patch) {
         if (!F3.kitPatchOk) return S.aviso('Pegue os patch cords na bancada.', 'alerta', 3000);
-        F3.ligarPatch(t);
-        S.aviso(t.pc + ' ligado à tomada ' + t.n + ' com patch cord.', 'ok', 2400);
-        J.atualizarMissoes();
+        MG.patchCord(t, function () {
+          F3.ligarPatch(t);
+          S.aviso(t.pc + ' ligado à tomada ' + t.n + ' com patch cord.', 'ok', 2400);
+          J.atualizarMissoes();
+        });
         return;
       }
       S.aviso('Ponto ' + t.n + ': tudo pronto.', 'info');
@@ -10338,6 +10340,131 @@
       desenhar();
       requestAnimationFrame(function (t) { ultimo = t; laco(t); });
       MG.marteloAtual = { zona: zona, posicao: function () { return pos; }, martelar: martelar };
+    };
+
+    // Patch cord: 1) encaixa na keystone da parede; 2) escolhe a porta certa
+    // na traseira do PC (as outras portas contam erro).
+    MG.patchCord = function (t, aoConcluir) {
+      var m = S.ui.abrirModal('Patch cord · tomada P' + t.n + ' ↔ ' + t.pc, { largura: '640px' });
+      var ap = S.ui.compacto();
+      var passo = S.el('div', { marginBottom: '8px' }, '', m.corpo);
+      var area = S.el('div', { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'stretch' }, null, m.corpo);
+      var msg = MG.mensagem(m.corpo);
+      var encaixado = false;
+      var feito = false;
+
+      function painel(titulo) {
+        var c = S.el('div', {
+          flex: '1 1 240px', background: '#071733', border: '3px solid ' + C.borda, borderRadius: '8px',
+          padding: ap ? '8px' : '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px'
+        }, null, area);
+        S.el('div', { fontSize: '12px', fontWeight: '700', color: C.laranja, letterSpacing: '0.06em', alignSelf: 'flex-start' }, titulo, c);
+        return c;
+      }
+
+      // ---- 1. Tomada na parede ---------------------------------------------
+      var pParede = painel('1 · TOMADA P' + t.n + ' (PAREDE)');
+      var cena = S.el('div', { position: 'relative', width: '200px', height: ap ? '118px' : '140px' }, null, pParede);
+      var espelho = S.el('div', {
+        position: 'absolute', left: '62px', top: '6px', width: '76px', height: ap ? '100px' : '118px',
+        background: '#F4F6F9', border: '3px solid #9AA5B1', borderRadius: '8px', boxSizing: 'border-box'
+      }, null, cena);
+      S.el('div', { position: 'absolute', left: '0', right: '0', top: '6px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#0B4F9C' }, 'P' + t.n, espelho);
+      var ks = S.el('button', {
+        position: 'absolute', left: '19px', top: ap ? '30px' : '38px', width: '32px', height: '32px',
+        background: '#2D7FE0', border: '3px solid #071430', borderRadius: '4px', cursor: 'pointer', padding: '0'
+      }, null, espelho);
+      ks.type = 'button';
+      ks.setAttribute('aria-label', 'Encaixar na keystone');
+      S.el('div', { width: '18px', height: '12px', margin: '6px auto 0', background: '#0A0C0F', borderRadius: '2px' }, null, ks);
+      // Ponta RJ45 do patch cord (amarelo), esperando para entrar.
+      var plugue = S.el('div', {
+        position: 'absolute', left: '80px', top: ap ? '84px' : '100px', width: '26px', height: '30px',
+        transition: 'transform .3s ease', pointerEvents: 'none'
+      }, null, cena);
+      S.el('div', { width: '20px', height: '16px', margin: '0 auto', background: 'rgba(230,240,255,0.9)', border: '2px solid #9AA5B1', borderRadius: '2px' }, null, plugue);
+      S.el('div', { width: '10px', height: '22px', margin: '0 auto', background: '#F2C200', borderRadius: '0 0 3px 3px' }, null, plugue);
+      plugue.style.transform = 'translate(4px, 22px)';
+
+      ks.addEventListener('click', S.protegido('patch:keystone', function () {
+        if (encaixado) return msg('Já está encaixado na tomada.', 'info');
+        encaixado = true;
+        plugue.style.transform = 'translate(4px, ' + (ap ? '-40px' : '-48px') + ')';
+        ks.style.boxShadow = '0 0 0 3px ' + C.verde;
+        msg('Clique! Patch cord encaixado na keystone da tomada P' + t.n + '.', 'ok');
+        atualizarPasso();
+      }));
+
+      // ---- 2. Traseira do PC -------------------------------------------------
+      var pPc = painel('2 · TRASEIRA DO ' + t.pc);
+      var traseira = S.el('div', {
+        display: 'grid', gridTemplateColumns: 'repeat(4, 52px)', gap: '8px', justifyContent: 'center',
+        background: '#3A434F', border: '3px solid #071430', borderRadius: '6px', padding: '10px'
+      }, null, pPc);
+      var PORTAS = [
+        { id: 'rj45', nome: 'Porta RJ45', certa: true },
+        { id: 'rj11', nome: 'Porta RJ11', dica: 'Essa é a RJ11, de telefone/modem: é menor e tem só 4 contatos. A de rede é a RJ45, com 8.' },
+        { id: 'usb', nome: 'Porta USB', dica: 'Essa é uma USB (teclado, mouse, pendrive).' },
+        { id: 'usb2', nome: 'Porta USB 2', dica: 'Essa é uma USB (teclado, mouse, pendrive).' },
+        { id: 'hdmi', nome: 'Porta HDMI', dica: 'Essa é a HDMI: saída de vídeo para o monitor.' },
+        { id: 'vga', nome: 'Porta VGA', dica: 'Essa é a VGA: vídeo analógico para monitor antigo.' },
+        { id: 'audio', nome: 'Saída de áudio', dica: 'Essa é a saída de áudio (verde), para fone ou caixa de som.' },
+        { id: 'mic', nome: 'Entrada de microfone', dica: 'Essa é a entrada de microfone (rosa).' }
+      ];
+      function desenho(b, id) {
+        var d = function (estilo) { return S.el('div', estilo, null, b); };
+        var base = { margin: '0 auto', boxSizing: 'border-box' };
+        if (id === 'rj45') {
+          d(Object.assign({ width: '30px', height: '26px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '2px', position: 'relative' }, base));
+        } else if (id === 'rj11') {
+          d(Object.assign({ width: '20px', height: '17px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '2px' }, base));
+        } else if (id === 'usb' || id === 'usb2') {
+          d(Object.assign({ width: '30px', height: '12px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '1px', borderBottomWidth: '6px', borderBottomColor: '#2D7FE0' }, base));
+        } else if (id === 'hdmi') {
+          d(Object.assign({ width: '34px', height: '12px', background: '#0A0C0F', border: '3px solid #C9D2DC', clipPath: 'polygon(0 0,100% 0,100% 60%,85% 100%,15% 100%,0 60%)' }, base));
+        } else if (id === 'vga') {
+          d(Object.assign({ width: '36px', height: '18px', background: '#2D5FA8', border: '3px solid #C9D2DC', clipPath: 'polygon(0 0,100% 0,90% 100%,10% 100%)' }, base));
+        } else {
+          d(Object.assign({ width: '20px', height: '20px', borderRadius: '50%', background: id === 'audio' ? '#3BB54A' : '#E888B0', border: '5px solid #0A0C0F' }, base));
+        }
+      }
+      S.embaralhar(PORTAS).forEach(function (p) {
+        var b = S.el('button', {
+          height: '44px', background: '#2B333E', border: '2px solid #5B6675', borderRadius: '4px',
+          cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation'
+        }, null, traseira);
+        b.type = 'button';
+        b.setAttribute('aria-label', p.nome);
+        b.title = p.nome;
+        desenho(b, p.id);
+        b.addEventListener('click', S.protegido('patch:porta', function () {
+          if (feito) return;
+          if (!encaixado) return msg('Primeiro encaixe a outra ponta na keystone da parede.', 'info');
+          if (!p.certa) {
+            J.erros++;
+            b.style.borderColor = C.vermelho;
+            setTimeout(function () { b.style.borderColor = '#5B6675'; }, 500);
+            return msg('✖ Porta errada! ' + p.dica, 'erro');
+          }
+          feito = true;
+          b.style.borderColor = C.verde;
+          b.style.background = '#1E5A2E';
+          msg('✔ Encaixado na placa de rede (RJ45) do ' + t.pc + '!', 'ok');
+          atualizarPasso();
+          setTimeout(function () { m.fechar(true); aoConcluir(); }, 750);
+        }));
+      });
+      S.el('div', { fontSize: '11px', color: C.cinza }, 'Encontre a porta de rede do computador.', pPc);
+
+      function atualizarPasso() {
+        passo.textContent = feito ? 'Pronto!' : !encaixado
+          ? 'Passo 1: clique na keystone da tomada para encaixar o patch cord.'
+          : 'Passo 2: agora encaixe a outra ponta na porta certa atrás do ' + t.pc + '.';
+        pParede.style.borderColor = encaixado ? C.verde : C.laranja;
+        pPc.style.borderColor = feito ? C.verde : encaixado ? C.laranja : C.borda;
+        pPc.style.opacity = encaixado ? '1' : '0.6';
+      }
+      atualizarPasso();
     };
 
     // Switch: 6 cabos em portas Fast (a Gi0/1 já é o uplink do servidor).
