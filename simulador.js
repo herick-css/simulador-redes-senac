@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.2.1',
+    versao: '3.3.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -1367,9 +1367,108 @@
       return n + '|' + String(turma || '').trim().toUpperCase();
     };
 
-    function valido(r) {
-      return r && isFinite(Number(r.tempo)) && Number(r.tempo) > 0;
+    // Marcas do professor gravadas junto com os resultados:
+    //   { tipo: 'zerar', data }          → esconde tudo o que veio antes
+    //   { tipo: 'ocultar', alvo: id }    → esconde um resultado
+    // Usadas só se o Canva não deixar apagar de verdade.
+    function marcas() {
+      var corte = '';
+      var ocultos = {};
+      var ultimoZerar = -1;
+      D.registros.forEach(function (r, i) {
+        if (!r || !r.tipo) return;
+        if (r.tipo === 'zerar') {
+          ultimoZerar = i;
+          if (String(r.data || '') > corte) corte = String(r.data || '');
+        }
+        if (r.tipo === 'ocultar' && r.alvo) ocultos[r.alvo] = true;
+      });
+      // Tudo o que foi gravado antes da marca de zerar também sai (mesmo com
+      // relógio adiantado no aparelho do aluno).
+      for (var i = 0; i < ultimoZerar; i++) {
+        var r = D.registros[i];
+        if (r && !r.tipo && r.__backendId) ocultos[r.__backendId] = true;
+      }
+      return { corte: corte, ocultos: ocultos };
     }
+    var cacheMarcas = null;
+    var cacheDe = null;
+    function valido(r) {
+      if (!r || r.tipo || !isFinite(Number(r.tempo)) || Number(r.tempo) <= 0) return false;
+      if (cacheDe !== D.registros) {
+        cacheDe = D.registros;
+        cacheMarcas = marcas();
+      }
+      if (cacheMarcas.ocultos[r.__backendId]) return false;
+      if (cacheMarcas.corte && String(r.data || '') < cacheMarcas.corte) return false;
+      return true;
+    }
+    D.valido = valido;
+    // Resultados que aparecem no ranking (para a área do professor).
+    D.visiveis = function () {
+      return D.registros.filter(valido);
+    };
+
+    // O Canva deixa apagar? (window.dataSdk.delete)
+    D.podeApagar = function () {
+      return D.offline || !!(window.dataSdk && typeof window.dataSdk['delete'] === 'function');
+    };
+    function apagarUm(r) {
+      if (D.offline) {
+        var i = D.registros.indexOf(r);
+        if (i >= 0) D.registros.splice(i, 1);
+        return Promise.resolve(true);
+      }
+      try {
+        return Promise.resolve(window.dataSdk['delete'](r)).then(function (res) {
+          return !res || res.isOk !== false;
+        }, function () { return false; });
+      } catch (e) {
+        registrarErro('dados:apagar', e);
+        return Promise.resolve(false);
+      }
+    }
+    // Apaga (ou esconde) vários, um de cada vez. progresso(feitos, total).
+    D.apagar = function (lista, progresso) {
+      lista = lista.slice();
+      var ok = 0;
+      var falhas = 0;
+      if (!D.podeApagar()) {
+        var agora = new Date().toISOString();
+        var cadeia = Promise.resolve();
+        lista.forEach(function (r, i) {
+          cadeia = cadeia.then(function () {
+            return D.salvar({ tipo: 'ocultar', alvo: r.__backendId, data: agora }).then(function (res) {
+              if (res && res.isOk !== false) ok++; else falhas++;
+              if (progresso) progresso(i + 1, lista.length);
+            });
+          });
+        });
+        return cadeia.then(function () { return { ok: ok, falhas: falhas, ocultou: true }; });
+      }
+      var c = Promise.resolve();
+      lista.forEach(function (r, i) {
+        c = c.then(function () {
+          return apagarUm(r).then(function (deu) {
+            if (deu) ok++; else falhas++;
+            if (progresso) progresso(i + 1, lista.length);
+          });
+        });
+      });
+      return c.then(function () {
+        if (D.offline) avisar();
+        return { ok: ok, falhas: falhas, ocultou: false };
+      });
+    };
+    // Zerar: apaga tudo (se der) ou grava a marca de reinício.
+    D.zerar = function (progresso) {
+      if (D.podeApagar()) {
+        return D.apagar(D.registros.filter(function (r) { return r && r.__backendId; }), progresso);
+      }
+      return D.salvar({ tipo: 'zerar', data: new Date().toISOString() }).then(function (res) {
+        return { ok: res && res.isOk !== false ? 1 : 0, falhas: res && res.isOk !== false ? 0 : 1, ocultou: true };
+      });
+    };
 
     // Turmas que aparecem nos registros (para o seletor).
     D.turmas = function () {
@@ -1450,11 +1549,40 @@
       var estreito = function () { return t.cartao.clientWidth < 480; };
 
       var cab = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px' }, null, t.cartao);
-      S.el('div', { fontSize: '21px', fontWeight: '700' }, '🏆 Ranking', cab);
+      var tituloRank = S.el('div', { fontSize: '21px', fontWeight: '700', userSelect: 'none', WebkitUserSelect: 'none' }, '🏆 Ranking', cab);
+      var cabBotoes = S.el('div', { display: 'flex', gap: '8px' }, null, cab);
+      // Botão escondido: aparece depois de apertar P cinco vezes seguidas
+      // (no celular: tocar 5 vezes no título "Ranking").
+      var bProf = S.ui.botao('🔒 Professor', 'secundario', function () {
+        S.ui.areaProfessor();
+      }, cabBotoes);
+      S.estilo(bProf, { padding: '6px 10px', fontSize: '13px', display: 'none' });
+      var segredo = { n: 0, ultimo: 0 };
+      function contarSegredo() {
+        var agora = Date.now();
+        segredo.n = agora - segredo.ultimo < 1500 ? segredo.n + 1 : 1;
+        segredo.ultimo = agora;
+        if (segredo.n >= 5) {
+          segredo.n = 0;
+          bProf.style.display = '';
+        }
+      }
+      function teclaSegredo(e) {
+        if (!t.fundo.isConnected) {
+          window.removeEventListener('keydown', teclaSegredo);
+          return;
+        }
+        var alvo = e.target && e.target.tagName;
+        if (alvo === 'INPUT' || alvo === 'TEXTAREA') return;
+        if ((e.key || '').toLowerCase() === 'p' && !e.repeat) contarSegredo();
+        else if (e.key !== 'Shift') segredo.n = 0;
+      }
+      window.addEventListener('keydown', teclaSegredo);
+      tituloRank.addEventListener('pointerdown', contarSegredo);
       var bFechar = S.ui.botao('Fechar', 'secundario', function () {
         parar();
         t.fechar();
-      }, cab);
+      }, cabBotoes);
       bFechar.style.padding = '6px 12px';
 
       // Turma: lista com as turmas que já têm resultado.
@@ -1662,6 +1790,293 @@
       atualizarTudo();
       return t;
     };
+  });
+
+  /* ================================================================== */
+  secao('D03-area-professor', function () {
+    var C = S.CSS;
+    // Senha do professor: o código guarda só a "impressão digital" dela
+    // (SHA-256 com sal, repetido 5000 vezes). Não dá para ler a senha daqui.
+    var SENHA_HASH = 'aa0cfce5430f3e43fcddc4bee664eeace25c1da00d8645cfc7afc31710229e39';
+
+    // SHA-256 em JavaScript puro (funciona em qualquer navegador).
+    var K = [];
+    (function () {
+      function frac(x) { return ((x - Math.floor(x)) * 4294967296) >>> 0; }
+      var n = 2;
+      while (K.length < 64) {
+        var primo = true;
+        for (var d = 2; d * d <= n; d++) if (n % d === 0) { primo = false; break; }
+        if (primo) K.push(frac(Math.cbrt(n)));
+        n++;
+      }
+    })();
+    function sha256(texto) {
+      var bytes = unescape(encodeURIComponent(texto));
+      var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+      var l = bytes.length;
+      var m = [];
+      for (var i = 0; i < l; i++) m[i >> 2] |= bytes.charCodeAt(i) << (24 - (i % 4) * 8);
+      m[l >> 2] |= 0x80 << (24 - (l % 4) * 8);
+      var total = (((l + 8) >> 6) + 1) * 16;
+      for (var j = (l >> 2) + 1; j < total; j++) m[j] = m[j] | 0;
+      m[total - 1] = l * 8;
+      var w = new Array(64);
+      for (var b = 0; b < total; b += 16) {
+        var a = H[0], bb = H[1], c = H[2], dd = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+        for (var t = 0; t < 64; t++) {
+          if (t < 16) w[t] = m[b + t] | 0;
+          else {
+            var x = w[t - 15], y = w[t - 2];
+            var s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+            var s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+            w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+          }
+          var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+          var ch = (e & f) ^ (~e & g);
+          var t1 = (h + S1 + ch + K[t] + w[t]) | 0;
+          var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+          var maj = (a & bb) ^ (a & c) ^ (bb & c);
+          var t2 = (S0 + maj) | 0;
+          h = g; g = f; f = e; e = (dd + t1) | 0;
+          dd = c; c = bb; bb = a; a = (t1 + t2) | 0;
+        }
+        H[0] = (H[0] + a) | 0; H[1] = (H[1] + bb) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + dd) | 0;
+        H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+      }
+      return H.map(function (v) { return ('00000000' + (v >>> 0).toString(16)).slice(-8); }).join('');
+    }
+    function hashSenha(txt) {
+      var h = sha256('senac-simulador-redes|' + txt);
+      for (var i = 0; i < 5000; i++) h = sha256(h + '|' + i);
+      return h;
+    }
+    var liberado = false;
+
+    S.ui.areaProfessor = function () {
+      if (liberado) return painel();
+      var t = S.ui.tela(50, '380px');
+      S.el('div', { fontSize: '19px', fontWeight: '700', marginBottom: '10px' }, '🔒 Área do professor', t.cartao);
+      var campo = S.ui.campo('SENHA', t.cartao, { max: 40 });
+      campo.input.type = 'password';
+      var msg = S.el('div', { fontSize: '13px', minHeight: '18px', color: '#FF8A80', marginBottom: '8px' }, '', t.cartao);
+      var linha = S.el('div', { display: 'flex', gap: '8px' }, null, t.cartao);
+      function entrar() {
+        if (hashSenha(campo.input.value.trim()) === SENHA_HASH) {
+          liberado = true;
+          t.fechar();
+          painel();
+        } else {
+          msg.textContent = 'Senha incorreta.';
+          campo.input.select();
+        }
+      }
+      S.estilo(S.ui.botao('Entrar', 'primario', entrar, linha), { flex: '1 1 auto' });
+      S.ui.botao('Cancelar', 'secundario', function () { t.fechar(); }, linha);
+      campo.input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') entrar();
+        if (e.key === 'Escape') t.fechar();
+      });
+      setTimeout(function () { campo.input.focus(); }, 50);
+    };
+
+    function dataCurta(iso) {
+      if (!iso) return 'sem data';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return 'sem data';
+      function p(n) { return String(n).padStart(2, '0'); }
+      return p(d.getDate()) + '/' + p(d.getMonth() + 1) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function painel() {
+      var D = S.dados;
+      var t = S.ui.tela(50, '700px');
+      var cab = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px' }, null, t.cartao);
+      S.el('div', { fontSize: '20px', fontWeight: '700' }, '🔒 Área do professor · ranking', cab);
+      var bFechar = S.ui.botao('Fechar', 'secundario', function () {
+        parar();
+        t.fechar();
+      }, cab);
+      bFechar.style.padding = '6px 12px';
+      var modo = S.el('div', { fontSize: '12px', color: C.cinza, marginBottom: '10px', lineHeight: '1.45' }, '', t.cartao);
+
+      // Filtros
+      var filtros = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }, null, t.cartao);
+      function seletor(rotulo) {
+        var s = S.el('select', {
+          flex: '1 1 160px', minWidth: '0', background: C.painel2, color: C.branco,
+          border: '3px solid ' + C.borda, borderRadius: '6px', padding: '6px 8px',
+          fontFamily: C.fonte, fontSize: '14px', fontWeight: '700'
+        }, null, filtros);
+        s.setAttribute('aria-label', rotulo);
+        s.addEventListener('change', desenhar);
+        return s;
+      }
+      var selTurma = seletor('Turma');
+      var selFase = seletor('Fase');
+      [['', 'Todas as fases'], ['1', 'Fase 1'], ['2', 'Fase 2'], ['3', 'Fase 3']].forEach(function (o) {
+        var op = S.el('option', null, o[1], selFase);
+        op.value = o[0];
+      });
+      var busca = S.el('input', {
+        flex: '1 1 160px', minWidth: '0', background: '#071733', color: C.branco,
+        border: '3px solid ' + C.borda, borderRadius: '6px', padding: '6px 8px',
+        fontFamily: C.fonte, fontSize: '14px'
+      }, null, filtros);
+      busca.placeholder = 'Buscar nome…';
+      busca.addEventListener('input', desenhar);
+
+      var acoes = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '6px 0 8px' }, null, t.cartao);
+      var bTodos = S.ui.botao('Marcar todos da lista', 'secundario', function () {
+        var lista = filtrados();
+        var todos = lista.every(function (r) { return marcados[r.__backendId]; });
+        lista.forEach(function (r) { marcados[r.__backendId] = !todos; });
+        desenhar();
+      }, acoes);
+      var bApagar = S.ui.botao('Apagar selecionados', 'perigo', null, acoes);
+      var bZerar = S.ui.botao('Zerar ranking inteiro', 'perigo', null, acoes);
+      [bTodos, bApagar, bZerar].forEach(function (b) { S.estilo(b, { padding: '7px 12px', fontSize: '13px' }); });
+      var status = S.el('div', { fontSize: '13px', fontWeight: '700', minHeight: '18px', marginBottom: '6px' }, '', t.cartao);
+      var lista = S.el('div', null, null, t.cartao);
+
+      var marcados = {};
+      var ocupado = false;
+      var confirmando = null; // 'apagar' | 'zerar'
+      var timerConf = null;
+
+      function pedirConfirmacao(qual) {
+        confirmando = qual;
+        clearTimeout(timerConf);
+        timerConf = setTimeout(function () { confirmando = null; rotulos(); }, 5000);
+        rotulos();
+      }
+      function rotulos() {
+        var n = selecionados().length;
+        bApagar.textContent = confirmando === 'apagar' ? '⚠ Confirmar: apagar ' + n + '?' : 'Apagar selecionados (' + n + ')';
+        bZerar.textContent = confirmando === 'zerar' ? '⚠ Confirmar: zerar TUDO?' : 'Zerar ranking inteiro';
+        bApagar.disabled = ocupado || !n;
+        bApagar.style.opacity = bApagar.disabled ? '0.5' : '1';
+        bZerar.disabled = ocupado;
+      }
+
+      function selecionados() {
+        return D.visiveis().filter(function (r) { return marcados[r.__backendId]; });
+      }
+      function filtrados() {
+        var tu = selTurma.value;
+        var fa = selFase.value;
+        var q = busca.value.trim().toLowerCase();
+        return D.visiveis().filter(function (r) {
+          if (tu && String(r.turma || '').trim().toUpperCase() !== tu) return false;
+          if (fa && String(Number(r.fase) || 1) !== fa) return false;
+          if (q && String(r.nome || '').toLowerCase().indexOf(q) < 0) return false;
+          return true;
+        }).sort(function (a, b) {
+          return String(b.data || '').localeCompare(String(a.data || ''));
+        });
+      }
+
+      bApagar.addEventListener('click', function () {
+        if (ocupado || !selecionados().length) return;
+        if (confirmando !== 'apagar') return pedirConfirmacao('apagar');
+        executar(function (prog) { return D.apagar(selecionados(), prog); });
+      });
+      bZerar.addEventListener('click', function () {
+        if (ocupado) return;
+        if (confirmando !== 'zerar') return pedirConfirmacao('zerar');
+        executar(function (prog) { return D.zerar(prog); });
+      });
+
+      function executar(fn) {
+        confirmando = null;
+        clearTimeout(timerConf);
+        ocupado = true;
+        rotulos();
+        status.style.color = C.amarelo;
+        status.textContent = 'Processando…';
+        fn(function (feitos, total) {
+          status.textContent = 'Processando… ' + feitos + '/' + total;
+        }).then(function (r) {
+          ocupado = false;
+          marcados = {};
+          status.style.color = r.falhas ? '#FF8A80' : C.verde;
+          status.textContent = r.falhas
+            ? '✖ ' + r.falhas + ' não foram ' + (r.ocultou ? 'ocultados' : 'apagados') + '. Tente de novo.'
+            : '✔ Pronto: ' + (r.ocultou ? 'resultados escondidos do ranking.' : r.ok + ' resultado(s) apagado(s).');
+          desenhar();
+        }, function () {
+          ocupado = false;
+          status.style.color = '#FF8A80';
+          status.textContent = '✖ Não foi possível concluir. Tente de novo.';
+          desenhar();
+        });
+      }
+
+      function montarTurmas() {
+        var atual = selTurma.value;
+        selTurma.textContent = '';
+        var o = S.el('option', null, 'Todas as turmas', selTurma);
+        o.value = '';
+        D.turmas().forEach(function (x) {
+          var op = S.el('option', null, x.turma, selTurma);
+          op.value = x.turma;
+        });
+        selTurma.value = atual;
+        if (selTurma.value !== atual) selTurma.value = '';
+      }
+
+      function desenhar() {
+        lista.textContent = '';
+        if (!D.carregado) {
+          modo.textContent = 'Carregando…';
+          return;
+        }
+        modo.textContent = (D.offline ? 'Modo offline (fora do Canva): só afeta esta aba. ' : '') +
+          (D.podeApagar()
+            ? 'Os resultados apagados somem para todos.'
+            : 'O Canva não permite apagar daqui: os resultados escolhidos ficam escondidos do ranking (continuam guardados).') +
+          ' Total no ranking: ' + D.visiveis().length + '.';
+        var regs = filtrados();
+        var col = '28px minmax(0,1fr) 46px 66px 86px';
+        var cabL = S.el('div', { display: 'grid', gridTemplateColumns: col, gap: '6px', fontSize: '11px', fontWeight: '700', color: C.cinza, padding: '0 6px 6px', borderBottom: '2px solid ' + C.borda }, null, lista);
+        ['', 'ALUNO', 'FASE', 'TEMPO', 'DATA'].forEach(function (h, i) {
+          S.el('div', { textAlign: i >= 2 ? 'right' : 'left' }, h, cabL);
+        });
+        if (!regs.length) {
+          S.el('div', { padding: '14px 0', color: C.cinza, textAlign: 'center' }, 'Nenhum resultado com esses filtros.', lista);
+        }
+        regs.slice(0, 300).forEach(function (r, i) {
+          var id = r.__backendId;
+          var l = S.el('label', {
+            display: 'grid', gridTemplateColumns: col, gap: '6px', alignItems: 'center',
+            padding: '6px', fontSize: '13px', cursor: 'pointer', borderRadius: '6px',
+            background: marcados[id] ? '#4A1C1A' : (i % 2 ? 'transparent' : 'rgba(255,255,255,0.03)')
+          }, null, lista);
+          var chk = S.el('input', { width: '18px', height: '18px', accentColor: '#C9443D' }, null, l);
+          chk.type = 'checkbox';
+          chk.checked = !!marcados[id];
+          chk.addEventListener('change', function () {
+            marcados[id] = chk.checked;
+            l.style.background = chk.checked ? '#4A1C1A' : (i % 2 ? 'transparent' : 'rgba(255,255,255,0.03)');
+            rotulos();
+          });
+          var nome = S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, String(r.nome || '?'), l);
+          S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px' }, String(r.turma || ''), nome);
+          S.el('div', { textAlign: 'right', color: C.cinza }, String(Number(r.fase) || 1), l);
+          S.el('div', { textAlign: 'right', fontFamily: C.mono }, S.formatarTempo(Number(r.tempo)), l);
+          S.el('div', { textAlign: 'right', color: C.cinza, fontSize: '12px' }, dataCurta(r.data), l);
+        });
+        if (regs.length > 300) S.el('div', { fontSize: '12px', color: C.cinza, padding: '6px' }, 'Mostrando 300 de ' + regs.length + '. Use os filtros.', lista);
+        rotulos();
+      }
+
+      var parar = D.aoMudar(function () {
+        montarTurmas();
+        desenhar();
+      });
+      montarTurmas();
+      desenhar();
+    }
   });
 
 
@@ -9098,6 +9513,19 @@
         nome: 'Martelo e presilhas',
         ancora: new THREE.Vector3(bx - 0.35, 0, bz + 0.9)
       });
+      // Rolo com os 6 cabos UTP (atrás, à esquerda): pega uma vez só.
+      var roloCabos = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.045, 4, 10), S.mat(C.caboAzul));
+      roloCabos.rotation.x = Math.PI / 2;
+      roloCabos.position.set(-0.3, 0.05, -0.14);
+      roloCabos.castShadow = true;
+      topo.add(roloCabos);
+      var etiq = S.caixa(0.08, 0.02, 0.05, S.mat(0xffffff), -0.3, 0.1, -0.14, topo, true);
+      F3.kitCabos = [roloCabos, etiq];
+      S.interativo(F3.kitCabos, {
+        id: 'kitCabos',
+        nome: 'Rolo com 6 cabos UTP',
+        ancora: new THREE.Vector3(bx - 0.25, 0, bz + 0.9)
+      });
       // Keystones + punch down (meio).
       var ks = [];
       for (var i = 0; i < 3; i++) ks.push(S.caixa(0.06, 0.05, 0.06, S.mat(C.caboAzul), 0.02 + i * 0.08, 0.03, 0.18, topo));
@@ -9151,6 +9579,7 @@
 
     F3.reiniciar = function () {
       F3.kitPres = false;
+      F3.kitCabosOk = false;
       F3.kitKs = false;
       F3.kitPatchOk = false;
       F3.portas = [];
@@ -9190,6 +9619,15 @@
       return F3.pontoRota(s, F3.FIO_Y, 0.08);
     };
 
+    F3.proximoDaRota = function () {
+      var r = F3.rota();
+      for (var i = 0; i < r.length; i++) {
+        var it = r[i];
+        if (it.tipo === 'presilha' && !it.obj.passou) return it;
+        if (it.tipo === 'ponto' && !it.obj.cabo) return it;
+      }
+      return null;
+    };
     function proximoDaRota() {
       var r = F3.rota();
       for (var i = 0; i < r.length; i++) {
@@ -9213,16 +9651,25 @@
       {
         id: 'presilhas',
         quadro: 'Pregar presilhas (3 pontos)',
-        texto: function () { return 'Pregue 3 presilhas em cada X marcado na parede (' + F3.presilhasProntas() + '/3).'; },
+        texto: function () { return 'Pregue 3 presilhas em cada X da parede, na ordem A, B e C (' + F3.presilhasProntas() + '/3).'; },
         feita: function () { return F3.presilhasProntas() === 3; },
-        alvos: function () { return (F3.presilhas || []).filter(function (p) { return !p.pronta; }).map(function (p) { return 'presilha:' + p.id; }); },
+        alvos: function () { var p = F3.proximaPresilha(); return p ? ['presilha:' + p.id] : []; },
         dica1: 'Os X vermelhos ficam na parede, atrás das bancadas: A e B no fundo, C na lateral esquerda. Ande pelo corredor atrás das mesas até ficar de frente para o X.',
-        dica2: 'Martele quando o marcador estiver dentro da faixa verde.'
+        dica2: 'Comece pelo A (perto do rack), depois B e por último C. Martele com o marcador dentro da faixa verde.'
+      },
+      {
+        id: 'cabos',
+        quadro: 'Pegar os 6 cabos',
+        texto: 'Pegue o rolo com os 6 cabos UTP na bancada.',
+        feita: function () { return F3.kitCabosOk || F3.portas.length === 6; },
+        alvos: function () { return ['kitCabos']; },
+        dica1: 'O rolo azul de cabos fica na bancada de ferramentas, à direita.',
+        dica2: 'Pegue o rolo uma vez só: ele já tem os 6 cabos.'
       },
       {
         id: 'switch',
         quadro: '6 cabos no switch',
-        texto: 'Conecte os 6 cabos no switch do rack, em portas Fast.',
+        texto: 'Leve os 6 cabos até o switch do rack e conecte em portas Fast.',
         feita: function () { return F3.portas.length === 6; },
         alvos: function () { return ['switch3']; },
         dica1: 'O switch está no rack, no canto do fundo à direita.',
@@ -9308,12 +9755,18 @@
       if (J.mao.tipo === 'feixe') J.definirMao({ tipo: 'feixe', rotulo: 'Feixe com ' + F3.restantes + ' cabo' + (F3.restantes > 1 ? 's' : '') });
     }
 
+    // Presilhas são pregadas na ordem A, B, C.
+    F3.proximaPresilha = function () {
+      return (F3.presilhas || []).filter(function (p) { return !p.pronta; })[0] || null;
+    };
+
     F3.rotulo = function (info) {
       var mao = J.mao;
+      if (info.id === 'kitCabos') return F3.kitCabosOk ? 'Cabos (já pegou)' : 'Pegar os 6 cabos UTP';
       if (info.id === 'kitPresilhas') return F3.kitPres ? 'Martelo e presilhas (já pegou)' : 'Pegar martelo e presilhas';
       if (info.id === 'kitKeystone3') return F3.kitKs ? 'Keystones (já pegou)' : 'Pegar keystones e punch down';
       if (info.id === 'kitPatch') return F3.kitPatchOk ? 'Patch cords (já pegou)' : 'Pegar patch cords';
-      if (info.id === 'switch3') return F3.portas.length < 6 ? 'Conectar os 6 cabos no switch' : 'Ver switch';
+      if (info.id === 'switch3') return F3.portas.length === 6 ? 'Ver switch' : mao && mao.tipo === 'cabos6' ? 'Conectar os 6 cabos no switch' : 'Switch (traga os cabos)';
       if (info.presilha) {
         var p = info.presilha;
         if (!p.pronta) return 'Pregar presilhas no ponto ' + p.id;
@@ -9347,6 +9800,13 @@
         if (F3.tomadasProntas() < 6) return S.aviso('Os patch cords entram depois que as 6 tomadas estiverem montadas.', 'alerta', 3200);
         return pegar('kitPatchOk', F3.kitPatch, 'Você pegou 6 patch cords. Ligue cada PC à tomada atrás dele.');
       }
+      if (info.id === 'kitCabos') {
+        if (F3.kitCabosOk) return S.aviso('Você já pegou os 6 cabos.', 'info');
+        if (F3.presilhasProntas() < 3) return S.aviso('Primeiro pregue as presilhas nos 3 X da parede.', 'alerta', 3000);
+        pegar('kitCabosOk', F3.kitCabos, 'Você pegou 6 cabos UTP. Leve até o switch no rack.');
+        J.definirMao({ tipo: 'cabos6', rotulo: '6 cabos UTP' });
+        return;
+      }
       if (info.id === 'switch3') return usarSwitch();
       if (info.presilha) return usarPresilha(info.presilha);
       if (info.ponto) return usarPonto(info.ponto);
@@ -9365,6 +9825,11 @@
     function usarPresilha(p) {
       if (!p.pronta) {
         if (!F3.kitPres) return S.aviso('Pegue o martelo e as presilhas na bancada primeiro.', 'alerta', 3000);
+        var vez = F3.proximaPresilha();
+        if (vez && vez !== p) {
+          J.errou('Você pulou a presilha ' + vez.id + '! Pregue na ordem: A, depois B, depois C.');
+          return;
+        }
         MG.martelo(p, function () {
           p.pronta = true;
           F3.pregarVisual(p);
@@ -9384,11 +9849,7 @@
         return S.aviso(p.passou ? 'O feixe já passa por aqui.' : F3.portas.length < 6 ? 'Conecte os 6 cabos no switch para começar a passar o feixe.' : 'Presilhas prontas para receber o feixe.', 'info', 2600);
       }
       if (p.passou) return S.aviso('O feixe já passou por esta presilha.', 'info');
-      var antes = F3.presilhasAntes(p.s).filter(function (q) { return !q.passou; });
-      if (antes.length) {
-        J.errou('Passe o feixe na ordem: primeiro pela presilha ' + antes[0].id + ', mais perto do switch.');
-        return;
-      }
+      if (!F3.naOrdem(p)) return;
       p.passou = true;
       F3.feixeAte = Math.max(F3.feixeAte || 0, p.s);
       F3.redesenharFeixe(F3.feixeAte);
@@ -9403,11 +9864,7 @@
         if (!mao || mao.tipo !== 'feixe') {
           return S.aviso(F3.portas.length < 6 ? 'O cabo deste ponto sai do switch: conecte os 6 cabos no rack primeiro.' : 'Traga o feixe de cabos até aqui.', 'info', 3000);
         }
-        var faltam = F3.presilhasAntes(t.s).filter(function (q) { return !q.passou; });
-        if (faltam.length) {
-          J.errou('O cabo ficaria solto: passe antes pela presilha ' + faltam[0].id + '.');
-          return;
-        }
+        if (!F3.naOrdem(t)) return;
         F3.caboNoPonto(t);
         F3.restantes--;
         F3.feixeAte = Math.max(F3.feixeAte || 0, t.s);
@@ -9454,8 +9911,25 @@
       });
     }
 
+    // O feixe segue a rota sem pular nada: se o aluno tenta um item lá na
+    // frente, é erro e o jogo diz o que ficou para trás.
+    F3.naOrdem = function (obj) {
+      var esperado = F3.proximoDaRota();
+      if (!esperado || esperado.obj === obj) return true;
+      var puladas = (F3.presilhas || []).filter(function (q) { return !q.passou && q.s < obj.s; });
+      if (puladas.length) {
+        J.errou('Você pulou a presilha ' + puladas[0].id + '! Passe o feixe por ela antes de seguir.');
+      } else if (esperado.tipo === 'ponto') {
+        J.errou('Você pulou o ponto ' + esperado.obj.n + '! Deixe um cabo nele antes de seguir.');
+      } else {
+        J.errou('Siga a ordem da parede: agora é a presilha ' + esperado.obj.id + '.');
+      }
+      return false;
+    };
+
     function usarSwitch() {
       if (F3.portas.length === 6) return S.aviso('Os 6 cabos já estão no switch.', 'info');
+      if (!J.mao || J.mao.tipo !== 'cabos6') return S.aviso('Pegue o rolo com os 6 cabos na bancada primeiro.', 'alerta', 3000);
       MG.switch3(function (portas) {
         F3.portas = portas;
         F3.restantes = 6;
@@ -9512,11 +9986,13 @@
       var mao = J.mao;
       if (!mao || info.id === 'professor') return true;
       if (mao.tipo === 'martelo') return !!info.presilha;
+      if (mao.tipo === 'cabos6') return info.id === 'switch3';
       if (mao.tipo === 'feixe') return !!(info.presilha || info.ponto);
       return true;
     };
     F3.avisoBloqueado = function () {
       if (J.mao && J.mao.tipo === 'martelo') return 'Você está com o martelo: pregue as presilhas nos X da parede primeiro.';
+      if (J.mao && J.mao.tipo === 'cabos6') return 'Você está com os 6 cabos: leve até o switch no rack.';
       return 'Você está com o feixe: passe pelas presilhas e deixe um cabo em cada ponto.';
     };
 
@@ -9875,9 +10351,9 @@
           return [
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Último laboratório, ' + n + '! Agora é cabeamento estruturado: seis computadores com tudo organizado.' },
             { quem: 'prof', tomada: 'rack', gesto: 'apontar', texto: 'O servidor já está pronto, na outra sala. É deste switch que saem os seis cabos, um para cada PC.' },
-            { quem: 'prof', tomada: 'bancada', gesto: 'apontar', texto: 'Pegue o martelo e as presilhas na bancada. Lá também ficam as keystones e os patch cords.' },
+            { quem: 'prof', tomada: 'bancada', gesto: 'apontar', texto: 'Pegue o martelo e as presilhas na bancada. Lá também ficam o rolo com os seis cabos, as keystones e os patch cords.' },
             { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Tem três X marcados na parede: dois no fundo e um na lateral. Vá pelo corredor atrás das mesas e pregue três presilhas em cada X. Martele no verde, senão entorta!' },
-            { quem: 'prof', tomada: 'parede', gesto: 'explicar', texto: 'Depois conecte os seis cabos no switch e leve o feixe pela parede, passando pelas presilhas e deixando um cabo em cada ponto.' },
+            { quem: 'prof', tomada: 'parede', gesto: 'explicar', texto: 'Depois pegue o rolo com os seis cabos na bancada, conecte no switch e leve o feixe pela parede, sem pular nenhuma presilha, deixando um cabo em cada ponto.' },
             { quem: 'prof', tomada: 'parede', gesto: 'falar', texto: 'Com os cabos no lugar, esconda tudo na canaleta e monte as seis tomadas keystone.' },
             { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'São três PCs no fundo e três na lateral. Por fim, ligue cada um na tomada com um patch cord, ligue os computadores e peça IP automático.' },
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Boa sorte, ' + n + '!' },
@@ -9901,7 +10377,7 @@
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
   var painel = null;
   var timer = null;
   var gpu = null;
