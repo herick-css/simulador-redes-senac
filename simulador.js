@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.5.1',
+    versao: '3.5.2',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -3809,9 +3809,11 @@
       var bE = 0;
       var bD = 0;
       var bDz = 0;
+      var bEz = 0;
       var aceno = 0;
       pr.cabeca.rotation.x = 0;
       pr.cabeca.rotation.z = 0;
+      pr.corpo.rotation.x = 0;
       atualizarTocaAqui(dt);
       if (gesto) {
         gesto.t += dt;
@@ -3835,6 +3837,16 @@
           // Mão levantada, parada, esperando o toca aqui.
           bD = -2.75 * f;
           bDz = 0.12 * f;
+        } else if (gesto.tipo === 'susto') {
+          // Assustado: as duas mãos para cima, tremendo, corpo para trás.
+          var tremor = Math.sin(gesto.t * 38) * 0.06 * f;
+          bD = (-2.35 + tremor) * f;
+          bE = (-2.35 - tremor) * f;
+          bDz = 0.35 * f;
+          bEz = -0.35 * f;
+          pr.corpo.rotation.x = -0.14 * f;
+          pr.cabeca.rotation.x = -0.12 * f;
+          pr.cabeca.rotation.z = Math.sin(gesto.t * 9) * 0.06 * f;
         } else if (gesto.tipo === 'toca') {
           var k = Math.sin(Math.min(1, gesto.t / gesto.dur) * Math.PI);
           bD = -2.3 - k * 0.5;
@@ -3845,6 +3857,7 @@
       pr.bracoD.rotation.x = bD;
       pr.bracoD.rotation.z = bDz + aceno;
       pr.bracoE.rotation.x = bE;
+      pr.bracoE.rotation.z = bEz;
       pr.corpo.position.y = Math.sin(tempo * 1.7) * 0.008;
       atualizarBalao();
     };
@@ -4615,7 +4628,10 @@
       J.registrarAtividade();
       if (S.segredo) S.segredo(info.id);
       if (info.id === 'logoSenac') return S.aviso('Senac · a gente se vê amanhã! 🧡', 'info', 1500);
-      if (info.id === 'professor') return falarProfessor();
+      if (info.id === 'professor') {
+        if (S.faseAtual && S.faseAtual.usarProfessor && S.faseAtual.usarProfessor()) return;
+        return falarProfessor();
+      }
       if (info.id === 'cachola') return S.usarCachola();
       if (info.id === 'porta') return sairPelaPorta();
       if (info.id === 'quadro') return S.minigames.quadro();
@@ -6656,7 +6672,7 @@
       irPara(v3(t.pos), v3(t.alvo), i === 0 ? 0.6 : 1.1);
       var pr = S.professor || {};
       if (prof) {
-        var dur = { aceno: 1.6, tocaAqui: Infinity, explicar: 3.2 }[f.gesto] || 2.6;
+        var dur = { aceno: 1.6, tocaAqui: Infinity, explicar: 3.2, susto: 3.6 }[f.gesto] || 2.6;
         S.gestoProfessor(f.gesto, dur);
         // Ao apontar algo, o professor olha para lá; senão olha o aluno.
         pr.alvoFixo = f.olhar ? v3(f.olhar) : f.gesto === 'apontar' ? v3(t.alvo) : null;
@@ -9804,10 +9820,10 @@
     F3.presilhasAntes = function (s) {
       return (F3.presilhas || []).filter(function (p) { return p.s < s; });
     };
+    // O cabo da mão sai de onde o feixe termina agora: a última presilha
+    // ou o último ponto de rede em que o aluno deixou cabo.
     F3.ancoraFeixe = function () {
-      var passadas = (F3.presilhas || []).filter(function (p) { return p.passou; });
-      var s = passadas.length ? Math.max.apply(null, passadas.map(function (p) { return p.s; })) : 0;
-      return F3.pontoRota(s, F3.FIO_Y, 0.08);
+      return F3.pontoRota(F3.feixeAte || 0, F3.FIO_Y, 0.08);
     };
 
     F3.proximoDaRota = function () {
@@ -10187,6 +10203,27 @@
       if (J.mao && J.mao.tipo === 'martelo') return 'Você está com o martelo: pregue as presilhas nos X da parede primeiro.';
       if (J.mao && J.mao.tipo === 'cabos6') return 'Você está com os 6 cabos: leve até o switch no rack.';
       return 'Você está com o feixe: passe pelas presilhas e deixe um cabo em cada ponto.';
+    };
+
+    // Easter egg: usar o professor com o martelo na mão.
+    F3.usarProfessor = function () {
+      if (!J.mao || J.mao.tipo !== 'martelo' || !S.professor || S.emCena()) return false;
+      S.cenaCurta({
+        manterGesto: true,
+        posAluno: { x: 3.4, z: 3.05, angulo: Math.PI / 2 },
+        tomadas: {
+          prof: { pos: [3.0, 1.95, 4.15], alvo: [5.2, 1.5, 3.3] },
+          aluno: { pos: [5.6, 2.0, 2.15], alvo: [3.4, 1.2, 3.05] }
+        },
+        falas: [
+          { quem: 'prof', tomada: 'prof', gesto: 'susto', texto: 'Você... não vai usar isso em mim, né?' },
+          { quem: 'aluno', tomada: 'aluno', texto: 'Foi mal, professor, cliquei para interagir no lugar errado...' }
+        ],
+        aoFim: function () {
+          if (S.reacaoProfessor) S.reacaoProfessor('Ufa... Os X ficam na parede, viu? Lá atrás das mesas.');
+        }
+      });
+      return true;
     };
 
     F3.concluir = function () {
@@ -10629,6 +10666,7 @@
       usar: F3.usar,
       rotulo: F3.rotulo,
       permite: function (info) { return F3.permite(info); },
+      usarProfessor: function () { return F3.usarProfessor(); },
       avisoBloqueado: function (info) { return F3.avisoBloqueado(info); },
       concluir: function () { F3.concluir(); },
       resumo: F3.resumo,
