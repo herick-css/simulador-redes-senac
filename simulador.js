@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.1.0',
+    versao: '3.2.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -905,7 +905,7 @@
       var bEntrar = S.ui.botao('Entrar', 'primario', entrar, botoes);
       bEntrar.style.flex = '1 1 120px';
       var bRank = S.ui.botao('Ver ranking', 'secundario', function () {
-        S.ui.mostrarRanking(turma.input.value.trim().toUpperCase(), null);
+        S.ui.mostrarRanking('', null, 'geral');
       }, botoes);
       bRank.style.flex = '1 1 120px';
 
@@ -1360,13 +1360,75 @@
       }
     };
 
+    // Mesmo aluno em registros diferentes: nome sem acento/maiúsculas + turma.
+    D.chaveAluno = function (nome, turma) {
+      var n = String(nome || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      if (n.normalize) n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return n + '|' + String(turma || '').trim().toUpperCase();
+    };
+
+    function valido(r) {
+      return r && isFinite(Number(r.tempo)) && Number(r.tempo) > 0;
+    }
+
+    // Turmas que aparecem nos registros (para o seletor).
+    D.turmas = function () {
+      var vistas = {};
+      D.registros.forEach(function (r) {
+        if (!valido(r)) return;
+        var t = String(r.turma || '').trim().toUpperCase();
+        if (t) vistas[t] = (vistas[t] || 0) + 1;
+      });
+      return Object.keys(vistas).sort().map(function (t) { return { turma: t, n: vistas[t] }; });
+    };
+
+    // Melhor tentativa de cada aluno numa fase.
+    D.melhoresDaFase = function (turma, fase) {
+      var porAluno = {};
+      D.daTurma(turma, fase).forEach(function (r) {
+        var k = D.chaveAluno(r.nome, r.turma);
+        if (!porAluno[k]) porAluno[k] = r; // daTurma já vem do mais rápido ao mais lento
+      });
+      return Object.keys(porAluno).map(function (k) { return porAluno[k]; }).sort(function (a, b) {
+        return Number(a.tempo) - Number(b.tempo);
+      });
+    };
+
+    // Ranking geral: soma do melhor tempo de cada fase. Quem fez mais fases
+    // vem antes; entre quem fez as mesmas fases, ganha o menor tempo total.
+    D.geral = function (turma) {
+      var alunos = {};
+      [1, 2, 3].forEach(function (fase) {
+        D.melhoresDaFase(turma, fase).forEach(function (r) {
+          var k = D.chaveAluno(r.nome, r.turma);
+          var a = alunos[k] || (alunos[k] = { chave: k, nome: String(r.nome || '?').trim(), turma: String(r.turma || '').toUpperCase(), fases: {}, tempo: 0, erros: 0, sessoes: [], recente: '' });
+          a.fases[fase] = Number(r.tempo);
+          a.tempo += Number(r.tempo);
+          a.erros += Number(r.erros) || 0;
+          if (r.sessao) a.sessoes.push(r.sessao);
+          // Mostra o nome como foi escrito da última vez.
+          if (String(r.data || '') >= a.recente) {
+            a.recente = String(r.data || '');
+            a.nome = String(r.nome || a.nome).trim();
+          }
+        });
+      });
+      return Object.keys(alunos).map(function (k) {
+        var a = alunos[k];
+        a.nFases = Object.keys(a.fases).length;
+        return a;
+      }).sort(function (a, b) {
+        return b.nFases - a.nFases || a.tempo - b.tempo;
+      });
+    };
+
     // Resultados da turma numa fase (registros antigos, sem fase, são da fase 1).
     D.daTurma = function (turma, fase) {
       fase = fase || 1;
       return D.registros.filter(function (r) {
-        if (!r || !isFinite(Number(r.tempo))) return false;
+        if (!valido(r)) return false;
         if ((Number(r.fase) || 1) !== fase) return false;
-        return !turma || String(r.turma || '').toUpperCase() === turma;
+        return !turma || String(r.turma || '').trim().toUpperCase() === turma;
       }).sort(function (a, b) {
         return Number(a.tempo) - Number(b.tempo);
       });
@@ -1376,11 +1438,16 @@
   /* ================================================================== */
   secao('D02-tela-ranking', function () {
     var C = S.CSS;
+    var NOMES_FASE = { 1: 'Rede local', 2: 'Servidor', 3: 'Cabeamento' };
 
+    // fase: 'geral' (padrão) ou 1, 2, 3. turma: '' = todas as turmas.
     S.ui.mostrarRanking = function (turmaInicial, sessaoDestaque, faseInicial) {
-      var t = S.ui.tela(40, '620px');
-      var turma = (turmaInicial || '').toUpperCase();
-      var fase = faseInicial || 1;
+      var t = S.ui.tela(40, '660px');
+      var turma = String(turmaInicial || '').trim().toUpperCase();
+      var fase = faseInicial || 'geral';
+      var todasTentativas = false;
+      var minhaChave = S.aluno && S.aluno.nome ? S.dados.chaveAluno(S.aluno.nome, S.aluno.turma) : null;
+      var estreito = function () { return t.cartao.clientWidth < 480; };
 
       var cab = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px' }, null, t.cartao);
       S.el('div', { fontSize: '21px', fontWeight: '700' }, '🏆 Ranking', cab);
@@ -1390,48 +1457,76 @@
       }, cab);
       bFechar.style.padding = '6px 12px';
 
-      var filtro = S.el('div', { display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '10px' }, null, t.cartao);
-      var campo = S.ui.campo('TURMA', filtro, { placeholder: 'Todas as turmas', max: 20, maiusculas: true });
-      campo.wrap.style.flex = '1 1 180px';
-      campo.wrap.style.marginBottom = '0';
-      campo.input.value = turma;
-      campo.input.addEventListener('input', function () {
-        campo.input.value = campo.input.value.toUpperCase().replace(/\s+/g, '');
-        turma = campo.input.value;
+      // Turma: lista com as turmas que já têm resultado.
+      var filtro = S.el('label', { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }, null, t.cartao);
+      S.el('span', { fontSize: '13px', fontWeight: '700', color: C.cinza, letterSpacing: '0.04em' }, 'TURMA', filtro);
+      var sel = S.el('select', {
+        flex: '1 1 200px',
+        minWidth: '0',
+        background: C.painel2,
+        color: C.branco,
+        border: '3px solid ' + C.borda,
+        borderRadius: '6px',
+        padding: '7px 10px',
+        fontFamily: C.fonte,
+        fontSize: '15px',
+        fontWeight: '700',
+        cursor: 'pointer'
+      }, null, filtro);
+      sel.setAttribute('aria-label', 'Turma');
+      sel.addEventListener('change', function () {
+        turma = sel.value;
         desenhar();
       });
-      var bTodas = S.ui.botao('Todas', 'secundario', function () {
-        campo.input.value = '';
-        turma = '';
-        desenhar();
-      }, filtro);
-      bTodas.style.padding = '8px 12px';
+      function montarTurmas() {
+        var lista = S.dados.turmas();
+        if (turma && !lista.some(function (x) { return x.turma === turma; })) lista.push({ turma: turma, n: 0 });
+        sel.textContent = '';
+        var o = S.el('option', null, 'Todas as turmas (geral)', sel);
+        o.value = '';
+        lista.forEach(function (x) {
+          var op = S.el('option', null, x.turma + (x.n ? '  ·  ' + x.n + ' resultado' + (x.n > 1 ? 's' : '') : ''), sel);
+          op.value = x.turma;
+        });
+        sel.value = turma;
+      }
 
-      // Abas: um ranking por fase.
-      var abas = S.el('div', { display: 'flex', gap: '6px', marginBottom: '4px' }, null, t.cartao);
-      var NOMES_FASE = { 1: 'Rede local', 2: 'Servidor', 3: 'Cabeamento' };
-      var botoesAba = [1, 2, 3].map(function (n) {
-        var b = S.ui.botao('Fase ' + n + ' · ' + NOMES_FASE[n], 'secundario', function () {
-          fase = n;
+      // Abas: geral + uma por fase.
+      var abas = S.el('div', { display: 'flex', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }, null, t.cartao);
+      var defs = [{ id: 'geral', txt: 'Geral' }, { id: 1, txt: 'Fase 1' }, { id: 2, txt: 'Fase 2' }, { id: 3, txt: 'Fase 3' }];
+      var botoesAba = defs.map(function (d) {
+        var b = S.ui.botao(d.txt, 'secundario', function () {
+          fase = d.id;
           marcarAbas();
           desenhar();
         }, abas);
-        S.estilo(b, { flex: '1 1 0', padding: '7px 8px', fontSize: '13px' });
+        S.estilo(b, { flex: '1 1 0', padding: '7px 8px', fontSize: '13px', minWidth: '64px' });
+        if (d.id !== 'geral') b.title = NOMES_FASE[d.id];
         return b;
       });
       function marcarAbas() {
         botoesAba.forEach(function (b, i) {
-          var ativa = i + 1 === fase;
+          var ativa = defs[i].id === fase;
           b.style.background = ativa ? C.laranja : C.painel2;
           b.style.color = ativa ? '#10203A' : C.branco;
         });
+        opcoes.style.display = fase === 'geral' ? 'none' : 'flex';
       }
-      marcarAbas();
+      var explica = S.el('div', { fontSize: '12px', color: C.cinza, margin: '6px 0 0' }, '', t.cartao);
+      var opcoes = S.el('label', { display: 'none', alignItems: 'center', gap: '6px', fontSize: '12px', color: C.cinza, marginTop: '6px', cursor: 'pointer' }, null, t.cartao);
+      var chk = S.el('input', { width: '16px', height: '16px', accentColor: C.laranja }, null, opcoes);
+      chk.type = 'checkbox';
+      S.el('span', null, 'Mostrar todas as tentativas (não só a melhor de cada aluno)', opcoes);
+      chk.addEventListener('change', function () {
+        todasTentativas = chk.checked;
+        desenhar();
+      });
+
       var destaques = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0' }, null, t.cartao);
       var lista = S.el('div', null, null, t.cartao);
       var status = S.el('div', { fontSize: '12px', color: C.cinza, marginTop: '10px' }, '', t.cartao);
 
-      function cartaoDestaque(titulo, reg, cor) {
+      function cartaoDestaque(titulo, nome, valor, cor) {
         var c = S.el('div', {
           flex: '1 1 200px',
           background: '#071733',
@@ -1440,8 +1535,108 @@
           padding: '8px 12px'
         }, null, destaques);
         S.el('div', { fontSize: '11px', fontWeight: '700', color: cor, letterSpacing: '0.06em' }, titulo, c);
-        S.el('div', { fontSize: '15px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, reg ? String(reg.nome) : '—', c);
-        S.el('div', { fontFamily: C.mono, fontSize: '14px', color: C.cinza }, reg ? S.formatarTempoLongo(Number(reg.tempo)) : '', c);
+        S.el('div', { fontSize: '15px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, nome || '—', c);
+        S.el('div', { fontFamily: C.mono, fontSize: '14px', color: C.cinza }, valor || '', c);
+      }
+
+      function tempoCurto(seg) {
+        return S.formatarTempo(seg) + '.' + String(Math.floor((seg % 1) * 10));
+      }
+
+      function linhaTabela(colunas, estilo) {
+        var l = S.el('div', Object.assign({
+          display: 'grid',
+          gridTemplateColumns: colunas,
+          gap: '8px',
+          alignItems: 'center'
+        }, estilo || {}), null, lista);
+        return l;
+      }
+
+      function nomeComTurma(pai, nome, turmaReg, meu) {
+        var el = S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: meu ? '700' : '400' }, String(nome || '?') + (meu ? '  (você)' : ''), pai);
+        if (!turma && turmaReg) S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px', fontWeight: '400' }, String(turmaReg), el);
+      }
+
+      function estiloLinha(i, meu) {
+        return {
+          padding: '7px 8px',
+          fontSize: '14px',
+          background: meu ? '#3A2A08' : (i % 2 ? 'transparent' : 'rgba(255,255,255,0.03)'),
+          border: meu ? '2px solid ' + C.laranja : '2px solid transparent',
+          borderRadius: '6px'
+        };
+      }
+
+      function cabecalho(colunas, titulos) {
+        var c = linhaTabela(colunas, { fontSize: '11px', fontWeight: '700', color: C.cinza, padding: '0 8px 6px', borderBottom: '2px solid ' + C.borda });
+        titulos.forEach(function (h, i) {
+          S.el('div', { textAlign: i >= 2 ? 'right' : 'left' }, h, c);
+        });
+      }
+
+      function desenharGeral() {
+        var regs = S.dados.geral(turma);
+        explica.textContent = 'Soma do melhor tempo de cada fase. Quem concluiu mais fases fica na frente.';
+        status.textContent = regs.length + ' aluno(s)' + (turma ? ' na turma ' + turma : ' em todas as turmas') + '.';
+        if (!regs.length) return vazio();
+        var completos = regs.filter(function (a) { return a.nFases === 3; });
+        cartaoDestaque('🏅 LÍDER GERAL', regs[0].nome + (turma ? '' : '  ·  ' + regs[0].turma), regs[0].nFases + '/3 fases · ' + S.formatarTempoLongo(regs[0].tempo), C.verde);
+        cartaoDestaque('🎓 CONCLUÍRAM AS 3 FASES', completos.length + ' de ' + regs.length + ' aluno(s)', completos.length ? 'Melhor total: ' + S.formatarTempo(completos[0].tempo) : 'ninguém ainda', C.amarelo);
+        var col = estreito() ? '30px minmax(0,1fr) 56px 40px 70px' : '42px minmax(0,1fr) 92px 60px 92px';
+        cabecalho(col, ['POS.', 'ALUNO', 'FASES', 'ERROS', 'TOTAL']);
+        regs.slice(0, 80).forEach(function (a, i) {
+          var meu = (minhaChave && a.chave === minhaChave) || (sessaoDestaque && a.sessoes.indexOf(sessaoDestaque) >= 0);
+          var l = linhaTabela(col, estiloLinha(i, meu));
+          S.el('div', { fontWeight: '700', color: i < 3 ? C.laranja : C.branco }, String(i + 1).padStart(2, '0'), l);
+          nomeComTurma(l, a.nome, a.turma, meu);
+          var fs = S.el('div', { display: 'flex', gap: '3px', justifyContent: 'flex-end' }, null, l);
+          [1, 2, 3].forEach(function (n) {
+            var feita = a.fases[n] !== undefined;
+            var p = S.el('div', {
+              width: '18px',
+              height: '18px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: '700',
+              lineHeight: '18px',
+              textAlign: 'center',
+              background: feita ? C.verde : 'transparent',
+              color: feita ? '#0B2412' : C.cinza,
+              border: feita ? 'none' : '1px dashed ' + C.borda,
+              boxSizing: 'border-box'
+            }, String(n), fs);
+            p.title = 'Fase ' + n + (feita ? ': ' + tempoCurto(a.fases[n]) : ': não concluída');
+          });
+          S.el('div', { textAlign: 'right', color: C.cinza }, String(a.erros), l);
+          S.el('div', { textAlign: 'right', fontFamily: C.mono, fontWeight: '700' }, tempoCurto(a.tempo), l);
+        });
+        if (regs.length > 80) S.el('div', { fontSize: '12px', color: C.cinza, padding: '6px 8px' }, '+ ' + (regs.length - 80) + ' alunos', lista);
+      }
+
+      function desenharFase() {
+        var regs = todasTentativas ? S.dados.daTurma(turma, fase) : S.dados.melhoresDaFase(turma, fase);
+        explica.textContent = 'Fase ' + fase + ' · ' + NOMES_FASE[fase] + (todasTentativas ? ' · todas as tentativas.' : ' · melhor tentativa de cada aluno.');
+        status.textContent = regs.length + ' resultado(s) na fase ' + fase + (turma ? ', turma ' + turma : ', todas as turmas') + '.';
+        if (!regs.length) return vazio();
+        cartaoDestaque('⚡ MAIS RÁPIDO', regs[0].nome, S.formatarTempoLongo(Number(regs[0].tempo)), C.verde);
+        cartaoDestaque('🐢 MAIS DEMORADO', regs[regs.length - 1].nome, S.formatarTempoLongo(Number(regs[regs.length - 1].tempo)), C.amarelo);
+        var col = estreito() ? '30px minmax(0,1fr) 44px 70px' : '42px minmax(0,1fr) 72px 92px';
+        cabecalho(col, ['POS.', 'ALUNO', 'ERROS', 'TEMPO']);
+        regs.slice(0, 80).forEach(function (r, i) {
+          var meu = (sessaoDestaque && r.sessao === sessaoDestaque) ||
+            (!todasTentativas && minhaChave && S.dados.chaveAluno(r.nome, r.turma) === minhaChave);
+          var l = linhaTabela(col, estiloLinha(i, meu));
+          S.el('div', { fontWeight: '700', color: i < 3 ? C.laranja : C.branco }, String(i + 1).padStart(2, '0'), l);
+          nomeComTurma(l, r.nome, r.turma, meu);
+          S.el('div', { textAlign: 'right', color: C.cinza }, String(Number(r.erros) || 0), l);
+          S.el('div', { textAlign: 'right', fontFamily: C.mono, fontWeight: '700' }, tempoCurto(Number(r.tempo)), l);
+        });
+        if (regs.length > 80) S.el('div', { fontSize: '12px', color: C.cinza, padding: '6px 8px' }, '+ ' + (regs.length - 80) + ' resultados', lista);
+      }
+
+      function vazio() {
+        S.el('div', { padding: '18px 0', color: C.cinza, textAlign: 'center' }, 'Ainda não há resultados' + (turma ? ' para a turma ' + turma + '.' : '.'), lista);
       }
 
       function desenhar() {
@@ -1452,56 +1647,19 @@
           status.textContent = 'Carregando ranking…';
           return;
         }
-        var regs = D.daTurma(turma, fase);
-        status.textContent = (D.erroLeitura ? D.erroLeitura + ' ' : '') +
-          (D.offline ? 'Modo offline: fora do Canva o ranking não é compartilhado. ' : '') +
-          regs.length + ' resultado(s) na fase ' + fase + (turma ? ', turma ' + turma : '') + '.';
-        if (!regs.length) {
-          S.el('div', { padding: '18px 0', color: C.cinza, textAlign: 'center' }, 'Ainda não há resultados' + (turma ? ' para esta turma.' : '.'), lista);
-          return;
-        }
-        cartaoDestaque('⚡ MAIS RÁPIDO', regs[0], C.verde);
-        cartaoDestaque('🐢 MAIS DEMORADO', regs[regs.length - 1], C.amarelo);
-
-        var cab = S.el('div', {
-          display: 'grid',
-          gridTemplateColumns: '42px minmax(0,1fr) 72px 92px',
-          gap: '8px',
-          fontSize: '11px',
-          fontWeight: '700',
-          color: C.cinza,
-          padding: '0 8px 6px',
-          borderBottom: '2px solid ' + C.borda
-        }, null, lista);
-        ['POS.', 'ALUNO', 'ERROS', 'TEMPO'].forEach(function (h, i) {
-          S.el('div', { textAlign: i >= 2 ? 'right' : 'left' }, h, cab);
-        });
-        regs.slice(0, 50).forEach(function (r, i) {
-          var meu = sessaoDestaque && r.sessao === sessaoDestaque;
-          var linha = S.el('div', {
-            display: 'grid',
-            gridTemplateColumns: '42px minmax(0,1fr) 72px 92px',
-            gap: '8px',
-            alignItems: 'center',
-            padding: '7px 8px',
-            fontSize: '14px',
-            background: meu ? '#3A2A08' : (i % 2 ? 'transparent' : 'rgba(255,255,255,0.03)'),
-            border: meu ? '2px solid ' + C.laranja : '2px solid transparent',
-            borderRadius: '6px'
-          }, null, lista);
-          S.el('div', { fontWeight: '700', color: i < 3 ? C.laranja : C.branco }, String(i + 1).padStart(2, '0'), linha);
-          var nomeEl = S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: meu ? '700' : '400' }, String(r.nome || '?') + (meu ? '  (você)' : ''), linha);
-          if (!turma && r.turma) {
-            S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px' }, String(r.turma), nomeEl);
-          }
-          S.el('div', { textAlign: 'right', color: C.cinza }, String(Number(r.erros) || 0), linha);
-          S.el('div', { textAlign: 'right', fontFamily: C.mono, fontWeight: '700' }, S.formatarTempo(Number(r.tempo)) + '.' + String(Math.floor((Number(r.tempo) % 1) * 10)), linha);
-        });
-        if (regs.length > 50) S.el('div', { fontSize: '12px', color: C.cinza, padding: '6px 8px' }, '+ ' + (regs.length - 50) + ' resultados', lista);
+        if (fase === 'geral') desenharGeral();
+        else desenharFase();
+        if (D.erroLeitura) status.textContent = D.erroLeitura + ' ' + status.textContent;
+        if (D.offline) status.textContent = 'Modo offline: fora do Canva o ranking não é compartilhado. ' + status.textContent;
       }
 
-      var parar = S.dados.aoMudar(desenhar);
-      desenhar();
+      function atualizarTudo() {
+        montarTurmas();
+        desenhar();
+      }
+      var parar = S.dados.aoMudar(atualizarTudo);
+      marcarAbas();
+      atualizarTudo();
       return t;
     };
   });
@@ -3340,7 +3498,7 @@
         etiqueta.style.display = 'none';
         return;
       }
-      var longe = S.jogo.distancia(info) > S.CFG.alcance;
+      var longe = S.jogo.distancia(info) > S.jogo.alcance(info);
       etiqueta.textContent = info.nome + (longe ? ' (chegue mais perto)' : '');
       etiqueta.style.left = Math.min(pos.x + 14, S.raiz.clientWidth - 160) + 'px';
       etiqueta.style.top = (pos.y + 16) + 'px';
@@ -3711,11 +3869,18 @@
       }
     };
 
+    // Distância até o objeto: vale o ponto de referência (ancora) ou, se o
+    // objeto informar, a distância real até ele (info.distReal).
     J.distancia = function (info) {
       var p = S.personagem.raiz.position;
       var dx = info.ancora.x - p.x;
       var dz = info.ancora.z - p.z;
-      return Math.sqrt(dx * dx + dz * dz);
+      var d = Math.sqrt(dx * dx + dz * dz);
+      if (info.distReal) d = Math.min(d, info.distReal(p));
+      return d;
+    };
+    J.alcance = function (info) {
+      return info.alcance || S.CFG.alcance;
     };
 
     // Objeto mais adequado ao alcance: prioriza os alvos da missão atual.
@@ -3729,7 +3894,7 @@
         if (!Object.prototype.hasOwnProperty.call(objs, id)) continue;
         var info = objs[id];
         var d = J.distancia(info);
-        if (d > S.CFG.alcance) continue;
+        if (d > J.alcance(info)) continue;
         var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' || id === 'cachola' || id === 'logoSenac' ? 0.6 : 0);
         if (nota < melhorNota) {
           melhorNota = nota;
@@ -3821,7 +3986,7 @@
 
     J.usar = S.protegido('jogo:usar', function (info, viaClique) {
       if (S.fase !== 'jogo' || S.pausado) return;
-      if (J.distancia(info) > S.CFG.alcance) {
+      if (J.distancia(info) > J.alcance(info)) {
         S.aviso('Chegue mais perto: ' + info.nome, 'info', 2000);
         return;
       }
@@ -5259,8 +5424,8 @@
         }, botoes);
         bProx.style.flex = '1 1 100%';
       }
-      var bRank = S.ui.botao('🏆 Ranking da turma · Fase ' + numFase, faseDef.proxima ? 'secundario' : 'primario', function () {
-        S.ui.mostrarRanking(S.aluno.turma, sessao, numFase);
+      var bRank = S.ui.botao('🏆 Ver ranking', faseDef.proxima ? 'secundario' : 'primario', function () {
+        S.ui.mostrarRanking('', sessao, 'geral');
       }, botoes);
       bRank.style.flex = '1 1 200px';
       var bDeNovo = S.ui.botao('Jogar de novo', 'secundario', function () {
@@ -8564,6 +8729,31 @@
       return g;
     }
 
+    // Distância do aluno até um trecho da parede (de s0 a s1), medida no
+    // chão a 40 cm da parede. Assim dá para usar o X estando ao lado dele,
+    // atrás da bancada, e não só pelo ponto de referência na frente.
+    function distParede(s0, s1) {
+      var a = new THREE.Vector3();
+      var b = new THREE.Vector3();
+      return function (p) {
+        var melhor = Infinity;
+        // Divide o trecho no canto para medir cada parede em linha reta.
+        var cortes = s0 < F3.CANTO && s1 > F3.CANTO ? [[s0, F3.CANTO], [F3.CANTO, s1]] : [[s0, s1]];
+        cortes.forEach(function (c) {
+          a.copy(F3.pontoRota(c[0], 0, 0.4));
+          b.copy(F3.pontoRota(c[1], 0, 0.4));
+          var abx = b.x - a.x;
+          var abz = b.z - a.z;
+          var l2 = abx * abx + abz * abz;
+          var t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / l2)) : 0;
+          var dx = p.x - (a.x + abx * t);
+          var dz = p.z - (a.z + abz * t);
+          melhor = Math.min(melhor, Math.sqrt(dx * dx + dz * dz));
+        });
+        return melhor;
+      };
+    }
+
     function txt(ctx, t, x, y, cor, fonte) {
       ctx.fillStyle = cor;
       ctx.font = fonte;
@@ -8603,23 +8793,31 @@
         nome: 'Switch (24 Fast + 2 Gigabit)',
         ancora: new THREE.Vector3(rx - 0.4, 0, rz + 1.15)
       });
-      // Uplink do servidor: sai da Gi0/1, sobe por cima do switch até o
-      // teto e segue pela eletrocalha até a parede da sala do servidor.
+      // Uplink do servidor: vem do teto descendo encostado na parede, por
+      // trás do rack, passa por baixo do switch (encostado nele) e sobe
+      // para a Gi0/1 na frente.
       var ux = rx + 0.18;
-      var uz = rz + 0.38;
+      var zp = -4.4; // encostado na parede do fundo
+      var yb = 0.957; // logo abaixo do switch (fundo em 0,975)
       var mUplink = S.mat(C.laranja);
       var curva = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(ux, 1.0, rz + 0.17),
-        new THREE.Vector3(ux, 1.05, rz + 0.3),
-        new THREE.Vector3(ux, 1.2, uz),
-        new THREE.Vector3(ux, 2.0, uz),
-        new THREE.Vector3(ux, 2.84, uz)
-      ]);
-      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 16, 0.022, 4), mUplink));
+        new THREE.Vector3(ux, 2.88, zp),
+        new THREE.Vector3(ux, 1.4, zp),
+        new THREE.Vector3(ux, 1.02, zp),
+        new THREE.Vector3(ux, yb + 0.012, zp + 0.06),
+        new THREE.Vector3(ux, yb, -4.2),
+        new THREE.Vector3(ux, yb, rz),
+        new THREE.Vector3(ux, yb, rz + 0.15),
+        new THREE.Vector3(ux, yb + 0.012, rz + 0.2),
+        new THREE.Vector3(ux, 1.0, rz + 0.205),
+        new THREE.Vector3(ux, 1.0, rz + 0.165)
+      ], false, 'centripetal');
+      S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 48, 0.016, 5), mUplink));
       var mCalha = S.mat(0x9aa4b0);
-      S.caixa(0.08, 0.16, 0.08, mCalha, ux, 2.92, uz, null, true); // descida do teto
-      S.caixa(6.0 - ux + 0.05, 0.06, 0.2, mCalha, (ux + 6.0) / 2, 2.97, uz, null, true); // eletrocalha
-      S.caixa(6.0 - ux, 0.03, 0.03, mUplink, (ux + 6.0) / 2, 2.925, uz, null, true);
+      // Eletrocalha no alto da parede do fundo até a parede do servidor.
+      S.caixa(0.08, 0.14, 0.06, mCalha, ux, 2.92, zp + 0.01, null, true);
+      S.caixa(6.0 - ux + 0.05, 0.08, 0.14, mCalha, (ux + 6.0) / 2, 2.95, -4.37, null, true);
+      S.caixa(6.0 - ux, 0.025, 0.025, mUplink, (ux + 6.0) / 2, 2.9, -4.33, null, true);
 
       // Porta (fechada) da sala do servidor, com placa.
       S.caixa(0.06, 2.1, 1.0, S.mat(C.madeiraEscura), 5.95, 1.05, -2.45, null, true);
@@ -8704,7 +8902,9 @@
           id: 'presilha:' + p.id,
           nome: 'Ponto de fixação ' + p.id,
           presilha: pres,
-          ancora: r.ancora
+          ancora: r.ancora,
+          distReal: distParede(p.s - 0.2, p.s + 0.2),
+          alcance: 1.5
         });
         return pres;
       });
@@ -8744,7 +8944,9 @@
           id: 'ponto:' + (i + 1),
           nome: 'Ponto de rede ' + (i + 1) + ' (' + p.nome + ')',
           ponto: t,
-          ancora: r.ancora
+          ancora: r.ancora,
+          distReal: distParede(p.s - 0.15, p.s + 0.15),
+          alcance: 1.5
         });
         return t;
       });
@@ -8830,7 +9032,8 @@
           id: 'canaleta:' + (i + 1),
           nome: 'Trecho ' + (i + 1) + ' da canaleta',
           trecho: t,
-          ancora: r.ancora
+          ancora: r.ancora,
+          distReal: distParede(tr[0], tr[1])
         });
         return t;
       });
