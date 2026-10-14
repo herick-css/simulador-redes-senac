@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.3.1',
+    versao: '3.4.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -922,8 +922,10 @@
         S.el('div', { fontSize: '12px', color: C.cinza, marginTop: ap ? '8px' : '16px', lineHeight: '1.4' },
           'Seu nome, turma e tempo aparecem no ranking da turma. Melhor jogado no computador ou no celular na horizontal.', t.cartao);
       }
-      S.el('div', { fontSize: '10px', color: '#5F7896', marginTop: ap ? '6px' : '10px', textAlign: 'right' },
-        'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : '') + (window.__SIM_ORIGEM ? ' · ' + window.__SIM_ORIGEM : ''), t.cartao);
+      var rodLogin = S.el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginTop: ap ? '6px' : '10px' }, null, t.cartao);
+      S.ui.botaoAtualizar(rodLogin);
+      S.el('div', { fontSize: '10px', color: '#5F7896', textAlign: 'right' },
+        'versão ' + S.versao + (window.__SIM_CARREGADOR ? ' · carregador ' + window.__SIM_CARREGADOR : '') + (window.__SIM_ORIGEM ? ' · ' + window.__SIM_ORIGEM : ''), rodLogin);
       // Se o celular girar, a tela é remontada no layout certo sem perder o que foi digitado.
       t.guardar = function () {
         S.armazenar('sim-nome', nome.input.value);
@@ -1008,11 +1010,12 @@
           S.ui.mostrarComandos(true);
         });
       });
-      var rod = S.el('div', { display: 'flex', marginTop: ap ? '10px' : '14px' }, null, t.cartao);
+      var rod = S.el('div', { display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginTop: ap ? '10px' : '14px' }, null, t.cartao);
       S.ui.botao('Voltar', 'secundario', function () {
         t.fechar();
         S.ui.mostrarLogin();
       }, rod);
+      S.ui.botaoAtualizar(rod);
     };
 
     S.ui.mostrarComandos = function (inicio) {
@@ -1281,6 +1284,166 @@
       hud.prompt.textContent = (S.toque ? 'USAR: ' : '[E] ') + texto;
       hud.prompt.style.display = 'block';
     };
+  });
+
+  /* ================================================================== */
+  secao('U09-atualizacoes', function () {
+    var C = S.CSS;
+    // Mesmo endereço que o carregador do Canva usa.
+    var CAMINHO = 'herick-css/simulador-redes-senac';
+    var ARQ = 'simulador.js';
+    var A = S.atualizacao = { nova: null, dispensada: null, verificando: false };
+
+    function numeros(v) {
+      return String(v || '0').split('.').map(function (n) { return parseInt(n, 10) || 0; });
+    }
+    // true se "a" for mais nova que "b".
+    A.maisNova = function (a, b) {
+      var x = numeros(a);
+      var y = numeros(b);
+      for (var i = 0; i < Math.max(x.length, y.length); i++) {
+        if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+      }
+      return false;
+    };
+
+    function urls() {
+      var t = Date.now();
+      var gh = 'https://raw.githubusercontent.com/' + CAMINHO + '/main/' + ARQ + '?v=' + t;
+      var jsd = 'https://cdn.jsdelivr.net/gh/' + CAMINHO + '@main/' + ARQ + '?v=' + t;
+      return window.__SIM_ORIGEM === 'jsdelivr' ? [jsd, gh] : [gh, jsd];
+    }
+
+    // Lê só o começo do arquivo publicado (a versão fica nos primeiros bytes).
+    A.verificar = function () {
+      if (!window.fetch) return Promise.reject(new Error('sem fetch'));
+      var lista = urls();
+      function ler(url, parcial) {
+        var op = { cache: 'no-store' };
+        if (parcial) op.headers = { Range: 'bytes=0-4095' };
+        return fetch(url, op).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        }).then(function (txt) {
+          var m = /versao:\s*'([0-9.]+)'/.exec(txt);
+          if (!m) throw new Error('versão não encontrada');
+          return m[1];
+        });
+      }
+      // Cada endereço: primeiro só o começo do arquivo; se a rede recusar,
+      // o arquivo inteiro; depois o próximo endereço.
+      function tentar(i) {
+        if (i >= lista.length) return Promise.reject(new Error('sem resposta'));
+        return ler(lista[i], true).catch(function () {
+          return ler(lista[i], false);
+        }).catch(function () { return tentar(i + 1); });
+      }
+      A.verificando = true;
+      return tentar(0).then(function (v) {
+        A.verificando = false;
+        A.publicada = v;
+        A.nova = A.maisNova(v, S.versao) ? v : null;
+        return { versao: v, nova: !!A.nova };
+      }, function (e) {
+        A.verificando = false;
+        throw e;
+      });
+    };
+
+    function emJogo() {
+      return S.fase === 'jogo' || S.fase === 'cena';
+    }
+
+    A.atualizar = function () {
+      try { window.location.reload(); } catch (e) { registrarErro('atualizar', e); }
+    };
+
+    // Botão "Procurar atualizações" (telas de menu).
+    S.ui.botaoAtualizar = function (pai) {
+      var b = S.ui.botao('🔄 Procurar atualizações', 'secundario', function () {
+        if (A.verificando) return;
+        var antes = b.textContent;
+        b.textContent = '🔄 Procurando…';
+        b.disabled = true;
+        A.verificar().then(function (r) {
+          b.textContent = antes;
+          b.disabled = false;
+          janela(r.nova
+            ? { titulo: 'Atualização disponível', texto: 'A versão ' + r.versao + ' já está no ar (você está na ' + S.versao + ').', atualizar: true }
+            : { titulo: 'Tudo em dia ✔', texto: 'Você já está na versão mais recente (' + S.versao + ').' });
+        }, function () {
+          b.textContent = antes;
+          b.disabled = false;
+          janela({ titulo: 'Não deu para verificar', texto: 'Sem acesso ao servidor de atualizações agora. Confira a internet e tente de novo.' });
+        });
+      }, pai);
+      S.estilo(b, { padding: '6px 12px', fontSize: '13px' });
+      return b;
+    };
+
+    function janela(o) {
+      var t = S.ui.tela(60, '380px');
+      S.el('div', { fontSize: '19px', fontWeight: '700', marginBottom: '8px' }, o.titulo, t.cartao);
+      S.el('div', { fontSize: '14px', color: C.cinza, lineHeight: '1.45', marginBottom: '14px' }, o.texto, t.cartao);
+      if (o.atualizar && emJogo()) {
+        S.el('div', { fontSize: '13px', color: C.amarelo, marginBottom: '12px' }, 'Atenção: atualizar recarrega o jogo e o progresso desta fase será perdido.', t.cartao);
+      }
+      var linha = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap' }, null, t.cartao);
+      if (o.atualizar) {
+        S.estilo(S.ui.botao('Atualizar agora', 'primario', A.atualizar, linha), { flex: '1 1 auto' });
+        S.ui.botao('Depois', 'secundario', function () { t.fechar(); }, linha);
+      } else {
+        S.estilo(S.ui.botao('Fechar', 'primario', function () { t.fechar(); }, linha), { flex: '1 1 auto' });
+      }
+    }
+
+    // Aviso automático: confere sozinho de tempos em tempos e só sugere.
+    var faixa = null;
+    function mostrarFaixa(v) {
+      if (faixa || A.dispensada === v) return;
+      faixa = S.el('div', {
+        // No jogo fica abaixo dos avisos do topo, para não cobri-los.
+        position: 'absolute', top: emJogo() ? '64px' : '8px', left: '50%', transform: 'translateX(-50%)', zIndex: '70',
+        display: 'flex', alignItems: 'center', gap: '8px', maxWidth: 'calc(100% - 24px)', boxSizing: 'border-box',
+        background: 'rgba(11,79,156,0.95)', border: '2px solid ' + C.laranja, borderRadius: '8px',
+        padding: '6px 8px 6px 12px', fontFamily: C.fonte, fontSize: '13px', fontWeight: '700', color: '#FFFFFF',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.35)'
+      }, null, S.raiz);
+      S.el('span', { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, '🔄 Nova versão ' + v + ' disponível', faixa);
+      var confirmar = false;
+      var bAt = S.ui.botao('Atualizar', 'primario', function () {
+        if (emJogo() && !confirmar) {
+          confirmar = true;
+          bAt.textContent = 'Perder o progresso? Toque de novo';
+          setTimeout(function () {
+            confirmar = false;
+            if (bAt.isConnected) bAt.textContent = 'Atualizar';
+          }, 4000);
+          return;
+        }
+        A.atualizar();
+      }, faixa);
+      S.estilo(bAt, { padding: '4px 10px', fontSize: '12px', boxShadow: 'none' });
+      var bX = S.ui.botao('✕', 'secundario', function () {
+        A.dispensada = v;
+        faixa.remove();
+        faixa = null;
+      }, faixa);
+      S.estilo(bX, { padding: '4px 8px', fontSize: '12px', boxShadow: 'none' });
+      bX.setAttribute('aria-label', 'Dispensar aviso de atualização');
+    }
+    function checarSozinho() {
+      if (document.hidden || A.verificando) return;
+      A.verificar().then(function (r) {
+        if (r.nova) mostrarFaixa(r.versao);
+      }, function () { /* sem rede: tenta na próxima */ });
+    }
+    // Só quando rodando a partir do GitHub/jsDelivr (no Canva).
+    if (window.__SIM_ORIGEM) {
+      setTimeout(checarSozinho, 20000);
+      setInterval(checarSozinho, 5 * 60 * 1000);
+    }
+    A.checarAgora = checarSozinho;
   });
 
 
@@ -10377,7 +10540,7 @@
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
   var painel = null;
   var timer = null;
   var gpu = null;
