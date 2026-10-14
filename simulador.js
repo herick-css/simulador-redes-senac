@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.4.0',
+    versao: '3.5.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -162,6 +162,20 @@
 
     S.hex = function (n) {
       return '#' + n.toString(16).padStart(6, '0');
+    };
+
+    // Turma: só números (2026.6.103 vira 20266103). A única palavra aceita é TESTE.
+    S.normalizarTurma = function (v) {
+      var t = String(v || '').toUpperCase();
+      var digitos = t.replace(/[^0-9]/g, '');
+      if (!digitos && t.replace(/[^A-Z]/g, '') === 'TESTE') return 'TESTE';
+      return digitos;
+    };
+    // Enquanto digita: deixa formar a palavra TESTE; o resto vira só números.
+    S.filtrarTurmaDigitando = function (v) {
+      var t = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (/^[A-Z]+$/.test(t) && 'TESTE'.indexOf(t) === 0) return t;
+      return t.replace(/[^0-9]/g, '');
     };
 
     S.formatarTempo = function (seg) {
@@ -863,17 +877,22 @@
       }
 
       var nome = S.ui.campo('NOME DO ALUNO', colB, { placeholder: 'Ex.: Maria Souza', max: 40 });
-      var turma = S.ui.campo('CÓDIGO DA TURMA', colB, { placeholder: 'Ex.: TI2026A', max: 20, maiusculas: true });
+      var turma = S.ui.campo('CÓDIGO DA TURMA', colB, { placeholder: 'Ex.: 20266103', max: 20, maiusculas: true });
       if (ap) {
         S.ui.compactarCampo(nome);
         S.ui.compactarCampo(turma);
       }
       nome.input.value = S.armazenar('sim-nome') || '';
-      turma.input.value = S.armazenar('sim-turma') || '';
+      turma.input.value = S.filtrarTurmaDigitando(S.armazenar('sim-turma') || '');
       turma.input.addEventListener('input', function () {
+        var antes = turma.input.value;
         var pos = turma.input.selectionStart;
-        turma.input.value = turma.input.value.toUpperCase().replace(/\s+/g, '');
-        try { turma.input.setSelectionRange(pos, pos); } catch (e) { /* ignora */ }
+        var limpo = S.filtrarTurmaDigitando(antes);
+        if (limpo === antes) return;
+        // Mantém o cursor no lugar mesmo removendo pontos, espaços e letras.
+        var ate = S.filtrarTurmaDigitando(antes.slice(0, pos)).length;
+        turma.input.value = limpo;
+        try { turma.input.setSelectionRange(ate, ate); } catch (e) { /* ignora */ }
       });
 
       var erro = S.el('div', { color: C.vermelho, fontSize: '13px', fontWeight: '700', minHeight: ap ? '0' : '18px', marginBottom: ap ? '4px' : '8px' }, '', colB);
@@ -881,14 +900,14 @@
 
       function entrar() {
         var n = nome.input.value.trim().replace(/\s+/g, ' ');
-        var tu = turma.input.value.trim().toUpperCase();
+        var tu = S.normalizarTurma(turma.input.value);
         if (n.length < 2) {
           erro.textContent = 'Digite seu nome (pelo menos 2 letras).';
           nome.input.focus();
           return;
         }
         if (tu.length < 2) {
-          erro.textContent = 'Digite o código da turma.';
+          erro.textContent = 'Digite o código da turma: só números (ex.: 20266103) ou TESTE.';
           turma.input.focus();
           return;
         }
@@ -1527,7 +1546,7 @@
     D.chaveAluno = function (nome, turma) {
       var n = String(nome || '').trim().replace(/\s+/g, ' ').toLowerCase();
       if (n.normalize) n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return n + '|' + String(turma || '').trim().toUpperCase();
+      return n + '|' + S.normalizarTurma(turma);
     };
 
     // Marcas do professor gravadas junto com os resultados:
@@ -1638,7 +1657,7 @@
       var vistas = {};
       D.registros.forEach(function (r) {
         if (!valido(r)) return;
-        var t = String(r.turma || '').trim().toUpperCase();
+        var t = S.normalizarTurma(r.turma);
         if (t) vistas[t] = (vistas[t] || 0) + 1;
       });
       return Object.keys(vistas).sort().map(function (t) { return { turma: t, n: vistas[t] }; });
@@ -1663,7 +1682,7 @@
       [1, 2, 3].forEach(function (fase) {
         D.melhoresDaFase(turma, fase).forEach(function (r) {
           var k = D.chaveAluno(r.nome, r.turma);
-          var a = alunos[k] || (alunos[k] = { chave: k, nome: String(r.nome || '?').trim(), turma: String(r.turma || '').toUpperCase(), fases: {}, tempo: 0, erros: 0, sessoes: [], recente: '' });
+          var a = alunos[k] || (alunos[k] = { chave: k, nome: String(r.nome || '?').trim(), turma: S.normalizarTurma(r.turma), fases: {}, tempo: 0, erros: 0, sessoes: [], recente: '' });
           a.fases[fase] = Number(r.tempo);
           a.tempo += Number(r.tempo);
           a.erros += Number(r.erros) || 0;
@@ -1690,7 +1709,7 @@
       return D.registros.filter(function (r) {
         if (!valido(r)) return false;
         if ((Number(r.fase) || 1) !== fase) return false;
-        return !turma || String(r.turma || '').trim().toUpperCase() === turma;
+        return !turma || S.normalizarTurma(r.turma) === turma;
       }).sort(function (a, b) {
         return Number(a.tempo) - Number(b.tempo);
       });
@@ -1705,7 +1724,7 @@
     // fase: 'geral' (padrão) ou 1, 2, 3. turma: '' = todas as turmas.
     S.ui.mostrarRanking = function (turmaInicial, sessaoDestaque, faseInicial) {
       var t = S.ui.tela(40, '660px');
-      var turma = String(turmaInicial || '').trim().toUpperCase();
+      var turma = S.normalizarTurma(turmaInicial);
       var fase = faseInicial || 'geral';
       var todasTentativas = false;
       var minhaChave = S.aluno && S.aluno.nome ? S.dados.chaveAluno(S.aluno.nome, S.aluno.turma) : null;
@@ -1846,7 +1865,8 @@
 
       function nomeComTurma(pai, nome, turmaReg, meu) {
         var el = S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: meu ? '700' : '400' }, String(nome || '?') + (meu ? '  (você)' : ''), pai);
-        if (!turma && turmaReg) S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px', fontWeight: '400' }, String(turmaReg), el);
+        var tr = S.normalizarTurma(turmaReg);
+        if (!turma && tr) S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px', fontWeight: '400' }, tr, el);
       }
 
       function estiloLinha(i, meu) {
@@ -1867,13 +1887,21 @@
       }
 
       function desenharGeral() {
-        var regs = S.dados.geral(turma);
-        explica.textContent = 'Soma do melhor tempo de cada fase. Quem concluiu mais fases fica na frente.';
-        status.textContent = regs.length + ' aluno(s)' + (turma ? ' na turma ' + turma : ' em todas as turmas') + '.';
-        if (!regs.length) return vazio();
-        var completos = regs.filter(function (a) { return a.nFases === 3; });
-        cartaoDestaque('🏅 LÍDER GERAL', regs[0].nome + (turma ? '' : '  ·  ' + regs[0].turma), regs[0].nFases + '/3 fases · ' + S.formatarTempoLongo(regs[0].tempo), C.verde);
-        cartaoDestaque('🎓 CONCLUÍRAM AS 3 FASES', completos.length + ' de ' + regs.length + ' aluno(s)', completos.length ? 'Melhor total: ' + S.formatarTempo(completos[0].tempo) : 'ninguém ainda', C.amarelo);
+        // O geral só lista quem concluiu as 3 fases.
+        var todos = S.dados.geral(turma);
+        var regs = todos.filter(function (a) { return a.nFases === 3; });
+        var emAndamento = todos.length - regs.length;
+        var euFora = minhaChave && todos.some(function (a) { return a.chave === minhaChave && a.nFases < 3; });
+        explica.textContent = 'Só quem concluiu as 3 fases. Vale a soma do melhor tempo de cada fase.' +
+          (euFora ? ' Você ainda não concluiu as 3 fases.' : '');
+        status.textContent = regs.length + ' aluno(s) com as 3 fases' + (emAndamento ? ' · ' + emAndamento + ' ainda em andamento' : '') +
+          (turma ? ' (turma ' + turma + ').' : ' (todas as turmas).');
+        if (!regs.length) {
+          S.el('div', { padding: '18px 0', color: C.cinza, textAlign: 'center' }, 'Ninguém concluiu as 3 fases ainda' + (turma ? ' na turma ' + turma + '.' : '.'), lista);
+          return;
+        }
+        cartaoDestaque('🏅 LÍDER GERAL', regs[0].nome + (turma ? '' : '  ·  ' + regs[0].turma), 'Total ' + S.formatarTempoLongo(regs[0].tempo), C.verde);
+        cartaoDestaque('🎓 CONCLUÍRAM AS 3 FASES', regs.length + ' aluno(s)', emAndamento ? emAndamento + ' ainda em andamento' : 'todos que jogaram', C.amarelo);
         var col = estreito() ? '30px minmax(0,1fr) 56px 40px 70px' : '42px minmax(0,1fr) 92px 60px 92px';
         cabecalho(col, ['POS.', 'ALUNO', 'FASES', 'ERROS', 'TOTAL']);
         regs.slice(0, 80).forEach(function (a, i) {
@@ -2130,7 +2158,7 @@
         var fa = selFase.value;
         var q = busca.value.trim().toLowerCase();
         return D.visiveis().filter(function (r) {
-          if (tu && String(r.turma || '').trim().toUpperCase() !== tu) return false;
+          if (tu && S.normalizarTurma(r.turma) !== tu) return false;
           if (fa && String(Number(r.fase) || 1) !== fa) return false;
           if (q && String(r.nome || '').toLowerCase().indexOf(q) < 0) return false;
           return true;
@@ -2224,7 +2252,7 @@
             rotulos();
           });
           var nome = S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, String(r.nome || '?'), l);
-          S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px' }, String(r.turma || ''), nome);
+          S.el('span', { color: C.cinza, fontSize: '11px', marginLeft: '6px' }, S.normalizarTurma(r.turma), nome);
           S.el('div', { textAlign: 'right', color: C.cinza }, String(Number(r.fase) || 1), l);
           S.el('div', { textAlign: 'right', fontFamily: C.mono }, S.formatarTempo(Number(r.tempo)), l);
           S.el('div', { textAlign: 'right', color: C.cinza, fontSize: '12px' }, dataCurta(r.data), l);
