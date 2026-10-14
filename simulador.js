@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.2.0',
+    versao: '3.2.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -3418,7 +3418,12 @@
       S.pick = function () {
         ray.setFromCamera(mouse, S.camera);
         var hits = ray.intersectObjects(S.interativos, false);
-        return hits.length ? hits[0].object.userData.info : null;
+        // Pula objetos travados pela fase (o toque "atravessa" até o liberado).
+        for (var i = 0; i < hits.length; i++) {
+          var info = hits[i].object.userData.info;
+          if (!S.jogo || !S.jogo.permitido || S.jogo.permitido(info)) return info;
+        }
+        return null;
       };
 
       c.addEventListener('pointermove', function (e) {
@@ -3882,6 +3887,11 @@
     J.alcance = function (info) {
       return info.alcance || S.CFG.alcance;
     };
+    // A fase pode travar objetos (ex.: com o martelo na mão, só os X).
+    J.permitido = function (info) {
+      var f = S.faseAtual;
+      return !info || !f || !f.permite || f.permite(info);
+    };
 
     // Objeto mais adequado ao alcance: prioriza os alvos da missão atual.
     J.melhorProximo = function () {
@@ -3893,6 +3903,7 @@
       for (var id in objs) {
         if (!Object.prototype.hasOwnProperty.call(objs, id)) continue;
         var info = objs[id];
+        if (!J.permitido(info)) continue;
         var d = J.distancia(info);
         if (d > J.alcance(info)) continue;
         var nota = d + (alvos.indexOf(id) >= 0 ? 0 : 1.5) + (id === 'quadro' || id === 'cartaz' || id === 'professor' || id === 'cachola' || id === 'logoSenac' ? 0.6 : 0);
@@ -3986,6 +3997,11 @@
 
     J.usar = S.protegido('jogo:usar', function (info, viaClique) {
       if (S.fase !== 'jogo' || S.pausado) return;
+      if (!J.permitido(info)) {
+        var f = S.faseAtual;
+        S.aviso(f && f.avisoBloqueado ? f.avisoBloqueado(info) : 'Agora não dá para usar isso.', 'info', 2600);
+        return;
+      }
       if (J.distancia(info) > J.alcance(info)) {
         S.aviso('Chegue mais perto: ' + info.nome, 'info', 2000);
         return;
@@ -8686,21 +8702,26 @@
       SAIDA_X: 4.6, // onde os cabos saem do rack para a parede (s = 0)
       CANTO: 10.53, // s do canto do fundo à esquerda
       S_FIM: 16.3,
+      // Bancadas afastadas da parede: sobra um corredor atrás delas para o
+      // aluno chegar até os X, as tomadas e a canaleta.
       PCS: [
-        { nome: 'PC-01', x: 3.1, z: -2.6, parede: 'fundo' },
-        { nome: 'PC-02', x: 1.35, z: -2.6, parede: 'fundo' },
-        { nome: 'PC-03', x: -0.4, z: -2.6, parede: 'fundo' },
-        { nome: 'PC-04', x: -4.1, z: -2.2, parede: 'esquerda' },
-        { nome: 'PC-05', x: -4.1, z: -0.4, parede: 'esquerda' },
-        { nome: 'PC-06', x: -4.1, z: 1.4, parede: 'esquerda' }
+        { nome: 'PC-01', x: 2.8, z: -2.0, parede: 'fundo' },
+        { nome: 'PC-02', x: 1.0, z: -2.0, parede: 'fundo' },
+        { nome: 'PC-03', x: -0.8, z: -2.0, parede: 'fundo' },
+        { nome: 'PC-04', x: -3.6, z: -2.2, parede: 'esquerda' },
+        { nome: 'PC-05', x: -3.6, z: -0.4, parede: 'esquerda' },
+        { nome: 'PC-06', x: -3.6, z: 1.4, parede: 'esquerda' }
       ],
       // Ordem da rota: A, P1, P2, P3, B, (canto), P4, C, P5, P6.
+      // A fica a 70 cm do rack (longe do switch).
       PRESILHAS: [
-        { id: 'A', s: 0.45 },
-        { id: 'B', s: 5.9 },
+        { id: 'A', s: 0.7 },
+        { id: 'B', s: 6.5 },
         { id: 'C', s: 13.26 }
       ],
-      TRECHOS: [[0, 5.0], [5.0, 10.53], [10.53, 13.4], [13.4, 16.3]]
+      TRECHOS: [[0, 5.6], [5.6, 10.53], [10.53, 13.4], [13.4, 16.3]],
+      CORREDOR: 0.6, // onde o aluno fica: 60 cm da parede
+      ALCANCE: 1.2
     };
     // Tomada de cada PC: fica do lado do gabinete (40 cm).
     F3.PCS.forEach(function (p) {
@@ -8712,10 +8733,12 @@
     F3.naRota = function (s) {
       if (s <= F3.CANTO) {
         var x = F3.SAIDA_X - s;
-        return { x: x, z: F3.ZP, rot: 0, normal: new THREE.Vector3(0, 0, 1), ancora: new THREE.Vector3(x, 0, -1.75) };
+        // Referência: no corredor, ao lado do objeto (45 cm à esquerda), para
+        // o corpo do aluno não esconder o X da câmera, que fica atrás dele.
+        return { x: x, z: F3.ZP, rot: 0, normal: new THREE.Vector3(0, 0, 1), ancora: new THREE.Vector3(x - 0.45, 0, F3.ZP + F3.CORREDOR) };
       }
       var z = F3.ZP + (s - F3.CANTO);
-      return { x: F3.XP, z: z, rot: Math.PI / 2, normal: new THREE.Vector3(1, 0, 0), ancora: new THREE.Vector3(-3.25, 0, z) };
+      return { x: F3.XP, z: z, rot: Math.PI / 2, normal: new THREE.Vector3(1, 0, 0), ancora: new THREE.Vector3(F3.XP + F3.CORREDOR, 0, z) };
     };
     F3.pontoRota = function (s, y, afastar) {
       var r = F3.naRota(s);
@@ -8730,8 +8753,7 @@
     }
 
     // Distância do aluno até um trecho da parede (de s0 a s1), medida no
-    // chão a 40 cm da parede. Assim dá para usar o X estando ao lado dele,
-    // atrás da bancada, e não só pelo ponto de referência na frente.
+    // corredor. Usada na canaleta, que é comprida.
     function distParede(s0, s1) {
       var a = new THREE.Vector3();
       var b = new THREE.Vector3();
@@ -8740,8 +8762,8 @@
         // Divide o trecho no canto para medir cada parede em linha reta.
         var cortes = s0 < F3.CANTO && s1 > F3.CANTO ? [[s0, F3.CANTO], [F3.CANTO, s1]] : [[s0, s1]];
         cortes.forEach(function (c) {
-          a.copy(F3.pontoRota(c[0], 0, 0.4));
-          b.copy(F3.pontoRota(c[1], 0, 0.4));
+          a.copy(F3.pontoRota(c[0], 0, F3.CORREDOR));
+          b.copy(F3.pontoRota(c[1], 0, F3.CORREDOR));
           var abx = b.x - a.x;
           var abz = b.z - a.z;
           var l2 = abx * abx + abz * abz;
@@ -8884,7 +8906,7 @@
       F3.presilhas = F3.PRESILHAS.map(function (p, i) {
         var r = F3.naRota(p.s);
         var g = grupoParede(p.s);
-        var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshBasicMaterial({ map: texX, transparent: true }));
+        var marca = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32), new THREE.MeshBasicMaterial({ map: texX, transparent: true }));
         marca.position.z = 0.005;
         g.add(marca);
         var pecas = [];
@@ -8896,15 +8918,14 @@
           prego.visible = false;
           pecas.push(pc, prego);
         }
-        var alvo = hitbox(0.42, 0.36, 0.3, g, 0, 0, 0.1);
+        var alvo = hitbox(0.5, 0.45, 0.3, g, 0, 0, 0.1);
         var pres = { id: p.id, n: i + 1, s: p.s, x: r.x, z: r.z, grupo: g, marca: marca, pecas: pecas, pregadas: 0, pronta: false, passou: false };
         pres.info = S.interativo([alvo, marca], {
           id: 'presilha:' + p.id,
           nome: 'Ponto de fixação ' + p.id,
           presilha: pres,
           ancora: r.ancora,
-          distReal: distParede(p.s - 0.2, p.s + 0.2),
-          alcance: 1.5
+          alcance: F3.ALCANCE
         });
         return pres;
       });
@@ -8945,8 +8966,7 @@
           nome: 'Ponto de rede ' + (i + 1) + ' (' + p.nome + ')',
           ponto: t,
           ancora: r.ancora,
-          distReal: distParede(p.s - 0.15, p.s + 0.15),
-          alcance: 1.5
+          alcance: F3.ALCANCE
         });
         return t;
       });
@@ -8970,13 +8990,19 @@
       var n = t.normal;
       var a = S.posMundo(pc.porta);
       var b = new THREE.Vector3(t.x, F3.FIO_Y - 0.03, t.z).addScaledVector(n, 0.1);
+      // Desce por trás da bancada, corre pelo chão e sobe até a tomada.
+      var chao1 = a.clone().addScaledVector(n, -0.3);
+      chao1.y = 0.04;
+      var chao2 = b.clone().addScaledVector(n, 0.25);
+      chao2.y = 0.04;
       var curva = new THREE.CatmullRomCurve3([
         a,
-        a.clone().addScaledVector(n, -0.35).add(new THREE.Vector3(0, -0.12, 0)),
-        new THREE.Vector3((a.x + b.x) / 2, Math.min(a.y, b.y) - 0.2, (a.z + b.z) / 2),
-        b.clone().addScaledVector(n, 0.3).add(new THREE.Vector3(0, -0.15, 0)),
+        a.clone().addScaledVector(n, -0.12).add(new THREE.Vector3(0, -0.15, 0)),
+        chao1,
+        chao2,
+        b.clone().addScaledVector(n, 0.1).add(new THREE.Vector3(0, -0.35, 0)),
         b
-      ]);
+      ], false, 'centripetal');
       S.adicionar(new THREE.Mesh(new THREE.TubeGeometry(curva, 24, 0.016, 4), S.mat(0xf2c200)));
       pc.estado.conectado = true;
       pc.estado.portaSwitch = 'ponto ' + t.n;
@@ -9033,7 +9059,8 @@
           nome: 'Trecho ' + (i + 1) + ' da canaleta',
           trecho: t,
           ancora: r.ancora,
-          distReal: distParede(tr[0], tr[1])
+          distReal: distParede(tr[0] + 0.1, tr[1] - 0.1),
+          alcance: F3.ALCANCE
         });
         return t;
       });
@@ -9098,7 +9125,7 @@
 
     // Quadro no canto esquerdo do fundo, mais alto: longe dos X e das tomadas.
     F3.montarSala = function () {
-      S.mundo.montarSala({ quadroX: -3.9, quadroY: 1.98, placaX: 1.35, janelas: [-0.2, 2.6] });
+      S.mundo.montarSala({ quadroX: -3.9, quadroY: 1.98, placaX: 1.0, janelas: [-0.2, 2.6] });
     };
     F3.montarEquipamentos = function () {
       montarRack();
@@ -9189,7 +9216,7 @@
         texto: function () { return 'Pregue 3 presilhas em cada X marcado na parede (' + F3.presilhasProntas() + '/3).'; },
         feita: function () { return F3.presilhasProntas() === 3; },
         alvos: function () { return (F3.presilhas || []).filter(function (p) { return !p.pronta; }).map(function (p) { return 'presilha:' + p.id; }); },
-        dica1: 'Os X vermelhos ficam atrás das bancadas: A e B na parede do fundo, C na parede da esquerda.',
+        dica1: 'Os X vermelhos ficam na parede, atrás das bancadas: A e B no fundo, C na lateral esquerda. Ande pelo corredor atrás das mesas até ficar de frente para o X.',
         dica2: 'Martele quando o marcador estiver dentro da faixa verde.'
       },
       {
@@ -9207,7 +9234,7 @@
         texto: function () { return 'Passe o feixe pelas presilhas e deixe um cabo em cada ponto de rede (' + F3.cabosNosPontos() + '/6).'; },
         feita: function () { return F3.cabosNosPontos() === 6; },
         alvos: function () { var a = proximoDaRota(); return a ? [a] : []; },
-        dica1: 'Saindo do switch: presilha A, pontos 1, 2 e 3, presilha B, ponto 4, presilha C, pontos 5 e 6.',
+        dica1: 'Pelo corredor atrás das mesas, saindo do switch: presilha A, pontos 1, 2 e 3, presilha B, ponto 4, presilha C, pontos 5 e 6.',
         dica2: 'Um ponto só recebe cabo depois que o feixe passa pelas presilhas entre ele e o switch.'
       },
       {
@@ -9305,7 +9332,13 @@
     };
 
     F3.usar = function (info) {
-      if (info.id === 'kitPresilhas') return pegar('kitPres', F3.kitPresilhas, 'Você pegou o martelo e as presilhas. Pregue nos pontos marcados com X na parede.');
+      if (info.id === 'kitPresilhas') {
+        if (F3.kitPres) return S.aviso('Você já pegou isso.', 'info');
+        pegar('kitPres', F3.kitPresilhas, 'Você pegou o martelo e as presilhas. Vá até cada X na parede, por trás das bancadas.');
+        J.definirMao({ tipo: 'martelo', rotulo: 'Martelo e presilhas' });
+        F3.marteloNaMao(true);
+        return;
+      }
       if (info.id === 'kitKeystone3') {
         if (F3.canaletasProntas() < 4) return S.aviso('Primeiro passe os cabos e esconda tudo na canaleta.', 'alerta', 3200);
         return pegar('kitKs', F3.kitKeystone, 'Você pegou as keystones e a punch down. Monte as tomadas nos 6 pontos.');
@@ -9335,7 +9368,14 @@
         MG.martelo(p, function () {
           p.pronta = true;
           F3.pregarVisual(p);
-          S.aviso('Presilhas do ponto ' + p.id + ' pregadas!', 'ok', 2400);
+          if (F3.presilhasProntas() === 3) {
+            // Terminou: guarda o martelo e libera o resto da sala.
+            F3.marteloNaMao(false);
+            J.definirMao(null);
+            S.aviso('Os 3 pontos estão com presilhas! Martelo guardado.', 'ok', 3000);
+          } else {
+            S.aviso('Presilhas do ponto ' + p.id + ' pregadas! Faltam ' + (3 - F3.presilhasProntas()) + '.', 'ok', 2400);
+          }
           J.atualizarMissoes();
         });
         return;
@@ -9441,6 +9481,44 @@
       }
       MG.dhcpRapido(pc);
     }
+
+    // Martelo na mão do aluno (no lugar do rolo de cabo).
+    var martelo = null;
+    F3.marteloNaMao = function (sim) {
+      var p = S.personagem;
+      if (!p) return;
+      if (sim && !martelo) {
+        martelo = new THREE.Group();
+        var cabo = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.32, 0.05), S.mat(S.COR.madeiraEscura));
+        var cabeca = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.07), S.mat(S.COR.metal));
+        cabeca.position.y = 0.17;
+        martelo.add(cabo, cabeca);
+        martelo.position.set(0, -0.62, 0.1);
+        martelo.rotation.x = Math.PI / 2;
+        p.rolo.parent.add(martelo);
+      }
+      if (martelo) martelo.visible = !!sim;
+      if (sim) p.rolo.visible = false;
+      p.bracoFixo = sim ? -0.5 : undefined;
+    };
+
+    F3.soltarMartelo = function () {
+      martelo = null;
+      if (S.personagem) S.personagem.bracoFixo = undefined;
+    };
+
+    // Com o martelo, só os X; com o feixe, só presilhas e pontos de rede.
+    F3.permite = function (info) {
+      var mao = J.mao;
+      if (!mao || info.id === 'professor') return true;
+      if (mao.tipo === 'martelo') return !!info.presilha;
+      if (mao.tipo === 'feixe') return !!(info.presilha || info.ponto);
+      return true;
+    };
+    F3.avisoBloqueado = function () {
+      if (J.mao && J.mao.tipo === 'martelo') return 'Você está com o martelo: pregue as presilhas nos X da parede primeiro.';
+      return 'Você está com o feixe: passe pelas presilhas e deixe um cabo em cada ponto.';
+    };
 
     F3.concluir = function () {
       J.encerrarFase('Os 6 PCs estão na rede!', function () {
@@ -9756,6 +9834,8 @@
       missaoLonga: 'Faça o cabeamento estruturado de 6 computadores: pregue as presilhas na parede, conecte 6 cabos no switch, passe o feixe até os 6 pontos, esconda tudo na canaleta, monte as tomadas keystone, ligue os patch cords e coloque os PCs na rede com IP automático.',
       usar: F3.usar,
       rotulo: F3.rotulo,
+      permite: function (info) { return F3.permite(info); },
+      avisoBloqueado: function (info) { return F3.avisoBloqueado(info); },
       concluir: function () { F3.concluir(); },
       resumo: F3.resumo,
       textoConcluido: 'Cabeamento estruturado completo!',
@@ -9775,6 +9855,7 @@
       ],
       desmontar: function () {
         if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
+        F3.soltarMartelo();
         F3.limpar();
       },
       abertura: {
@@ -9795,7 +9876,7 @@
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Último laboratório, ' + n + '! Agora é cabeamento estruturado: seis computadores com tudo organizado.' },
             { quem: 'prof', tomada: 'rack', gesto: 'apontar', texto: 'O servidor já está pronto, na outra sala. É deste switch que saem os seis cabos, um para cada PC.' },
             { quem: 'prof', tomada: 'bancada', gesto: 'apontar', texto: 'Pegue o martelo e as presilhas na bancada. Lá também ficam as keystones e os patch cords.' },
-            { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Tem três X marcados na parede: dois no fundo e um na lateral. Em cada X você prega três presilhas. Martele no verde, senão entorta!' },
+            { quem: 'prof', tomada: 'presilhas', gesto: 'apontar', texto: 'Tem três X marcados na parede: dois no fundo e um na lateral. Vá pelo corredor atrás das mesas e pregue três presilhas em cada X. Martele no verde, senão entorta!' },
             { quem: 'prof', tomada: 'parede', gesto: 'explicar', texto: 'Depois conecte os seis cabos no switch e leve o feixe pela parede, passando pelas presilhas e deixando um cabo em cada ponto.' },
             { quem: 'prof', tomada: 'parede', gesto: 'falar', texto: 'Com os cabos no lugar, esconda tudo na canaleta e monte as seis tomadas keystone.' },
             { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'São três PCs no fundo e três na lateral. Por fim, ligue cada um na tomada com um patch cord, ligue os computadores e peça IP automático.' },
