@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.5.2',
+    versao: '3.6.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -318,6 +318,44 @@
       } catch (e) { /* armazenamento indisponível: segue sem */ }
       return null;
     };
+
+    // Configurações (sons e acessibilidade). Ficam na sessão da aba, como o
+    // nome e a turma. A tela de configurações fica em p17.
+    S.CFG_PADRAO = {
+      volEfeitos: 0.8,
+      volFalas: 0.8,
+      volMusica: 0.5,
+      daltonismo: false,
+      legendas: false,
+      texto: 1, // 1 = normal · 1.2 = grande · 1.35 = muito grande
+      contorno: false,
+      lerVoz: false,
+      marteloAssistido: false,
+      botoesGrandes: false,
+      joystickDireita: false
+    };
+    S.cfg = {};
+    (function () {
+      var salvo = null;
+      try { salvo = JSON.parse(S.armazenar('sim-config') || 'null'); } catch (e) { salvo = null; }
+      for (var k in S.CFG_PADRAO) {
+        S.cfg[k] = salvo && typeof salvo[k] === typeof S.CFG_PADRAO[k] ? salvo[k] : S.CFG_PADRAO[k];
+      }
+    })();
+    S.salvarConfig = function () {
+      S.armazenar('sim-config', JSON.stringify(S.cfg));
+    };
+
+    // Sons: o motor de áudio (p16) substitui estas funções vazias. Assim
+    // qualquer parte do jogo pode chamar S.som('martelo') sem se preocupar.
+    S.som = function () {};
+    S.somGenerico = function () {};
+    S.voz = {
+      fala: function () {},
+      acompanhar: function () {},
+      frase: function () {},
+      parar: function () {}
+    };
   });
 
 
@@ -499,6 +537,7 @@
         lineHeight: '1.2'
       }, texto, pai);
       b.type = 'button';
+      b.className = 'sim-btn';
       b.addEventListener('pointerdown', function () {
         b.style.transform = 'translateY(3px)';
         b.style.boxShadow = '0 1px 0 ' + cores.sombra;
@@ -571,6 +610,7 @@
         padding: '18px',
         boxSizing: 'border-box'
       });
+      fundo.setAttribute('data-tela', String(z || 30));
       var cartao = S.ui.cartao(fundo, {
         width: '100%',
         maxWidth: larguraMax || '460px',
@@ -673,6 +713,16 @@
         x.setAttribute('aria-label', 'Fechar');
       }
       modalAtual = m;
+      // Teclado: o foco vai para a janela (Tab percorre os botões dela).
+      cartao.setAttribute('tabindex', '-1');
+      cartao.setAttribute('role', 'dialog');
+      cartao.setAttribute('aria-label', titulo);
+      cartao.style.outline = 'none';
+      setTimeout(function () {
+        if (!fechado && !cartao.contains(document.activeElement)) {
+          try { cartao.focus({ preventScroll: true }); } catch (e) { /* ignora */ }
+        }
+      }, 30);
       if (S.ocultarAviso) S.ocultarAviso();
       S.pausado = true;
       S.teclas = {};
@@ -721,7 +771,8 @@
       camadaAviso.style.bottom = baixo ? '64px' : 'auto';
       camadaAviso.style.maxWidth = baixo && S.toque ? 'calc(100% - 300px)' : 'calc(100% - 24px)';
       camadaAviso.style.fontSize = baixo ? '13px' : '14px';
-      camadaAviso.textContent = texto;
+      camadaAviso.textContent = S.marcarSimbolo ? S.marcarSimbolo(texto, tipo) : texto;
+      if (S.somGenerico) S.somGenerico(tipo);
       camadaAviso.style.background = cores[0];
       camadaAviso.style.color = cores[1];
       camadaAviso.style.opacity = '1';
@@ -1073,7 +1124,7 @@
       }
       if (S.toque || !ap) {
         var cel = bloco('Celular (na horizontal)', S.toque);
-        linhaComando(cel, 'JOYSTICK', 'Arraste no canto esquerdo para andar', ap);
+        linhaComando(cel, 'JOYSTICK', 'Arraste no canto ' + (S.cfg.joystickDireita ? 'direito' : 'esquerdo') + ' para andar', ap);
         linhaComando(cel, 'USAR', 'Botão laranja: usar o objeto próximo', ap);
         linhaComando(cel, 'TOQUE', 'Tocar no objeto também funciona', ap);
         linhaComando(cel, '?', 'Ver estes comandos', ap);
@@ -1115,6 +1166,10 @@
           S.raiz.focus({ preventScroll: true });
         }, rodape);
         bFechar.style.flex = '1 1 200px';
+        var bCfg = S.ui.botao('⚙ Configurações', 'secundario', function () {
+          if (S.ui.mostrarConfig) S.ui.mostrarConfig();
+        }, rodape);
+        bCfg.style.flex = '0 0 auto';
         S.telaPausa = t;
       }
     };
@@ -1189,7 +1244,7 @@
       hud.direita = S.el('div', {
         position: 'absolute',
         top: '10px',
-        right: '10px',
+        right: '62px', // o canto fica para o botão de configurações (⚙)
         display: 'flex',
         gap: '8px',
         alignItems: 'flex-start',
@@ -1379,6 +1434,8 @@
 
     // Botão "Procurar atualizações" (telas de menu).
     S.ui.botaoAtualizar = function (pai) {
+      // Versão offline (pendrive): não tem de onde baixar atualização.
+      if (window.__SIM_OFFLINE) return null;
       var b = S.ui.botao('🔄 Procurar atualizações', 'secundario', function () {
         if (A.verificando) return;
         var antes = b.textContent;
@@ -2633,7 +2690,10 @@
     };
 
     S.mundo.abrirPorta = function () {
-      if (S.mundo.porta) S.mundo.porta.alvo = 1.45;
+      var p = S.mundo.porta;
+      if (!p) return;
+      if (p.alvo !== 1.45 && p.angulo < 0.5) S.som('porta');
+      p.alvo = 1.45;
     };
 
     S.mundo.atualizarPorta = function (dt) {
@@ -3901,6 +3961,7 @@
       if (!S.professor) return;
       if (!balao) criarBalao();
       balaoTexto.textContent = texto;
+      S.voz.frase('prof', texto);
       balao.style.fontSize = S.toque || S.ui.compacto() ? '12px' : '14px';
       balaoAte = S.agora() + (ms || 3200);
       if (gestoFala !== false && !gesto) S.gestoProfessor(gestoFala || 'aceno', 1.2);
@@ -3922,6 +3983,7 @@
       if (!tocaAqui) return false;
       tocaAqui = null;
       S.gestoProfessor('toca', 0.7);
+      S.som('toca');
       if (S.personagem) S.personagem.gestoAte = S.agora() + 700;
       S.professorFalar('Isso aí! ✋', 2200, false);
       return true;
@@ -3994,6 +4056,9 @@
       }
       // Esc fecha a janela mesmo com o cursor num campo de texto.
       if (digitando(e) && k !== 'escape') return;
+      // Teclado nos menus: com um botão/lista em foco, Enter e Espaço são dele.
+      var alvo = e.target && e.target.tagName;
+      if ((alvo === 'BUTTON' || alvo === 'SELECT') && (k === 'enter' || k === ' ' || k.indexOf('arrow') === 0)) return;
       if (BLOQUEAR.indexOf(k) >= 0 && !digitando(e)) e.preventDefault();
       if (k === 'escape') {
         var m = S.ui.modalAberto();
@@ -4230,6 +4295,7 @@
         touchAction: 'none'
       }, 'USAR', S.raiz);
       ctrl.usar.type = 'button';
+      ctrl.usar.setAttribute('data-som', 'nao');
       ctrl.usar.addEventListener('pointerdown', S.protegido('toque:usar', function (e) {
         e.preventDefault();
         ctrl.usar.style.transform = 'translateY(4px)';
@@ -4241,8 +4307,22 @@
       S.ui.atualizarControlesToque();
     };
 
+    // Acessibilidade: botões maiores e joystick do lado direito.
+    S.ui.posicionarControlesToque = function () {
+      if (!ctrl) return;
+      var k = S.cfg.botoesGrandes ? 1.3 : 1;
+      var dir = !!S.cfg.joystickDireita;
+      var tb = Math.round(132 * k);
+      var tp = Math.round(58 * k);
+      var tu = Math.round(104 * k);
+      S.estilo(ctrl.base, { width: tb + 'px', height: tb + 'px', left: dir ? 'auto' : '18px', right: dir ? '18px' : 'auto' });
+      S.estilo(ctrl.pino, { width: tp + 'px', height: tp + 'px', marginLeft: (-tp / 2) + 'px', marginTop: (-tp / 2) + 'px' });
+      S.estilo(ctrl.usar, { width: tu + 'px', height: tu + 'px', fontSize: Math.round(17 * k) + 'px', right: dir ? 'auto' : '22px', left: dir ? '22px' : 'auto' });
+    };
+
     S.ui.atualizarControlesToque = function () {
       if (!ctrl) return;
+      S.ui.posicionarControlesToque();
       var mostrar = S.toque && S.fase === 'jogo' && !S.pausado;
       ctrl.base.style.display = mostrar ? 'block' : 'none';
       ctrl.usar.style.display = mostrar ? 'block' : 'none';
@@ -4471,7 +4551,12 @@
       S.ui.definirMissao(novo + 1, J.MISSOES.length, typeof m.texto === 'function' ? m.texto() : m.texto);
       if (mudou) {
         J.progresso();
-        if (anterior >= 0) S.aviso('✔ Missão concluída! Próxima: ' + m.quadro, 'ok', 3200);
+        if (anterior >= 0) {
+          S.som('missao');
+          S.aviso('✔ Missão concluída! Próxima: ' + m.quadro, 'ok', 3200);
+        }
+        // Leitura em voz alta: anuncia a nova missão.
+        if (S.cfg.lerVoz && S.voz.ler && !(S.emCena && S.emCena())) S.voz.ler('prof', 'Missão ' + (novo + 1) + ': ' + (typeof m.texto === 'function' ? m.texto() : m.texto));
       }
     };
 
@@ -4963,6 +5048,31 @@
       };
     };
 
+    // Daltonismo: sigla no fio (BL = branco-laranja, L = laranja…).
+    var SIGLAS = { bl: 'BL', l: 'L', bv: 'BV', a: 'A', ba: 'BA', v: 'V', bm: 'BM', m: 'M' };
+    MG.sigla = function (f) { return SIGLAS[f.id] || ''; };
+    MG.marcarFio = function (el, f, pequena) {
+      if (!S.cfg.daltonismo || !el) return el;
+      S.estilo(el, { display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' });
+      var t = S.el('span', {
+        color: '#FFFFFF',
+        fontSize: pequena ? '8px' : '10px',
+        fontWeight: '700',
+        fontFamily: C.fonte,
+        lineHeight: '1',
+        padding: '1px 2px',
+        borderRadius: '3px',
+        background: 'rgba(7,20,48,0.85)',
+        pointerEvents: 'none'
+      }, MG.sigla(f), el);
+      t.setAttribute('data-fs', 'fixo');
+      t.setAttribute('aria-hidden', 'true');
+      return el;
+    };
+    MG.desenharFio = function (f, largura, altura, pai, pequena) {
+      return MG.marcarFio(S.el('div', MG.fio(f, largura, altura), null, pai), f, pequena);
+    };
+
     MG.mensagem = function (pai) {
       var el = S.el('div', {
         minHeight: '20px',
@@ -4970,9 +5080,11 @@
         fontWeight: '700',
         fontSize: '14px'
       }, '', pai);
+      el.setAttribute('aria-live', 'polite');
       return function (texto, tipo) {
-        el.textContent = texto || '';
+        el.textContent = S.marcarSimbolo ? S.marcarSimbolo(texto || '', tipo) : (texto || '');
         el.style.color = tipo === 'erro' ? C.vermelho : tipo === 'ok' ? C.verde : C.amarelo;
+        if (texto) S.somGenerico(tipo);
       };
     };
 
@@ -4989,7 +5101,7 @@
       S.T568B.forEach(function (f, i) {
         var col = S.el('div', { display: 'flex', flexDirection: 'column', alignItems: 'center', width: compacta ? '54px' : '64px' }, null, linha);
         S.el('div', { fontSize: '12px', fontWeight: '700', marginBottom: '3px' }, String(i + 1), col);
-        S.el('div', MG.fio(f, 20, compacta ? 44 : 60), null, col);
+        MG.desenharFio(f, 20, compacta ? 44 : 60, col);
         S.el('div', { fontSize: '10px', textAlign: 'center', marginTop: '3px', color: C.cinza, lineHeight: '1.15' }, f.nome, col);
       });
       return box;
@@ -5038,6 +5150,7 @@
       S.el('div', { flex: '1', height: '22px', background: '#2D7FE0', border: '3px solid #071430', borderRadius: '6px 0 0 6px' }, null, cabo);
       S.el('div', { fontSize: '26px', margin: '0 8px' }, '✂', cabo);
       S.ui.botao('✂ Cortar e descascar', 'primario', function () {
+        S.som('corte');
         etapa1.remove();
         montarEtapa2();
       }, etapa1);
@@ -5088,6 +5201,7 @@
             s.setAttribute('aria-label', 'Pino ' + (idx + 1));
             s.addEventListener('click', S.protegido('crimp:slot', function () {
               if (!slots[idx]) return;
+              S.som('fio');
               bandejaFios.push(slots[idx]);
               slots[idx] = null;
               desenhar();
@@ -5127,7 +5241,7 @@
             s.textContent = '';
             s.style.borderStyle = f ? 'solid' : 'dashed';
             s.style.borderColor = '#5A6B80';
-            if (f) S.el('div', MG.fio(f, 26, altSlot - 8), null, s);
+            if (f) MG.desenharFio(f, 26, altSlot - 8, s);
           });
           bandeja.textContent = '';
           bandejaFios.forEach(function (f) {
@@ -5145,11 +5259,12 @@
               touchAction: 'manipulation'
             }, null, bandeja);
             b.type = 'button';
-            S.el('div', MG.fio(f, 22, altFio), null, b);
+            MG.desenharFio(f, 22, altFio, b);
             S.el('div', { fontSize: '10px', lineHeight: '1.1', textAlign: 'center' }, f.nome, b);
             b.addEventListener('click', S.protegido('crimp:fio', function () {
               var livre = slots.indexOf(null);
               if (livre < 0) return;
+              S.som('fio');
               slots[livre] = f;
               bandejaFios.splice(bandejaFios.indexOf(f), 1);
               desenhar();
@@ -5167,6 +5282,17 @@
           slots.forEach(function (f, i2) {
             var ok = f.id === S.T568B[i2].id;
             slotEls[i2].style.borderColor = ok ? '#1E8E3E' : '#D63A33';
+            // Daltonismo: símbolo além da cor da borda.
+            if (S.cfg.daltonismo) {
+              var sim = S.el('div', {
+                position: 'absolute', left: '50%', top: '-4px', transform: 'translate(-50%, -100%)',
+                fontSize: '13px', fontWeight: '700', color: ok ? '#1E8E3E' : '#D63A33', background: '#FFFFFF',
+                border: '2px solid #071430', borderRadius: '50%', width: '18px', height: '18px', lineHeight: '15px', textAlign: 'center'
+              }, ok ? '✔' : '✖', slotEls[i2]);
+              sim.setAttribute('aria-hidden', 'true');
+              slotEls[i2].style.position = 'relative';
+              slotEls[i2].style.overflow = 'visible';
+            }
             if (!ok) erradas++;
           });
           tentativas++;
@@ -5176,6 +5302,7 @@
             if (tentativas >= 2) mostrarRef(false);
             return;
           }
+          S.som('crimpar');
           msg('Clique! Conector crimpado. A outra ponta foi feita igual (cabo direto).', 'ok');
           acoes.textContent = '';
           if (refBox) refBox.remove();
@@ -5278,6 +5405,7 @@
       var botoes = [
         ['energia', ap ? 42 : 50, 'Botão de energia', function (b) {
           ligando = true;
+          S.som('ligar');
           b.style.borderColor = '#39FF6A';
           led.style.background = '#39FF6A';
           led.style.boxShadow = '0 0 6px #39FF6A';
@@ -5352,6 +5480,7 @@
         S.el('div', null, p.nome, b);
         b.addEventListener('click', S.protegido('porta-pc', function () {
           if (p.certa) {
+            S.som('plugue');
             msg('Encaixado na placa de rede (RJ45). Clique!', 'ok');
             b.style.borderColor = C.verde;
             setTimeout(function () {
@@ -5441,6 +5570,7 @@
             return;
           }
           b.style.background = '#2D7FE0';
+          S.som('plugue');
           msg('Encaixado na ' + nome + '. Clique!', 'ok');
           setTimeout(function () {
             m.fechar(true);
@@ -5538,6 +5668,7 @@
           msg(J.roteadorLigado ? 'O roteador já está ligado.' : 'Primeiro conecte o switch ao roteador.', 'info');
           return;
         }
+        S.som('ligar');
         ledEls.forEach(function (l, i) {
           setTimeout(function () { l.style.background = '#1E8E3E'; }, 150 * (i + 1));
         });
@@ -5562,6 +5693,7 @@
             msg(n + ': porta da rede local' + (J.portaRoteador === n ? ' (em uso pelo switch).' : '.'), 'info');
             return;
           }
+          S.som('plugue');
           msg('Encaixado na ' + n + '. Clique!', 'ok');
           setTimeout(function () {
             m.fechar(true);
@@ -5801,6 +5933,7 @@
           var l = linhas[i++];
           if (typeof l === 'string') l = { t: l };
           escrever(l.t, l.cor);
+          if (l.som) S.som(l.som);
           setTimeout(prox, l.espera !== undefined ? l.espera : 60);
         })();
       }
@@ -5840,7 +5973,7 @@
       var l = [{ t: '', espera: 0 }, { t: 'Disparando ' + (nome ? nome + ' [' + ip + ']' : ip) + ' com 32 bytes de dados:', espera: 350 }];
       for (var i = 0; i < 4; i++) {
         l.push(responde
-          ? { t: 'Resposta de ' + ip + ': bytes=32 tempo<1ms TTL=128', espera: 380 }
+          ? { t: 'Resposta de ' + ip + ': bytes=32 tempo<1ms TTL=128', espera: 380, som: 'bip' }
           : { t: 'Esgotado o tempo limite do pedido.', espera: 700 });
       }
       l.push({ t: '', espera: 0 });
@@ -6033,6 +6166,7 @@
       var tempo = Math.round(S.tempoDeJogo() * 10) / 10;
       var sessao = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       var t = S.ui.tela(30, '520px');
+      S.som('vitoria');
       S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO ' + numFase + ' CONCLUÍDO', t.cartao);
       S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 14px' }, numFase === 3 ? 'Cabeamento completo! 🎉' : numFase === 2 ? 'Servidor no ar! 🎉' : 'A rede está funcionando! 🎉', t.cartao);
 
@@ -6592,7 +6726,7 @@
       S.estilo(ui.pular, {
         position: 'absolute',
         top: compacto ? '6px' : '12px',
-        right: compacto ? '8px' : '14px',
+        right: '62px', // o canto fica para o botão de configurações (⚙)
         padding: compacto ? '4px 10px' : '6px 14px',
         fontSize: compacto ? '12px' : '14px',
         zIndex: '2'
@@ -6668,6 +6802,7 @@
       ui.quem.style.color = falante.texto;
       ui.texto.textContent = '';
       ui.seguir.style.visibility = 'hidden';
+      S.voz.fala(f.quem, f.texto, est);
       var t = est.tomadas[f.tomada];
       irPara(v3(t.pos), v3(t.alvo), i === 0 ? 0.6 : 1.1);
       var pr = S.professor || {};
@@ -6729,6 +6864,7 @@
         p.raiz.rotation.y = p.angulo;
       }
       if (est.alunoAlvo) alunoNoLugar();
+      if (pulou) S.voz.parar();
       // Um erro ao pular nunca pode travar a cena.
       if (pulou && est.aoPular) S.protegido('cena:pular', est.aoPular)();
       S.joy.x = 0;
@@ -6995,6 +7131,7 @@
         if (!est.completa) {
           est.letras = Math.min(f2.texto.length, est.letras + dt * 42);
           est.ui.texto.textContent = f2.texto.slice(0, Math.floor(est.letras));
+          S.voz.acompanhar(f2.quem, f2.texto, est, Math.floor(est.letras));
           if (est.letras >= f2.texto.length) {
             est.completa = true;
             est.ui.seguir.style.visibility = 'visible';
@@ -7026,7 +7163,7 @@
 
     // Espaço / Enter / E avançam; Esc pula a cena.
     window.addEventListener('keydown', function (e) {
-      if (S.fase !== 'cena' || !est) return;
+      if (S.fase !== 'cena' || !est || (S.ui.configAberta && S.ui.configAberta())) return;
       var k = (e.key || '').toLowerCase();
       if (k === ' ' || k === 'enter' || k === 'e') {
         e.preventDefault();
@@ -7137,6 +7274,7 @@
         S.colisores.push(p.colisor);
       } else {
         p.aberta = true;
+        S.som('porta');
         p.alvo = 1.45;
         var i = S.colisores.indexOf(p.colisor);
         if (i >= 0) S.colisores.splice(i, 1);
@@ -7594,6 +7732,7 @@
         return;
       }
       F2.kit = true;
+      S.som('pegar');
       F2.kitMalhas.forEach(function (m) { m.visible = false; });
       J.definirMao({ tipo: 'keystone', rotulo: '3 keystones + punch down' });
       S.aviso('Você pegou 3 keystones e a ferramenta punch down. Vá até os pontos de rede da parede.', 'ok', 3600);
@@ -7685,14 +7824,15 @@
         var l = S.el('div', { display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: rotulo === 'B' ? '#FFFFFF' : '#8FA3BC' }, null, pai);
         S.el('span', { width: '10px' }, rotulo, l);
         // Faixa horizontal: listras verticais deixam o "branco-x" visível.
-        S.el('div', {
+        var faixa = S.el('div', {
           width: (ap ? 30 : 40) + 'px',
-          height: '12px',
+          height: S.cfg.daltonismo ? '14px' : '12px',
           background: f.listrado ? 'repeating-linear-gradient(90deg, #F4F4F4 0px, #F4F4F4 5px, ' + f.cor + ' 5px, ' + f.cor + ' 9px)' : f.cor,
           border: '2px solid #071430',
           borderRadius: '3px',
           boxSizing: 'border-box'
         }, null, l);
+        MG.marcarFio(faixa, f, true);
       }
 
       var slots = [];
@@ -7741,7 +7881,7 @@
         }, null, bandeja);
         b.type = 'button';
         b.setAttribute('aria-label', f.nome);
-        S.el('div', MG.fio(f, 14, ap ? 22 : 26), null, b);
+        MG.desenharFio(f, 14, ap ? 22 : 26, b, true);
         S.el('span', null, f.nome, b);
         b.addEventListener('click', function () {
           if (b.disabled) return;
@@ -7779,8 +7919,10 @@
           return;
         }
         s.fio = f;
+        S.som('fio');
         S.estilo(s.vaga, MG.fio(f, 0, 0));
         S.estilo(s.vaga, { width: '80%', height: ap ? '14px' : '18px', border: '2px solid #071430' });
+        MG.marcarFio(s.vaga, f, true);
         s.botao.style.borderColor = '#1E8E3E';
         botoesFio[f.id].disabled = true;
         botoesFio[f.id].style.opacity = '0.35';
@@ -7795,6 +7937,7 @@
       }
 
       function bater() {
+        S.som('punch');
         bBater.style.display = 'none';
         slots.forEach(function (s) {
           s.vaga.style.borderColor = '#F2C200';
@@ -7804,6 +7947,7 @@
       }
 
       function encaixar() {
+        S.som('plugue');
         bEncaixar.style.display = 'none';
         msg(opcoes.semPatch ? '✔ Tomada ' + t.n + ' montada e encaixada no espelho!' : '✔ Keystone encaixada no espelho e ' + t.pc + ' ligado com patch cord!', 'ok');
         setTimeout(function () {
@@ -8856,6 +9000,7 @@
         }, '', S.raiz);
       }
       balao.textContent = texto;
+      if (/^Z/.test(texto)) S.som('ronco');
       balaoAte = S.agora() + (ms || 1600);
       atualizarBalao();
     }
@@ -10024,6 +10169,7 @@
     function pegar(flag, malhas, texto) {
       if (F3[flag]) return S.aviso('Você já pegou isso.', 'info');
       F3[flag] = true;
+      S.som('pegar');
       (malhas || []).forEach(function (m) { m.visible = false; });
       S.aviso(texto, 'ok', 3400);
       J.atualizarMissoes();
@@ -10058,6 +10204,7 @@
       if (p.passou) return S.aviso('O feixe já passou por esta presilha.', 'info');
       if (!F3.naOrdem(p)) return;
       p.passou = true;
+      S.som('fio');
       F3.feixeAte = Math.max(F3.feixeAte || 0, p.s);
       F3.redesenharFeixe(F3.feixeAte);
       S.mundo.definirCaboMao(F3.ancoraFeixe());
@@ -10073,6 +10220,7 @@
         }
         if (!F3.naOrdem(t)) return;
         F3.caboNoPonto(t);
+        S.som('fio');
         F3.restantes--;
         F3.feixeAte = Math.max(F3.feixeAte || 0, t.s);
         F3.redesenharFeixe(F3.feixeAte);
@@ -10253,6 +10401,12 @@
       var VEL = [0.75, 0.88, 1.0]; // fração do trilho por segundo
       var TAM = [0.26, 0.22, 0.19]; // tamanho da faixa verde
       var FOLGA = 0.025;
+      // Acessibilidade (coordenação motora): marcador mais lento e faixa maior.
+      if (S.cfg.marteloAssistido) {
+        VEL = [0.42, 0.48, 0.54];
+        TAM = [0.4, 0.36, 0.33];
+        FOLGA = 0.05;
+      }
       var m = S.ui.abrirModal('Ponto ' + pres.id + ' · pregar ' + TOTAL + ' presilhas', { largura: '540px' });
       var ap = S.ui.compacto();
       S.el('div', { marginBottom: '8px' }, 'Martele quando o marcador estiver na faixa verde. Fora dela a presilha entorta.', m.corpo);
@@ -10282,9 +10436,11 @@
         icones.push(slot);
       }
       var bMart = S.ui.botao('🔨 Martelar', 'primario', null, lado);
+      bMart.setAttribute('data-som', 'nao');
       S.estilo(bMart, { fontSize: ap ? '16px' : '18px', padding: ap ? '10px 22px' : '14px 30px', touchAction: 'none' });
       bMart.setAttribute('aria-label', 'Martelar');
       S.el('div', { fontSize: '12px', color: C.cinza }, S.toque ? 'Toque no botão ou na barra' : 'Clique, toque ou aperte Espaço', lado);
+      if (S.cfg.marteloAssistido) S.el('div', { fontSize: '11px', color: C.verde, fontWeight: '700' }, 'Martelo assistido ligado', lado);
       var msg = MG.mensagem(m.corpo);
       var feitas = 0;
       var zona = { ini: 0, fim: 0 };
@@ -10332,6 +10488,7 @@
         var agora = performance.now();
         if (feitas >= TOTAL || agora < trava || agora < congelaAte) return;
         if (pos >= zona.ini - FOLGA && pos <= zona.fim + FOLGA) {
+          S.som('martelo');
           marcarIcone(feitas);
           feitas++;
           pres.pregadas = feitas;
@@ -10348,6 +10505,7 @@
           novaZona();
         } else {
           J.erros++;
+          S.som('marteloErro');
           trava = agora + 450;
           msg('✖ Torta! Martele com o marcador dentro do verde.', 'erro');
           trilho.style.borderColor = '#D63A33';
@@ -10426,6 +10584,7 @@
       ks.addEventListener('click', S.protegido('patch:keystone', function () {
         if (encaixado) return msg('Já está encaixado na tomada.', 'info');
         encaixado = true;
+        S.som('plugue');
         plugue.style.transform = 'translate(4px, ' + (ap ? '-40px' : '-48px') + ')';
         ks.style.boxShadow = '0 0 0 3px ' + C.verde;
         msg('Clique! Patch cord encaixado na keystone da tomada P' + t.n + '.', 'ok');
@@ -10484,6 +10643,7 @@
             return msg('✖ Porta errada! ' + p.dica, 'erro');
           }
           feito = true;
+          S.som('plugue');
           b.style.borderColor = C.verde;
           b.style.background = '#1E5A2E';
           msg('✔ Encaixado na placa de rede (RJ45) do ' + t.pc + '!', 'ok');
@@ -10542,6 +10702,7 @@
           }
           if (escolhidas.indexOf(nome) >= 0) return msg('Essa porta já tem cabo.', 'info');
           escolhidas.push(nome);
+          S.som('plugue');
           b.style.background = '#2D7FE0';
           b.textContent = '●';
           msg('Cabo ' + escolhidas.length + '/6 em ' + nome + '.', 'ok');
@@ -10578,6 +10739,8 @@
       var msg = MG.mensagem(m.corpo);
       var acoes = S.el('div', { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }, null, m.corpo);
       var bBase = S.ui.botao('1. Fixar a base', 'primario', function () {
+        if (bBase.disabled) return;
+        S.som('parafuso');
         base.style.opacity = '1';
         bBase.disabled = true;
         bBase.style.opacity = '0.5';
@@ -10587,6 +10750,7 @@
       }, acoes);
       var bTampa = S.ui.botao('2. Fechar a tampa', 'primario', function () {
         if (bTampa.disabled) return;
+        S.som('tampa');
         tampa.style.transform = 'translateY(0)';
         bTampa.disabled = true;
         msg('✔ Tampa encaixada: cabos escondidos e protegidos!', 'ok');
@@ -10625,6 +10789,7 @@
           setTimeout(function () {
             if (!m.fundo.isConnected) return;
             caixa.textContent = linhas.slice(0, i + 1).join('\n');
+            S.som('bip');
             if (i === linhas.length - 1) concluir();
           }, 280 * (i + 1));
         });
@@ -10730,10 +10895,1377 @@
     });
   });
 
+
+  /* ================================================================== */
+  secao('A01-motor-de-audio', function () {
+    // Todos os sons são sintetizados com Web Audio: nenhum arquivo é baixado
+    // (funciona igual no Canva e no pendrive). Três canais com volume próprio
+    // (efeitos, falas, música) passam por um compressor que segura os picos.
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var A = S.audio = { ctx: null };
+    var bus = {};
+    var ruido = null;
+    // Nível de referência de cada canal: a música fica atrás dos efeitos e falas.
+    var NIVEL = { efeitos: 1.0, falas: 0.95, musica: 0.5 };
+
+    function iniciar() {
+      if (A.ctx || !Ctx) return A.ctx;
+      try {
+        var ctx = new Ctx();
+        var comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -16;
+        comp.knee.value = 12;
+        comp.ratio.value = 4;
+        comp.attack.value = 0.003;
+        comp.release.value = 0.18;
+        var mestre = ctx.createGain();
+        mestre.gain.value = 0.95;
+        comp.connect(mestre);
+        mestre.connect(ctx.destination);
+        ['efeitos', 'falas', 'musica'].forEach(function (n) {
+          var g = ctx.createGain();
+          g.gain.value = 0;
+          g.connect(comp);
+          bus[n] = g;
+        });
+        // 1 s de ruído branco reaproveitado por todos os sons "de impacto".
+        ruido = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        var d = ruido.getChannelData(0);
+        for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        A.ctx = ctx;
+        A.aplicarVolumes();
+      } catch (e) {
+        registrarErro('audio', e);
+        A.ctx = null;
+      }
+      return A.ctx;
+    }
+
+    // Curva quadrática: o meio do controle soa como "metade" do volume.
+    function ganho(v) {
+      v = Math.max(0, Math.min(1, Number(v) || 0));
+      return v * v;
+    }
+    A.aplicarVolumes = function () {
+      if (!A.ctx) return;
+      var t = A.ctx.currentTime;
+      bus.efeitos.gain.setTargetAtTime(ganho(S.cfg.volEfeitos) * NIVEL.efeitos, t, 0.03);
+      bus.falas.gain.setTargetAtTime(ganho(S.cfg.volFalas) * NIVEL.falas, t, 0.03);
+      bus.musica.gain.setTargetAtTime(ganho(S.cfg.volMusica) * NIVEL.musica, t, 0.08);
+    };
+
+    A.pronto = function () {
+      return !!A.ctx && A.ctx.state === 'running';
+    };
+
+    // O navegador só libera som depois de um toque/clique/tecla.
+    function destravar() {
+      var ctx = iniciar();
+      if (!ctx) return;
+      if (ctx.state !== 'running' && ctx.resume) {
+        try { ctx.resume().catch(function () {}); } catch (e) { /* ignora */ }
+      }
+      if (A.iniciarMusica) A.iniciarMusica();
+    }
+    ['pointerdown', 'keydown', 'touchend'].forEach(function (ev) {
+      window.addEventListener(ev, function () {
+        try { destravar(); } catch (e) { registrarErro('audio:destravar', e); }
+      }, true);
+    });
+    A.destravar = destravar;
+
+    // ---- Blocos de construção -------------------------------------------
+    // Tom com envelope: { f, f2, t, dur, vol, tipo, ataque, filtro, q, canal, vib }
+    A.tom = function (o) {
+      var ctx = A.ctx;
+      var t0 = ctx.currentTime + (o.t || 0);
+      var osc = ctx.createOscillator();
+      osc.type = o.tipo || 'sine';
+      osc.frequency.setValueAtTime(o.f, t0);
+      if (o.f2) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.f2), t0 + (o.glide || o.dur));
+      var g = ctx.createGain();
+      var ataque = o.ataque || 0.004;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(o.vol, t0 + ataque);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+      var saida = g;
+      osc.connect(g);
+      if (o.filtro) {
+        var fl = ctx.createBiquadFilter();
+        fl.type = o.filtro;
+        fl.frequency.value = o.ff || 2000;
+        fl.Q.value = o.q || 0.8;
+        g.connect(fl);
+        saida = fl;
+      }
+      saida.connect(o.destino || A._destino || bus[o.canal || 'efeitos']);
+      osc.start(t0);
+      osc.stop(t0 + o.dur + 0.05);
+      return osc;
+    };
+    // Ruído filtrado: { t, dur, vol, filtro, ff, ff2, q, ataque, canal }
+    A.ruido = function (o) {
+      var ctx = A.ctx;
+      var t0 = ctx.currentTime + (o.t || 0);
+      var src = ctx.createBufferSource();
+      src.buffer = ruido;
+      src.loop = true;
+      var fl = ctx.createBiquadFilter();
+      fl.type = o.filtro || 'bandpass';
+      fl.frequency.setValueAtTime(o.ff || 2000, t0);
+      if (o.ff2) fl.frequency.exponentialRampToValueAtTime(o.ff2, t0 + o.dur);
+      fl.Q.value = o.q || 1;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(o.vol, t0 + (o.ataque || 0.002));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+      src.connect(fl);
+      fl.connect(g);
+      g.connect(o.destino || A._destino || bus[o.canal || 'efeitos']);
+      src.start(t0, Math.random() * 0.5);
+      src.stop(t0 + o.dur + 0.05);
+      return src;
+    };
+    A.bus = bus;
+  });
+
+  /* ================================================================== */
+  secao('A02-efeitos', function () {
+    var A = S.audio;
+    var tom = function (o) { return A.tom(o); };
+    var ruido = function (o) { return A.ruido(o); };
+
+    // Cada som: função que toca + legenda (para quem joga sem ouvir) +
+    // intervalo mínimo entre repetições. Os volumes foram medidos para
+    // ficarem no mesmo nível percebido (ver teste_sons.py).
+    var SONS = {
+      clique: {
+        g: 1.43,
+        min: 0.035,
+        tocar: function () {
+          tom({ f: 1750, f2: 1200, dur: 0.035, vol: 0.13, tipo: 'square', filtro: 'lowpass', ff: 3200 });
+          ruido({ dur: 0.02, vol: 0.06, filtro: 'highpass', ff: 3000 });
+        }
+      },
+      tecla: {
+        g: 3.1,
+        min: 0.025,
+        tocar: function () {
+          ruido({ dur: 0.028, vol: 0.13, filtro: 'bandpass', ff: 2600 + Math.random() * 900, q: 2.5 });
+          tom({ f: 420 + Math.random() * 60, dur: 0.03, vol: 0.05, tipo: 'triangle' });
+        }
+      },
+      ok: {
+        g: 1.66,
+        min: 0.12,
+        legenda: 'som de acerto',
+        tocar: function () {
+          tom({ f: 880, dur: 0.11, vol: 0.12, tipo: 'triangle' });
+          tom({ f: 1318.5, t: 0.08, dur: 0.18, vol: 0.12, tipo: 'triangle' });
+        }
+      },
+      erro: {
+        g: 1.07,
+        min: 0.15,
+        legenda: 'som de erro',
+        tocar: function () {
+          tom({ f: 233, f2: 220, dur: 0.14, vol: 0.13, tipo: 'square', filtro: 'lowpass', ff: 900 });
+          tom({ f: 175, f2: 160, t: 0.13, dur: 0.24, vol: 0.13, tipo: 'square', filtro: 'lowpass', ff: 800 });
+        }
+      },
+      missao: {
+        g: 1.55,
+        min: 0.3,
+        legenda: 'missão concluída!',
+        tocar: function () {
+          [523.25, 659.25, 783.99, 1046.5].forEach(function (f, i) {
+            tom({ f: f, t: i * 0.075, dur: i === 3 ? 0.42 : 0.14, vol: 0.1, tipo: 'square', filtro: 'lowpass', ff: 2600 });
+            tom({ f: f / 2, t: i * 0.075, dur: i === 3 ? 0.42 : 0.14, vol: 0.06, tipo: 'triangle' });
+          });
+        }
+      },
+      vitoria: {
+        g: 1.08,
+        min: 1,
+        legenda: 'música de vitória',
+        tocar: function () {
+          var notas = [[523.25, 0], [659.25, 0.12], [783.99, 0.24], [1046.5, 0.36], [783.99, 0.6], [1046.5, 0.72]];
+          notas.forEach(function (n, i) {
+            var fim = i === notas.length - 1;
+            tom({ f: n[0], t: n[1], dur: fim ? 0.8 : 0.2, vol: 0.1, tipo: 'square', filtro: 'lowpass', ff: 2800 });
+            tom({ f: n[0] / 2, t: n[1], dur: fim ? 0.8 : 0.2, vol: 0.07, tipo: 'triangle' });
+          });
+          [261.63, 329.63, 392].forEach(function (f) {
+            tom({ f: f, t: 0.72, dur: 0.9, vol: 0.045, tipo: 'triangle' });
+          });
+        }
+      },
+      // Tesoura do alicate: dois "tchic" + a capa sendo puxada.
+      corte: {
+        g: 3.1,
+        min: 0.2,
+        legenda: '✂ cabo cortado',
+        tocar: function () {
+          [0, 0.16].forEach(function (t) {
+            ruido({ t: t, dur: 0.07, vol: 0.32, filtro: 'bandpass', ff: 5200, ff2: 2800, q: 3 });
+            tom({ t: t, f: 3400, f2: 2200, dur: 0.05, vol: 0.06, tipo: 'square', filtro: 'bandpass', ff: 3000, q: 2 });
+          });
+          ruido({ t: 0.34, dur: 0.22, vol: 0.16, filtro: 'bandpass', ff: 1400, ff2: 3200, q: 1.2, ataque: 0.05 });
+        }
+      },
+      // Alicate de crimpar: catraca + o estalo final do conector.
+      crimpar: {
+        g: 1.9,
+        min: 0.3,
+        legenda: 'alicate crimpando o conector',
+        tocar: function () {
+          for (var i = 0; i < 5; i++) {
+            ruido({ t: i * 0.055, dur: 0.025, vol: 0.2, filtro: 'bandpass', ff: 2600, q: 4 });
+          }
+          ruido({ t: 0.3, dur: 0.07, vol: 0.32, filtro: 'bandpass', ff: 1800, q: 1.5 });
+          tom({ t: 0.3, f: 820, f2: 600, dur: 0.12, vol: 0.1, tipo: 'square', filtro: 'lowpass', ff: 1800 });
+        }
+      },
+      fio: {
+        g: 2.2,
+        min: 0.03,
+        tocar: function () {
+          tom({ f: 2300, f2: 1700, dur: 0.03, vol: 0.09, tipo: 'triangle' });
+          ruido({ dur: 0.018, vol: 0.09, filtro: 'highpass', ff: 4000 });
+        }
+      },
+      // Conector RJ45 entrando na porta: "clic-clac".
+      plugue: {
+        g: 1.9,
+        min: 0.12,
+        legenda: 'clique do conector encaixando',
+        tocar: function () {
+          ruido({ dur: 0.012, vol: 0.32, filtro: 'highpass', ff: 3500 });
+          tom({ f: 2600, f2: 1800, dur: 0.035, vol: 0.1, tipo: 'square', filtro: 'bandpass', ff: 2400, q: 3 });
+          ruido({ t: 0.07, dur: 0.03, vol: 0.28, filtro: 'bandpass', ff: 1600, q: 2 });
+          tom({ t: 0.07, f: 900, f2: 700, dur: 0.05, vol: 0.08, tipo: 'triangle' });
+        }
+      },
+      // Botão de energia + o bipe de quando o computador liga.
+      ligar: {
+        g: 2.0,
+        min: 0.3,
+        legenda: 'equipamento ligando (bipe)',
+        tocar: function () {
+          ruido({ dur: 0.02, vol: 0.25, filtro: 'bandpass', ff: 1500, q: 2 });
+          tom({ t: 0.03, f: 140, f2: 420, dur: 0.45, glide: 0.4, vol: 0.06, tipo: 'sawtooth', filtro: 'lowpass', ff: 900, ataque: 0.15 });
+          tom({ t: 0.42, f: 1046.5, dur: 0.16, vol: 0.09, tipo: 'square', filtro: 'lowpass', ff: 3000 });
+        }
+      },
+      // Martelada certa: pancada grave + o "tim" do metal.
+      martelo: {
+        g: 0.77,
+        min: 0.08,
+        legenda: '🔨 martelada',
+        tocar: function () {
+          tom({ f: 170, f2: 55, dur: 0.16, vol: 0.42, tipo: 'sine' });
+          ruido({ dur: 0.07, vol: 0.38, filtro: 'lowpass', ff: 1400 });
+          ruido({ dur: 0.03, vol: 0.25, filtro: 'highpass', ff: 3000 });
+          tom({ t: 0.005, f: 2650, dur: 0.28, vol: 0.05, tipo: 'sine', ataque: 0.002 });
+          tom({ t: 0.005, f: 3730, dur: 0.18, vol: 0.03, tipo: 'sine', ataque: 0.002 });
+        }
+      },
+      // Martelada torta: pancada abafada e um "bóim".
+      marteloErro: {
+        g: 0.86,
+        min: 0.08,
+        legenda: '🔨 martelada torta',
+        tocar: function () {
+          tom({ f: 140, f2: 60, dur: 0.14, vol: 0.4, tipo: 'sine' });
+          ruido({ dur: 0.06, vol: 0.32, filtro: 'lowpass', ff: 900 });
+          tom({ t: 0.04, f: 330, f2: 190, dur: 0.38, vol: 0.09, tipo: 'triangle', vib: true });
+          tom({ t: 0.04, f: 345, f2: 200, dur: 0.38, vol: 0.06, tipo: 'triangle' });
+        }
+      },
+      // Punch down: "tac" de mola.
+      punch: {
+        g: 2.66,
+        min: 0.2,
+        legenda: 'tac da punch down',
+        tocar: function () {
+          [0, 0.14, 0.28].forEach(function (t) {
+            ruido({ t: t, dur: 0.03, vol: 0.32, filtro: 'bandpass', ff: 2200, q: 2 });
+            tom({ t: t, f: 1250, f2: 600, dur: 0.06, vol: 0.09, tipo: 'square', filtro: 'lowpass', ff: 2400 });
+          });
+        }
+      },
+      // Parafusadeira fixando a base da canaleta.
+      parafuso: {
+        g: 1.6,
+        min: 0.4,
+        legenda: 'parafusadeira',
+        tocar: function () {
+          var ctx = A.ctx;
+          var t0 = ctx.currentTime;
+          var osc = ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(110, t0);
+          osc.frequency.linearRampToValueAtTime(190, t0 + 0.2);
+          osc.frequency.linearRampToValueAtTime(170, t0 + 0.55);
+          var lfo = ctx.createOscillator();
+          lfo.frequency.value = 38;
+          var lfoG = ctx.createGain();
+          lfoG.gain.value = 0.025;
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.linearRampToValueAtTime(0.06, t0 + 0.06);
+          g.gain.setValueAtTime(0.06, t0 + 0.5);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.62);
+          lfo.connect(lfoG);
+          lfoG.connect(g.gain);
+          var fl = ctx.createBiquadFilter();
+          fl.type = 'lowpass';
+          fl.frequency.value = 1500;
+          osc.connect(fl);
+          fl.connect(g);
+          g.connect(A._destino || A.bus.efeitos);
+          osc.start(t0);
+          lfo.start(t0);
+          osc.stop(t0 + 0.7);
+          lfo.stop(t0 + 0.7);
+          ruido({ t: 0.6, dur: 0.04, vol: 0.2, filtro: 'bandpass', ff: 1800, q: 2 });
+        }
+      },
+      // Tampa da canaleta encaixando.
+      tampa: {
+        g: 3.5,
+        min: 0.2,
+        legenda: 'tampa encaixando',
+        tocar: function () {
+          ruido({ dur: 0.12, vol: 0.12, filtro: 'bandpass', ff: 900, ff2: 2400, q: 1.2, ataque: 0.04 });
+          ruido({ t: 0.13, dur: 0.035, vol: 0.34, filtro: 'bandpass', ff: 2000, q: 1.8 });
+          tom({ t: 0.13, f: 700, f2: 520, dur: 0.07, vol: 0.08, tipo: 'triangle' });
+        }
+      },
+      // Pegou um item da bancada.
+      pegar: {
+        g: 2.3,
+        min: 0.2,
+        legenda: 'pegou um item',
+        tocar: function () {
+          ruido({ dur: 0.16, vol: 0.12, filtro: 'bandpass', ff: 500, ff2: 2200, q: 1.5, ataque: 0.05 });
+          tom({ t: 0.08, f: 660, dur: 0.09, vol: 0.09, tipo: 'triangle' });
+          tom({ t: 0.15, f: 990, dur: 0.14, vol: 0.09, tipo: 'triangle' });
+        }
+      },
+      bip: {
+        g: 2.1,
+        min: 0.06,
+        legenda: 'bipe',
+        tocar: function () {
+          tom({ f: 1000, dur: 0.07, vol: 0.07, tipo: 'square', filtro: 'lowpass', ff: 2500 });
+        }
+      },
+      // Porta abrindo (rangido curto).
+      porta: {
+        g: 3.05,
+        min: 0.6,
+        legenda: 'porta rangendo',
+        tocar: function () {
+          var ctx = A.ctx;
+          var t0 = ctx.currentTime;
+          var osc = ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(95, t0);
+          osc.frequency.linearRampToValueAtTime(140, t0 + 0.25);
+          osc.frequency.linearRampToValueAtTime(110, t0 + 0.6);
+          var fl = ctx.createBiquadFilter();
+          fl.type = 'bandpass';
+          fl.frequency.value = 750;
+          fl.Q.value = 6;
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.linearRampToValueAtTime(0.16, t0 + 0.08);
+          g.gain.setValueAtTime(0.13, t0 + 0.45);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+          osc.connect(fl);
+          fl.connect(g);
+          g.connect(A._destino || A.bus.efeitos);
+          osc.start(t0);
+          osc.stop(t0 + 0.75);
+        }
+      },
+      // Toca aqui!
+      toca: {
+        g: 2.4,
+        min: 0.3,
+        legenda: '✋ toca aqui!',
+        tocar: function () {
+          ruido({ dur: 0.09, vol: 0.38, filtro: 'bandpass', ff: 1300, q: 1.1 });
+          ruido({ t: 0.012, dur: 0.06, vol: 0.2, filtro: 'highpass', ff: 2500 });
+        }
+      },
+      // Gato roncando (Cachola dormindo).
+      ronco: {
+        g: 1.2,
+        min: 0.8,
+        legenda: 'gato roncando',
+        tocar: function () {
+          for (var i = 0; i < 2; i++) {
+            ruido({ t: i * 0.55, dur: 0.42, vol: 0.12, filtro: 'lowpass', ff: 420, ataque: 0.2 });
+            tom({ t: i * 0.55, f: 70, f2: 60, dur: 0.42, vol: 0.06, tipo: 'sawtooth', filtro: 'lowpass', ff: 300, ataque: 0.2 });
+          }
+        }
+      }
+    };
+    A.SONS = SONS;
+
+    var ultimo = {};
+    var ultimoEspecifico = 0;
+    S.som = function (nome) {
+      var s = SONS[nome];
+      if (!s) return;
+      var agora = S.agora() / 1000;
+      if (ultimo[nome] && agora - ultimo[nome] < (s.min || 0)) return;
+      ultimo[nome] = agora;
+      if (nome !== 'clique' && nome !== 'tecla') ultimoEspecifico = agora;
+      if (s.legenda && S.legenda) S.legenda(s.legenda);
+      if (!A.pronto()) return;
+      tocarComGanho(s);
+    };
+    // Cada som passa por um ganho próprio (s.g) medido para igualar os níveis.
+    function tocarComGanho(s) {
+      var g = A.ctx.createGain();
+      g.gain.value = s.g || 1;
+      g.connect(A.bus.efeitos);
+      A._destino = g;
+      try { s.tocar(); } catch (e) { registrarErro('som', e); }
+      A._destino = null;
+      setTimeout(function () { try { g.disconnect(); } catch (e) { /* ignora */ } }, 3000);
+    }
+    A.tocarComGanho = tocarComGanho;
+
+    // Acerto/erro "genérico" das mensagens e avisos: não toca se um som
+    // específico (martelo, conector…) acabou de tocar para a mesma ação.
+    S.somGenerico = function (tipo) {
+      if (tipo !== 'ok' && tipo !== 'erro') return;
+      var agora = S.agora() / 1000;
+      if (tipo === 'ok' && agora - ultimoEspecifico < 1.3) return;
+      if (tipo === 'erro' && agora - (ultimo.erro || 0) < 0.3) return;
+      S.som(tipo);
+    };
+
+    // Cliques em qualquer botão da interface (menus, ranking, janelas).
+    document.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!b || b.disabled || b.getAttribute('data-som') === 'nao') return;
+      S.som('clique');
+    }, true);
+    // Teclas digitadas nos campos (nome, IP, terminal).
+    document.addEventListener('keydown', function (e) {
+      var t = e.target;
+      if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) return;
+      if (t.type === 'range') return;
+      if (e.key && (e.key.length === 1 || e.key === 'Backspace')) S.som('tecla');
+    }, true);
+  });
+
+  /* ================================================================== */
+  secao('A03-musica', function () {
+    // Musiquinha em loop no estilo dos videogames antigos (8 compassos,
+    // dó – lá menor – fá – sol). No menu toca só a melodia; no jogo entra a
+    // bateria. A cada volta a melodia alterna de oitava para não cansar.
+    var A = S.audio;
+    var BPM = 100;
+    var SEMI = 60 / BPM / 4; // duração de uma semicolcheia
+    var ACORDES = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50], [48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]];
+    var _ = null;
+    var MELODIA = [
+      [64, _, 67, _, 72, _, 67, 64],
+      [64, _, 60, _, 57, _, 60, _],
+      [65, _, 69, _, 72, _, 69, 65],
+      [67, _, 62, _, 59, _, 62, _],
+      [64, 67, 72, _, 71, _, 67, _],
+      [69, _, 67, 64, 60, _, _, _],
+      [65, _, 64, _, 62, _, 60, _],
+      [62, _, 59, _, 55, _, _, _]
+    ];
+    var mus = { timer: null, passo: 0, volta: 0, prox: 0 };
+
+    function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+    function nota(o, t) {
+      var ctx = A.ctx;
+      var osc = ctx.createOscillator();
+      osc.type = o.tipo;
+      osc.frequency.value = hz(o.m);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(o.vol, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+      var saida = g;
+      osc.connect(g);
+      if (o.ff) {
+        var fl = ctx.createBiquadFilter();
+        fl.type = 'lowpass';
+        fl.frequency.value = o.ff;
+        g.connect(fl);
+        saida = fl;
+      }
+      saida.connect(A.bus.musica);
+      osc.start(t);
+      osc.stop(t + o.dur + 0.05);
+    }
+    function batida(t, tipo) {
+      var ctx = A.ctx;
+      if (tipo === 'bumbo') {
+        var osc = ctx.createOscillator();
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.32, t + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        osc.connect(g);
+        g.connect(A.bus.musica);
+        osc.start(t);
+        osc.stop(t + 0.2);
+      } else {
+        A.ruido({ t: t - ctx.currentTime, dur: tipo === 'caixa' ? 0.09 : 0.03, vol: tipo === 'caixa' ? 0.09 : 0.05, filtro: tipo === 'caixa' ? 'bandpass' : 'highpass', ff: tipo === 'caixa' ? 1800 : 7000, q: 0.8, destino: A.bus.musica });
+      }
+    }
+
+    function agendar(passo, t) {
+      var compasso = Math.floor(passo / 16) % 8;
+      var pos = passo % 16;
+      var ac = ACORDES[compasso];
+      var jogo = S.fase === 'jogo' || S.fase === 'cena';
+      // Baixo: fundamental, quinta e oitava.
+      if (pos % 4 === 0) {
+        var bx = [ac[0] - 12, ac[0] - 12, ac[2] - 12, ac[0]][pos / 4];
+        nota({ m: bx, tipo: 'triangle', vol: 0.3, dur: SEMI * 3.2 }, t);
+      }
+      // Acorde "pluck" nos contratempos.
+      if (pos === 4 || pos === 12) {
+        ac.forEach(function (m) { nota({ m: m + 12, tipo: 'square', vol: 0.028, dur: SEMI * 1.6, ff: 1400 }, t); });
+      }
+      // Melodia (colcheias).
+      if (pos % 2 === 0) {
+        var m = MELODIA[compasso][pos / 2];
+        if (m !== null) {
+          var oitava = mus.volta % 2 === 1 ? 12 : 0;
+          nota({ m: m + oitava, tipo: 'square', vol: 0.07, dur: SEMI * 1.8, ff: 2600 }, t);
+          nota({ m: m + oitava, tipo: 'triangle', vol: 0.05, dur: SEMI * 1.8 }, t + 0.004);
+        }
+      }
+      if (jogo) {
+        if (pos === 0 || pos === 8 || (pos === 10 && compasso % 2 === 1)) batida(t, 'bumbo');
+        if (pos === 4 || pos === 12) batida(t, 'caixa');
+        if (pos % 2 === 0) batida(t, 'chimbal');
+      }
+    }
+
+    function laco() {
+      var ctx = A.ctx;
+      if (!ctx || ctx.state !== 'running') return;
+      if (S.cfg.volMusica <= 0) {
+        mus.prox = ctx.currentTime + 0.05;
+        return;
+      }
+      if (mus.prox < ctx.currentTime) mus.prox = ctx.currentTime + 0.06;
+      while (mus.prox < ctx.currentTime + 0.18) {
+        try { agendar(mus.passo, mus.prox); } catch (e) { registrarErro('musica', e); }
+        mus.passo++;
+        if (mus.passo % 128 === 0) mus.volta++;
+        mus.prox += SEMI;
+      }
+    }
+
+    A.iniciarMusica = function () {
+      if (mus.timer || !A.ctx) return;
+      mus.prox = A.ctx.currentTime + 0.1;
+      mus.timer = setInterval(laco, 40);
+    };
+    A.musicaTocando = function () { return !!mus.timer; };
+    A._agendarMusica = agendar; // usado pelo teste de volume (teste_sons.py)
+    A._semi = SEMI;
+  });
+
+  /* ================================================================== */
+  secao('A04-vozes', function () {
+    // Vozes "embaralhadas" (como Animalese, do Animal Crossing): cada letra
+    // vira um bipe com a vogal mais próxima, no tom de cada personagem.
+    // Opcional: ler as falas em voz alta com a voz do próprio sistema.
+    var A = S.audio;
+    var FORMANTES = {
+      a: [730, 1090], e: [530, 1840], i: [300, 2250], o: [570, 840], u: [320, 870]
+    };
+    var PERFIS = {
+      prof: { f: 128, onda: 'sawtooth', fm: 1.0, varia: 3, vol: 0.7, pitchTts: 0.85 },
+      carlos: { f: 104, onda: 'sawtooth', fm: 0.92, varia: 2, vol: 0.82, pitchTts: 0.7 },
+      alunoM: { f: 170, onda: 'sawtooth', fm: 1.08, varia: 3, vol: 0.64, pitchTts: 1.05 },
+      alunoF: { f: 262, onda: 'sawtooth', fm: 1.2, varia: 3, vol: 0.6, pitchTts: 1.35 },
+      cachola: { f: 560, onda: 'triangle', fm: 1.4, varia: 4, vol: 0.32, gato: true, pitchTts: 1.8 }
+    };
+    function perfil(quem) {
+      if (quem === 'aluno') return S.aluno && S.aluno.genero === 'f' ? PERFIS.alunoF : PERFIS.alunoM;
+      return PERFIS[quem] || PERFIS.prof;
+    }
+    function semAcento(c) {
+      return c.normalize ? c.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() : c.toLowerCase();
+    }
+    function ehLetra(c) {
+      return /[a-zà-ú]/i.test(c);
+    }
+    // Vogal da sílaba: a própria letra, ou a próxima vogal do texto.
+    function vogalEm(texto, i) {
+      for (var k = i; k < Math.min(texto.length, i + 4); k++) {
+        var c = semAcento(texto.charAt(k));
+        if (FORMANTES[c]) return c;
+      }
+      return 'a';
+    }
+
+    function blip(p, letra, vogal, t, final) {
+      var ctx = A.ctx;
+      var cod = semAcento(letra).charCodeAt(0) || 97;
+      var semi = ((cod * 7) % 5 - 2) * (p.varia / 2) + (Math.random() - 0.5);
+      var f = p.f * Math.pow(2, semi / 12);
+      var dur = p.gato ? 0.12 : 0.075;
+      var osc = ctx.createOscillator();
+      osc.type = p.onda;
+      osc.frequency.setValueAtTime(f, t);
+      if (p.gato) {
+        osc.frequency.linearRampToValueAtTime(f * 1.35, t + dur * 0.4);
+        osc.frequency.exponentialRampToValueAtTime(f * 0.85, t + dur);
+      } else {
+        osc.frequency.exponentialRampToValueAtTime(f * (final === '?' ? 1.25 : 0.93), t + dur);
+      }
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(p.vol, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      var fm = FORMANTES[vogal] || FORMANTES.a;
+      osc.connect(g);
+      [[fm[0], 5, 1], [fm[1], 7, 0.7]].forEach(function (fr) {
+        var bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = fr[0] * p.fm;
+        bp.Q.value = fr[1];
+        var gg = ctx.createGain();
+        gg.gain.value = fr[2] * 2.2;
+        g.connect(bp);
+        bp.connect(gg);
+        gg.connect(A.bus.falas);
+      });
+      osc.start(t);
+      osc.stop(t + dur + 0.03);
+      return osc;
+    }
+
+    // ---- Leitura em voz alta (síntese de voz do sistema) -----------------
+    var tts = window.speechSynthesis || null;
+    var vozPt = null;
+    function escolherVoz() {
+      if (!tts || vozPt) return vozPt;
+      var vs = [];
+      try { vs = tts.getVoices() || []; } catch (e) { vs = []; }
+      vozPt = vs.filter(function (v) { return /^pt[-_]BR/i.test(v.lang); })[0] ||
+        vs.filter(function (v) { return /^pt/i.test(v.lang); })[0] || null;
+      return vozPt;
+    }
+    if (tts && tts.addEventListener) {
+      try { tts.addEventListener('voiceschanged', function () { vozPt = null; escolherVoz(); }); } catch (e) { /* ignora */ }
+    }
+    S.voz.lerDisponivel = function () { return !!(tts && window.SpeechSynthesisUtterance); };
+    S.voz.temVozPt = function () { return !!escolherVoz(); };
+    function ler(quem, texto) {
+      if (!S.voz.lerDisponivel()) return false;
+      try {
+        tts.cancel();
+        var u = new window.SpeechSynthesisUtterance(texto.replace(/[✋✔✖🎉🧡💡]/g, ''));
+        u.lang = 'pt-BR';
+        var v = escolherVoz();
+        if (v) u.voice = v;
+        u.rate = 1.05;
+        u.pitch = perfil(quem).pitchTts;
+        u.volume = Math.max(0, Math.min(1, S.cfg.volFalas));
+        tts.speak(u);
+        S.voz.ultimaLeitura = texto;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    S.voz.ler = function (quem, texto) {
+      if (S.cfg.volFalas > 0) ler(quem, texto);
+    };
+
+    var agendados = [];
+    function pararBlips() {
+      agendados.forEach(function (o) { try { o.stop(); } catch (e) { /* já parou */ } });
+      agendados = [];
+    }
+    S.voz.parar = function () {
+      pararBlips();
+      if (tts) { try { tts.cancel(); } catch (e) { /* ignora */ } }
+    };
+
+    // Fala da cena (caixa de diálogo com o texto aparecendo letra por letra).
+    S.voz.fala = function (quem, texto, estado) {
+      estado.vozProx = 0;
+      estado.vozUlt = 0;
+      estado.vozLida = false;
+      pararBlips();
+      if (S.cfg.lerVoz && S.cfg.volFalas > 0) estado.vozLida = ler(quem, texto);
+      else if (tts) { try { tts.cancel(); } catch (e) { /* ignora */ } }
+    };
+    // Chamado a cada quadro com quantas letras já apareceram. Os bipes são
+    // agendados pelo tempo de cada letra (42 por segundo), então a voz não
+    // fica "picotada" em computador lento.
+    var LETRAS_POR_SEG = 42;
+    S.voz.acompanhar = function (quem, texto, estado, letras) {
+      var antes = estado.vozUlt || 0;
+      estado.vozUlt = letras;
+      // Texto completado de uma vez (clique para pular): não fala o resto.
+      if (estado.vozLida || !A.pronto() || S.cfg.volFalas <= 0 || letras - antes > 14) {
+        estado.vozProx = Math.max(estado.vozProx, letras);
+        return;
+      }
+      var p = perfil(quem);
+      var base = A.ctx.currentTime + 0.01;
+      while (estado.vozProx < letras) {
+        var i = estado.vozProx;
+        var c = texto.charAt(i);
+        if (ehLetra(c)) {
+          var fim = texto.length - i < 6 ? texto.slice(-1) : '';
+          agendados.push(blip(p, c, vogalEm(texto, i), base + Math.max(0, (i - antes) / LETRAS_POR_SEG), fim));
+          estado.vozProx += p.gato ? 4 : 3;
+        } else {
+          estado.vozProx += 1;
+        }
+      }
+      if (agendados.length > 60) agendados.splice(0, agendados.length - 60);
+    };
+    // Fala de balão (sem letra por letra): toca a frase inteira de uma vez.
+    S.voz.frase = function (quem, texto) {
+      if (S.cfg.lerVoz && S.cfg.volFalas > 0 && ler(quem, texto)) return;
+      if (!A.pronto() || S.cfg.volFalas <= 0) return;
+      pararBlips();
+      var p = perfil(quem);
+      var t = A.ctx.currentTime + 0.02;
+      var passo = p.gato ? 0.13 : 0.07;
+      var n = 0;
+      for (var i = 0; i < texto.length && n < 26; i++) {
+        var c = texto.charAt(i);
+        if (!ehLetra(c)) continue;
+        agendados.push(blip(p, c, vogalEm(texto, i), t, texto.length - i < 6 ? texto.slice(-1) : ''));
+        t += passo;
+        n++;
+        i += p.gato ? 3 : 2;
+      }
+    };
+    // Para os testes.
+    S.voz.PERFIS = PERFIS;
+    S.voz.blipTeste = function (quem, letra, t) {
+      return blip(perfil(quem), letra, vogalEm(letra, 0), A.ctx.currentTime + 0.01 + (t || 0), '');
+    };
+  });
+
+  /* ================================================================== */
+  secao('A05-legendas', function () {
+    // Legendas de sons (acessibilidade): mostra o que soou, por 1,8 s.
+    var camada = null;
+    S.legenda = function (texto) {
+      if (!S.cfg.legendas || !S.raiz) return;
+      if (!camada) {
+        camada = S.el('div', {
+          position: 'absolute',
+          left: '12px',
+          zIndex: '27',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          alignItems: 'flex-start',
+          pointerEvents: 'none'
+        }, null, S.raiz);
+        camada.setAttribute('aria-live', 'polite');
+      }
+      // No celular fica acima do joystick (ou do botão USAR, se trocados).
+      camada.style.bottom = S.toque && S.fase === 'jogo' ? (S.cfg.botoesGrandes ? '200px' : '165px') : '14px';
+      var itens = camada.children;
+      for (var i = 0; i < itens.length; i++) {
+        if (itens[i].getAttribute('data-txt') === texto) {
+          clearTimeout(itens[i]._t);
+          itens[i]._t = setTimeout(remover(itens[i]), 1800);
+          return;
+        }
+      }
+      while (camada.children.length >= 3) camada.firstChild.remove();
+      var el = S.el('div', {
+        background: 'rgba(0,0,0,0.82)',
+        color: '#FFFFFF',
+        border: '2px solid ' + S.CSS.laranja,
+        borderRadius: '6px',
+        padding: '4px 10px',
+        fontSize: '13px',
+        fontWeight: '700',
+        fontFamily: S.CSS.fonte,
+        transition: 'opacity .3s ease'
+      }, '🔊 [' + texto + ']', camada);
+      el.setAttribute('data-txt', texto);
+      el._t = setTimeout(remover(el), 1800);
+    };
+    function remover(el) {
+      return function () {
+        el.style.opacity = '0';
+        setTimeout(function () { el.remove(); }, 320);
+      };
+    }
+  });
+
+
+  /* ================================================================== */
+  secao('G01-acessibilidade', function () {
+    var C = S.CSS;
+
+    // ---- Estilos globais: foco visível (teclado) e botões maiores ---------
+    var css = document.createElement('style');
+    css.textContent =
+      '#sim-root button:focus-visible,#sim-root select:focus-visible,#sim-root input:focus-visible,#sim-root [tabindex]:focus-visible{outline:3px solid #FFD36B !important;outline-offset:2px}' +
+      '#sim-root.sim-botoes-grandes .sim-btn{min-height:46px;min-width:46px}' +
+      '#sim-root input[type=range].sim-volume{-webkit-appearance:none;appearance:none;height:10px;border-radius:6px;background:#071733;border:2px solid #2F5C99;outline:none}' +
+      '#sim-root input[type=range].sim-volume::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:26px;height:26px;border-radius:50%;background:#F7941D;border:3px solid #071430;cursor:pointer}' +
+      '#sim-root input[type=range].sim-volume::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#F7941D;border:3px solid #071430;cursor:pointer}';
+    document.head.appendChild(css);
+
+    // ---- Daltonismo: símbolos ✔/✖ junto das cores de acerto e erro --------
+    S.marcarSimbolo = function (texto, tipo) {
+      if (!S.cfg.daltonismo || !texto) return texto;
+      var t = String(texto);
+      if (tipo === 'erro' && !/^[✖✗❌]/.test(t)) return '✖ ' + t;
+      if (tipo === 'ok' && !/^[✔✓✅🎉]/.test(t)) return '✔ ' + t;
+      return t;
+    };
+
+    // ---- Texto maior: escala todos os tamanhos de fonte em px ----------------
+    // Funciona com qualquer tela (as fontes são definidas no próprio elemento):
+    // guarda o tamanho original e aplica a escala, inclusive em elementos novos.
+    var escala = 1;
+    var observador = null;
+    function aplicarFonte(el, base) {
+      var v = (Math.round(base * escala * 10) / 10) + 'px';
+      el.setAttribute('data-fs-set', v);
+      if (el.style.fontSize !== v) el.style.fontSize = v;
+    }
+    function escalar(el) {
+      if (!el || el.nodeType !== 1 || el === S.raiz || !el.style) return;
+      if (el.getAttribute('data-fs') === 'fixo') return;
+      var fs = el.style.fontSize;
+      if (!fs || fs.slice(-2) !== 'px') return;
+      if (fs === el.getAttribute('data-fs-set')) return;
+      var base = parseFloat(fs);
+      if (!(base > 0)) return;
+      el.setAttribute('data-fs-base', String(base));
+      aplicarFonte(el, base);
+    }
+    function escalarArvore(raiz) {
+      escalar(raiz);
+      if (!raiz.querySelectorAll) return;
+      var lista = raiz.querySelectorAll('[style]');
+      for (var i = 0; i < lista.length; i++) escalar(lista[i]);
+    }
+    S.definirEscalaTexto = function (e) {
+      e = Number(e) || 1;
+      if (!S.raiz) return;
+      var antes = escala;
+      escala = e;
+      // Sem o observador ligado, algum tamanho pode ter mudado: atualiza a base.
+      if (!observador) escalarArvore(S.raiz);
+      // Reaplica sobre o tamanho original guardado.
+      var guardados = S.raiz.querySelectorAll('[data-fs-base]');
+      for (var i = 0; i < guardados.length; i++) aplicarFonte(guardados[i], parseFloat(guardados[i].getAttribute('data-fs-base')));
+      S.raiz.style.fontSize = (16 * escala) + 'px';
+      if (escala !== 1 && !observador && window.MutationObserver) {
+        observador = new MutationObserver(function (lista) {
+          for (var k = 0; k < lista.length; k++) {
+            var m = lista[k];
+            if (m.type === 'attributes') escalar(m.target);
+            else for (var j = 0; j < m.addedNodes.length; j++) escalarArvore(m.addedNodes[j]);
+          }
+        });
+        observador.observe(S.raiz, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+      } else if (escala === 1 && observador) {
+        observador.disconnect();
+        observador = null;
+      }
+      if (antes !== escala && S.redimensionar && S.fase === 'jogo') S.redimensionar();
+    };
+    S.escalaTexto = function () { return escala; };
+
+    // ---- Contorno forte nos objetos ---------------------------------------
+    var COR_FORTE = 0xff9a1f;
+    var matContorno = null;
+    function contornos(info, ligado) {
+      if (!info || !info.meshes) return;
+      info.meshes.forEach(function (m) {
+        if (!m || !m.isMesh || !m.geometry) return;
+        var c = m.userData.contorno;
+        if (!c && ligado) {
+          if (!matContorno) matContorno = new THREE.MeshBasicMaterial({ color: COR_FORTE, side: THREE.BackSide });
+          if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+          var bb = m.geometry.boundingBox;
+          var sx = bb.max.x - bb.min.x;
+          var sy = bb.max.y - bb.min.y;
+          var sz = bb.max.z - bb.min.z;
+          var esc = m.getWorldScale ? m.getWorldScale(new THREE.Vector3()) : { x: 1, y: 1, z: 1 };
+          // Borda de ~3 cm em volta de cada peça, qualquer que seja o tamanho.
+          function f(tam, e) { return Math.min(1.6, 1 + 0.06 / Math.max(0.02, tam * Math.abs(e || 1))); }
+          c = new THREE.Mesh(m.geometry, matContorno);
+          c.scale.set(f(sx, esc.x), f(sy, esc.y), f(sz, esc.z));
+          c.position.set((bb.max.x + bb.min.x) / 2 * (1 - c.scale.x), (bb.max.y + bb.min.y) / 2 * (1 - c.scale.y), (bb.max.z + bb.min.z) / 2 * (1 - c.scale.z));
+          c.raycast = function () {};
+          c.renderOrder = -1;
+          m.add(c);
+          m.userData.contorno = c;
+        }
+        if (c) c.visible = !!ligado;
+      });
+    }
+    var destacarOriginal = null;
+    var acesos = [];
+    function instalarContorno() {
+      if (destacarOriginal || !S.destacar) return;
+      destacarOriginal = S.destacar;
+      S.destacar = function (info, ligado) {
+        if (!info) return;
+        destacarOriginal(info, ligado);
+        if (S.cfg.contorno && ligado) {
+          info.meshes.forEach(function (m) {
+            (Array.isArray(m.material) ? m.material : [m.material]).forEach(function (mat) {
+              if (mat && mat.emissive) {
+                mat.emissive.setHex(0x8a4a00);
+                mat.emissiveIntensity = 1;
+              }
+            });
+          });
+        }
+        contornos(info, S.cfg.contorno && ligado);
+        var i = acesos.indexOf(info);
+        if (ligado && i < 0) acesos.push(info);
+        if (!ligado && i >= 0) acesos.splice(i, 1);
+      };
+    }
+    instalarContorno();
+
+    // Com contorno forte, o objeto que o [E]/USAR vai usar também fica aceso
+    // (ajuda no celular e para quem joga só pelo teclado).
+    var proximoAceso = null;
+    S.atualizarContornoProximo = function () {
+      var alvo = S.cfg.contorno && S.fase === 'jogo' && !S.pausado && S.jogo && S.jogo.melhorProximo ? S.jogo.melhorProximo() : null;
+      if (alvo !== proximoAceso) {
+        if (proximoAceso) S.destacar(proximoAceso, false);
+        proximoAceso = alvo;
+      }
+      if (alvo) S.destacar(alvo, true);
+    };
+    S.apagarContornos = function () {
+      acesos.slice().forEach(function (info) { S.destacar(info, false); });
+      proximoAceso = null;
+    };
+    if (S.jogo && S.jogo.atualizarPrompt) {
+      var promptOriginal = S.jogo.atualizarPrompt;
+      var ultimo = 0;
+      S.jogo.atualizarPrompt = function () {
+        promptOriginal.apply(this, arguments);
+        var agora = S.agora();
+        if (agora - ultimo < 120) return;
+        ultimo = agora;
+        if (S.cfg.contorno || proximoAceso) S.atualizarContornoProximo();
+      };
+    }
+
+    // ---- Aplica tudo ----------------------------------------------------------
+    S.aplicarConfig = function () {
+      var c = S.cfg;
+      if (S.audio && S.audio.aplicarVolumes) S.audio.aplicarVolumes();
+      if (S.raiz) {
+        S.raiz.classList.toggle('sim-botoes-grandes', !!c.botoesGrandes);
+        S.raiz.classList.toggle('sim-daltonismo', !!c.daltonismo);
+      }
+      S.definirEscalaTexto(c.texto);
+      if (!c.contorno && S.apagarContornos) S.apagarContornos();
+      if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+      if (!c.lerVoz && S.voz && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch (e) { /* ignora */ }
+      }
+    };
+    S.aplicarConfig();
+  });
+
+  /* ================================================================== */
+  secao('G02-tela-configuracoes', function () {
+    var C = S.CSS;
+
+    // ---- Botão ⚙ fixo no canto superior direito ---------------------------
+    var engrenagem = S.el('button', {
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      zIndex: '36',
+      width: '44px',
+      height: '44px',
+      borderRadius: '50%',
+      background: 'rgba(19, 52, 101, 0.92)',
+      color: '#FFFFFF',
+      border: '3px solid #071430',
+      boxShadow: '0 3px 0 #071430',
+      padding: '0',
+      cursor: 'pointer',
+      touchAction: 'manipulation',
+      display: 'none'
+    }, null, S.raiz);
+    engrenagem.type = 'button';
+    engrenagem.className = 'sim-btn';
+    engrenagem.setAttribute('aria-label', 'Configurações');
+    engrenagem.title = 'Configurações (sons e acessibilidade)';
+    engrenagem.appendChild(iconeEngrenagem(24));
+    engrenagem.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    engrenagem.addEventListener('click', S.protegido('config:abrir', function () { S.ui.mostrarConfig(); }));
+    S.ui.engrenagem = engrenagem;
+
+    function iconeEngrenagem(tam) {
+      var NS = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('width', String(tam));
+      svg.setAttribute('height', String(tam));
+      svg.setAttribute('aria-hidden', 'true');
+      svg.style.display = 'block';
+      svg.style.margin = 'auto';
+      svg.style.pointerEvents = 'none';
+      var p = document.createElementNS(NS, 'path');
+      // Engrenagem de 8 dentes com furo no meio.
+      var d = '';
+      for (var i = 0; i < 8; i++) {
+        var a0 = (i / 8) * Math.PI * 2 - 0.2;
+        var a1 = a0 + 0.4;
+        var a2 = a0 + Math.PI / 4;
+        var pt = function (a, r) { return (12 + Math.cos(a) * r).toFixed(2) + ' ' + (12 + Math.sin(a) * r).toFixed(2); };
+        d += (i === 0 ? 'M' : 'L') + pt(a0, 10.4) + 'L' + pt(a1, 10.4) + 'L' + pt(a1 + 0.12, 7.6) + 'L' + pt(a2 - 0.08, 7.6);
+      }
+      d += 'Z M12 8.6 A3.4 3.4 0 1 0 12 15.4 A3.4 3.4 0 1 0 12 8.6 Z';
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'currentColor');
+      p.setAttribute('fill-rule', 'evenodd');
+      svg.appendChild(p);
+      return svg;
+    }
+
+    // Aparece nos menus e no jogo; some atrás de janelas (que têm o próprio
+    // fechar no mesmo canto), do ranking e da pausa (que tem o botão próprio).
+    var telaCfg = null;
+    function atualizarEngrenagem() {
+      var fase = S.fase;
+      var mostrar = !telaCfg && !S.ui.modalAberto() &&
+        ['login', 'fases', 'comandos', 'jogo', 'cena'].indexOf(fase) >= 0;
+      if (mostrar) {
+        var telas = S.raiz.querySelectorAll('[data-tela]');
+        for (var i = 0; i < telas.length; i++) {
+          if (Number(telas[i].getAttribute('data-tela')) >= 40) { mostrar = false; break; }
+        }
+      }
+      var v = mostrar ? 'block' : 'none';
+      if (engrenagem.style.display !== v) engrenagem.style.display = v;
+      var tam = S.toque || S.ui.compacto() ? '40px' : '44px';
+      if (engrenagem.style.width !== tam) {
+        engrenagem.style.width = tam;
+        engrenagem.style.height = tam;
+      }
+    }
+    setInterval(function () {
+      try { atualizarEngrenagem(); } catch (e) { /* ignora */ }
+    }, 150);
+    S.ui.atualizarEngrenagem = atualizarEngrenagem;
+
+    // ---- Componentes da tela ----------------------------------------------
+    function secaoTitulo(pai, texto, icone) {
+      S.el('div', {
+        fontSize: '12px', fontWeight: '700', color: C.laranja, letterSpacing: '0.06em',
+        margin: '14px 0 6px', borderBottom: '2px solid ' + C.borda, paddingBottom: '4px'
+      }, (icone ? icone + ' ' : '') + texto, pai);
+    }
+
+    function controleVolume(pai, rotulo, chave, aoMudar) {
+      var linha = S.el('div', { display: 'flex', alignItems: 'center', gap: '12px', margin: '10px 0' }, null, pai);
+      var id = 'sim-vol-' + chave;
+      var lab = S.el('label', { flex: '0 0 auto', width: '150px', fontSize: '14px', fontWeight: '700' }, rotulo, linha);
+      lab.setAttribute('for', id);
+      var r = S.el('input', { flex: '1 1 auto', minWidth: '80px', cursor: 'pointer', touchAction: 'none' }, null, linha);
+      r.type = 'range';
+      r.id = id;
+      r.className = 'sim-volume';
+      r.min = '0';
+      r.max = '100';
+      r.step = '5';
+      r.value = String(Math.round(S.cfg[chave] * 100));
+      var val = S.el('div', { flex: '0 0 auto', width: '46px', textAlign: 'right', fontFamily: C.mono, fontWeight: '700', fontSize: '14px' }, '', linha);
+      function mostrar() {
+        var v = Number(r.value);
+        val.textContent = v === 0 ? 'mudo' : v + '%';
+        r.setAttribute('aria-valuetext', val.textContent);
+      }
+      mostrar();
+      r.addEventListener('input', function () {
+        S.cfg[chave] = Number(r.value) / 100;
+        mostrar();
+        S.aplicarConfig();
+        S.salvarConfig();
+      });
+      r.addEventListener('change', function () {
+        if (aoMudar) aoMudar();
+      });
+      return r;
+    }
+
+    // Interruptor liga/desliga acessível (role="switch").
+    function interruptor(pai, titulo, descricao, chave, opcoes) {
+      opcoes = opcoes || {};
+      var linha = S.el('div', {
+        display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 10px', margin: '6px 0',
+        background: '#071733', border: '2px solid ' + C.borda, borderRadius: '8px'
+      }, null, pai);
+      var txt = S.el('div', { flex: '1 1 auto', minWidth: '0' }, null, linha);
+      S.el('div', { fontSize: '14px', fontWeight: '700' }, titulo, txt);
+      if (descricao) S.el('div', { fontSize: '12px', color: C.cinza, lineHeight: '1.35', marginTop: '2px' }, descricao, txt);
+      if (opcoes.aviso) S.el('div', { fontSize: '12px', color: C.amarelo, lineHeight: '1.35', marginTop: '2px' }, opcoes.aviso, txt);
+      var b = S.el('button', {
+        flex: '0 0 auto', width: '62px', height: '34px', borderRadius: '17px', border: '3px solid #071430',
+        position: 'relative', cursor: 'pointer', padding: '0', touchAction: 'manipulation', transition: 'background .15s'
+      }, null, linha);
+      b.type = 'button';
+      b.className = 'sim-btn';
+      b.setAttribute('role', 'switch');
+      b.setAttribute('aria-label', titulo);
+      var bola = S.el('div', {
+        position: 'absolute', top: '3px', width: '22px', height: '22px', borderRadius: '50%',
+        background: '#FFFFFF', transition: 'left .15s', pointerEvents: 'none'
+      }, null, b);
+      function desenhar() {
+        var on = !!S.cfg[chave];
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+        b.style.background = on ? '#1E8E3E' : '#4A5D7A';
+        bola.style.left = on ? '33px' : '4px';
+        b.title = on ? 'Ligado' : 'Desligado';
+      }
+      desenhar();
+      if (opcoes.desabilitado) {
+        b.disabled = true;
+        b.style.opacity = '0.45';
+        b.style.cursor = 'not-allowed';
+      }
+      b.addEventListener('click', S.protegido('config:' + chave, function () {
+        S.cfg[chave] = !S.cfg[chave];
+        desenhar();
+        S.aplicarConfig();
+        S.salvarConfig();
+        if (opcoes.aoMudar) opcoes.aoMudar(S.cfg[chave]);
+      }));
+      return b;
+    }
+
+    // Botões de escolha (tamanho do texto).
+    function escolha(pai, titulo, descricao, chave, itens, aoMudar) {
+      var bloco = S.el('div', {
+        padding: '8px 10px', margin: '6px 0', background: '#071733', border: '2px solid ' + C.borda, borderRadius: '8px'
+      }, null, pai);
+      S.el('div', { fontSize: '14px', fontWeight: '700' }, titulo, bloco);
+      if (descricao) S.el('div', { fontSize: '12px', color: C.cinza, marginTop: '2px' }, descricao, bloco);
+      var grupo = S.el('div', { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }, null, bloco);
+      grupo.setAttribute('role', 'radiogroup');
+      grupo.setAttribute('aria-label', titulo);
+      var botoes = [];
+      function marcar() {
+        botoes.forEach(function (x) {
+          var sel = S.cfg[chave] === x.valor;
+          x.b.style.background = sel ? C.laranja : C.painel2;
+          x.b.style.color = sel ? '#10203A' : C.branco;
+          x.b.setAttribute('aria-checked', sel ? 'true' : 'false');
+        });
+      }
+      itens.forEach(function (it) {
+        var b = S.el('button', {
+          flex: '1 1 90px', padding: '7px 8px', border: '3px solid #071430', borderRadius: '6px',
+          fontFamily: C.fonte, fontWeight: '700', fontSize: it.tam, cursor: 'pointer', touchAction: 'manipulation'
+        }, it.rotulo, grupo);
+        b.type = 'button';
+        b.className = 'sim-btn';
+        b.setAttribute('role', 'radio');
+        b.setAttribute('data-fs', 'fixo');
+        b.addEventListener('click', S.protegido('config:' + chave, function () {
+          S.cfg[chave] = it.valor;
+          marcar();
+          S.aplicarConfig();
+          S.salvarConfig();
+          if (aoMudar) aoMudar();
+        }));
+        botoes.push({ b: b, valor: it.valor });
+      });
+      marcar();
+    }
+
+    // ---- Tela de configurações ------------------------------------------------
+    S.ui.mostrarConfig = function (abaInicial) {
+      if (telaCfg) return;
+      if (S.fase === 'jogo') {
+        S.pausado = true;
+        S.teclas = {};
+        S.joy.x = 0;
+        S.joy.z = 0;
+        if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+      }
+      var emCena = S.fase === 'cena';
+      if (emCena) S.pausarRelogio();
+      var ap = S.ui.telaApertada();
+      var t = S.ui.tela(70, '600px');
+      if (ap) S.ui.compactarTela(t);
+      telaCfg = t;
+      atualizarEngrenagem();
+      t.cartao.setAttribute('role', 'dialog');
+      t.cartao.setAttribute('aria-label', 'Configurações');
+      // Durante a cena, cliques aqui não podem avançar o diálogo.
+      t.fundo.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+
+      var cab = S.el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }, null, t.cartao);
+      S.el('div', { fontSize: ap ? '18px' : '21px', fontWeight: '700' }, '⚙ Configurações', cab);
+      var bX = S.ui.botao('Fechar', 'secundario', fechar, cab);
+      bX.style.padding = '6px 12px';
+
+      var abas = S.el('div', { display: 'flex', gap: '6px', marginBottom: '4px' }, null, t.cartao);
+      abas.setAttribute('role', 'tablist');
+      var conteudo = S.el('div', null, null, t.cartao);
+      var botoesAba = {};
+      var aba = abaInicial || 'sons';
+      [['sons', '🔊 Sons'], ['acessibilidade', '♿ Acessibilidade']].forEach(function (a) {
+        var b = S.el('button', {
+          flex: '1 1 0', padding: ap ? '8px' : '10px', borderRadius: '8px 8px 0 0', border: '3px solid #071430',
+          borderBottom: 'none', fontFamily: C.fonte, fontWeight: '700', fontSize: '15px', cursor: 'pointer', touchAction: 'manipulation'
+        }, a[1], abas);
+        b.type = 'button';
+        b.className = 'sim-btn';
+        b.setAttribute('role', 'tab');
+        b.addEventListener('click', function () {
+          aba = a[0];
+          desenhar();
+        });
+        botoesAba[a[0]] = b;
+      });
+
+      function desenhar() {
+        Object.keys(botoesAba).forEach(function (k) {
+          var sel = k === aba;
+          botoesAba[k].style.background = sel ? C.laranja : C.painel2;
+          botoesAba[k].style.color = sel ? '#10203A' : C.branco;
+          botoesAba[k].setAttribute('aria-selected', sel ? 'true' : 'false');
+        });
+        conteudo.textContent = '';
+        var painel = S.el('div', {
+          border: '3px solid #071430', borderRadius: '0 0 8px 8px', background: '#0B1F3E', padding: ap ? '6px 10px 10px' : '8px 14px 14px'
+        }, null, conteudo);
+        painel.setAttribute('role', 'tabpanel');
+        if (aba === 'sons') montarSons(painel);
+        else montarAcessibilidade(painel);
+      }
+
+      function montarSons(p) {
+        S.el('div', { fontSize: '13px', color: C.cinza, marginTop: '6px' }, 'Arraste para aumentar ou diminuir. Todo o caminho para a esquerda = mudo.', p);
+        controleVolume(p, '🔔 Efeitos', 'volEfeitos', function () { S.som('plugue'); });
+        controleVolume(p, '🗣 Falas', 'volFalas', function () {
+          S.voz.frase('prof', 'Olá! Assim fica bom?');
+        });
+        controleVolume(p, '🎵 Música', 'volMusica', null);
+        S.el('div', { fontSize: '12px', color: C.cinza, marginTop: '6px', lineHeight: '1.4' },
+          'Efeitos: cliques, ferramentas e objetos. Falas: as vozes dos personagens. Música: a trilha do jogo.', p);
+        if (!S.audio || !S.audio.ctx) {
+          S.el('div', { fontSize: '12px', color: C.amarelo, marginTop: '6px' }, 'Este navegador não liberou o som. Toque em qualquer lugar da tela para ativar.', p);
+        }
+      }
+
+      function montarAcessibilidade(p) {
+        secaoTitulo(p, 'CORES (DALTONISMO)', '🎨');
+        interruptor(p, 'Modo daltonismo', 'Siglas nos fios (BL = branco-laranja, L = laranja, BV, A, BA, V, BM, M) e símbolos ✔/✖ junto do verde e do vermelho.', 'daltonismo');
+
+        secaoTitulo(p, 'AUDIÇÃO', '👂');
+        interruptor(p, 'Legendas de sons', 'Mostra no canto da tela o que soou: martelada, conector encaixando, erro, missão concluída…', 'legendas', {
+          aoMudar: function (on) { if (on) S.legenda('legendas de sons ligadas'); }
+        });
+
+        secaoTitulo(p, 'VISÃO', '👁');
+        escolha(p, 'Tamanho do texto', 'Vale para missões, janelas, falas e avisos.', 'texto', [
+          { rotulo: 'Normal', valor: 1, tam: '14px' },
+          { rotulo: 'Grande', valor: 1.2, tam: '16px' },
+          { rotulo: 'Muito grande', valor: 1.35, tam: '18px' }
+        ]);
+        interruptor(p, 'Contorno forte nos objetos', 'Borda laranja grossa no objeto sob o mouse e no objeto mais próximo que você pode usar.', 'contorno');
+        var semVoz = !S.voz.lerDisponivel || !S.voz.lerDisponivel();
+        interruptor(p, 'Ler as falas em voz alta', 'Os personagens e as novas missões são lidos com a voz do próprio aparelho (no lugar das vozes do jogo).', 'lerVoz', {
+          desabilitado: semVoz,
+          aviso: semVoz ? 'Este navegador não tem leitura em voz alta.' : (S.voz.temVozPt && !S.voz.temVozPt() ? 'Se não houver voz em português instalada no aparelho, ele usa a voz padrão.' : null),
+          aoMudar: function (on) { if (on) S.voz.ler('prof', 'Leitura em voz alta ligada.'); }
+        });
+
+        secaoTitulo(p, 'COORDENAÇÃO MOTORA', '✋');
+        interruptor(p, 'Martelo assistido', 'No minigame do martelo, o marcador anda mais devagar e a faixa verde fica maior.', 'marteloAssistido');
+        interruptor(p, 'Botões maiores', 'Joystick, botão USAR e botões das janelas maiores (melhor para tocar no celular).', 'botoesGrandes');
+        interruptor(p, 'Joystick do lado direito', 'Troca de lado o joystick e o botão USAR (para canhotos).', 'joystickDireita');
+        S.el('div', { fontSize: '12px', color: C.cinza, lineHeight: '1.45', marginTop: '8px' },
+          '⌨ Os menus e as janelas também funcionam só pelo teclado: Tab para passar de um botão para outro, Enter ou Espaço para escolher e Esc para fechar.', p);
+      }
+
+      var rod = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }, null, t.cartao);
+      S.ui.botao('Restaurar padrão', 'secundario', function () {
+        for (var k in S.CFG_PADRAO) S.cfg[k] = S.CFG_PADRAO[k];
+        S.salvarConfig();
+        S.aplicarConfig();
+        desenhar();
+      }, rod);
+      var bOk = S.ui.botao('Pronto ✔', 'primario', fechar, rod);
+      bOk.style.flex = '1 1 160px';
+
+      function tecla(e) {
+        if (!t.fundo.isConnected) {
+          window.removeEventListener('keydown', tecla, true);
+          return;
+        }
+        if ((e.key || '').toLowerCase() === 'escape') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          fechar();
+        }
+      }
+      window.addEventListener('keydown', tecla, true);
+
+      function fechar() {
+        window.removeEventListener('keydown', tecla, true);
+        t.fechar();
+        telaCfg = null;
+        if (emCena) S.retomarRelogio();
+        if (S.fase === 'jogo') {
+          // Volta ao jogo só se nada mais (pausa, janela) estiver aberto.
+          S.pausado = !!(S.ui.modalAberto() || (S.telaPausa && S.telaPausa.fundo.isConnected));
+          if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+        }
+        atualizarEngrenagem();
+        try { S.raiz.focus({ preventScroll: true }); } catch (e) { /* ignora */ }
+      }
+
+      desenhar();
+      setTimeout(function () { try { botoesAba[aba].focus({ preventScroll: true }); } catch (e) { /* ignora */ } }, 30);
+      return { fechar: fechar };
+    };
+    S.ui.configAberta = function () { return !!telaCfg; };
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes"];
   var painel = null;
   var timer = null;
   var gpu = null;
