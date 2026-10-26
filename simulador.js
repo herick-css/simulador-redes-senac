@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.6.0',
+    versao: '3.6.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -5073,6 +5073,31 @@
       return MG.marcarFio(S.el('div', MG.fio(f, largura, altura), null, pai), f, pequena);
     };
 
+    // Entrada fêmea RJ45/RJ11 vista de frente: abertura com o rebaixo da
+    // trava embaixo e os contatos dourados em cima. A RJ11 é igual, só que
+    // menor e com 4 contatos (a RJ45 tem 8).
+    MG.portaRJ = function (pai, tipo, escala) {
+      var rj11 = tipo === 'rj11';
+      var k = escala || 1;
+      var w = Math.round((rj11 ? 19 : 28) * k);
+      var h = Math.round((rj11 ? 15 : 21) * k);
+      var moldura = S.el('div', {
+        position: 'relative', width: (w + 8) + 'px', height: (h + 8) + 'px', background: '#C9D2DC', borderRadius: '3px',
+        margin: '0 auto', padding: '4px', boxSizing: 'border-box', flex: '0 0 auto', pointerEvents: 'none'
+      }, null, pai);
+      var furo = S.el('div', {
+        position: 'relative', width: w + 'px', height: h + 'px', background: '#0A0C0F',
+        clipPath: 'polygon(0 0, 100% 0, 100% 70%, 69% 70%, 69% 100%, 31% 100%, 31% 70%, 0 70%)'
+      }, null, moldura);
+      var n = rj11 ? 4 : 8;
+      var pentes = S.el('div', {
+        position: 'absolute', top: '2px', left: rj11 ? '24%' : '12%', right: rj11 ? '24%' : '12%', height: '38%',
+        display: 'flex', justifyContent: 'space-between'
+      }, null, furo);
+      for (var i = 0; i < n; i++) S.el('div', { width: Math.max(1, Math.round(1.5 * k)) + 'px', height: '100%', background: '#E2B53C' }, null, pentes);
+      return moldura;
+    };
+
     MG.mensagem = function (pai) {
       var el = S.el('div', {
         minHeight: '20px',
@@ -5143,17 +5168,193 @@
       var m = S.ui.abrirModal('Crimpagem · cabo ' + (S.jogo.cabosCrimpados + 1) + ' de 3', { largura: '780px' });
       var corpo = m.corpo;
 
-      // Etapa 1: cortar e descascar.
+      var ap = S.ui.compacto();
+      var J = S.jogo;
+      // Pares do cabo UTP (cada par trançado: branco-x com x).
+      var PARES = [['bl', 'l'], ['bv', 'v'], ['ba', 'a'], ['bm', 'm']];
+      function fio(id) { return S.T568B.filter(function (f) { return f.id === id; })[0]; }
+      function fundoFio(f, vertical) {
+        return f.listrado
+          ? 'repeating-linear-gradient(' + (vertical ? '0deg' : '90deg') + ', #F4F4F4 0px, #F4F4F4 5px, ' + f.cor + ' 5px, ' + f.cor + ' 9px)'
+          : f.cor;
+      }
+
+      // ---- Etapa 1: cortar da bobina e decapar exatamente 2 cm -----------
+      // A régua fica em cima do cabo, com o zero na ponta. O aluno toca onde
+      // quer cortar a capa (de meio em meio centímetro) e aperta "Decapar".
+      var PONTA = 94; // % da largura onde fica a ponta do cabo
+      var POR_CM = 12; // % da largura por centímetro (a régua mede 5 cm)
+      var CERTO = 2;
+      function xCm(cm) { return PONTA - cm * POR_CM; }
+      function fmtCm(cm) { return String(cm).replace('.', ',') + ' cm'; }
+
       var etapa1 = S.el('div', null, null, corpo);
-      S.el('div', { fontSize: '15px', marginBottom: '12px' }, '1) Corte o cabo UTP da bobina e descasque a capa externa (uns 2 cm).', etapa1);
-      var cabo = S.el('div', { display: 'flex', alignItems: 'center', margin: '18px 0' }, null, etapa1);
-      S.el('div', { flex: '1', height: '22px', background: '#2D7FE0', border: '3px solid #071430', borderRadius: '6px 0 0 6px' }, null, cabo);
-      S.el('div', { fontSize: '26px', margin: '0 8px' }, '✂', cabo);
-      S.ui.botao('✂ Cortar e descascar', 'primario', function () {
+      var instr = S.el('div', { fontSize: '15px', marginBottom: '4px' }, '1) Corte o cabo UTP da bobina.', etapa1);
+      var sub = S.el('div', { fontSize: '12px', color: C.cinza, marginBottom: '8px' }, 'A bobina fica à direita. Use o alicate para cortar um pedaço do cabo.', etapa1);
+      var altA = ap ? 104 : 124;
+      var area = S.el('div', {
+        position: 'relative', height: altA + 'px', margin: '4px 0 2px', touchAction: 'none', userSelect: 'none',
+        background: '#0F1C30', border: '3px solid #071430', borderRadius: '8px', overflow: 'hidden'
+      }, null, etapa1);
+      var yCabo = ap ? 58 : 70;
+      var altCabo = ap ? 24 : 28;
+      // Fios expostos (escondidos sob a capa até decapar).
+      var expostos = S.el('div', { position: 'absolute', left: xCm(CERTO) + '%', width: (PONTA - xCm(CERTO)) + '%', top: yCabo + 'px', height: altCabo + 'px', visibility: 'hidden' }, null, area);
+      // Capa azul do cabo (vai até a borda: ainda está preso à bobina).
+      var capa = S.el('div', {
+        position: 'absolute', left: '0', width: '100%', top: yCabo + 'px', height: altCabo + 'px',
+        background: 'linear-gradient(#5BA2F0, #2D7FE0 45%, #1D5FB0)', borderTop: '3px solid #071430', borderBottom: '3px solid #071430',
+        boxSizing: 'border-box', transition: 'width .35s ease'
+      }, null, area);
+      var bobina = S.el('div', {
+        position: 'absolute', right: '-26px', top: (yCabo - 30) + 'px', width: '60px', height: (altCabo + 60) + 'px',
+        background: 'repeating-linear-gradient(0deg, #2D7FE0 0px, #2D7FE0 5px, #1D5FB0 5px, #1D5FB0 8px)', border: '3px solid #071430',
+        borderRadius: '10px', transition: 'transform .5s ease, opacity .5s ease'
+      }, null, area);
+      // Régua (0 na ponta, 5 cm para a esquerda).
+      var regua = S.el('div', {
+        position: 'absolute', left: xCm(5) + '%', width: (5 * POR_CM) + '%', top: '6px', height: (ap ? 34 : 40) + 'px',
+        background: '#F2D88A', border: '2px solid #071430', borderRadius: '4px', boxSizing: 'border-box', display: 'none', cursor: 'pointer'
+      }, null, area);
+      for (var t = 0; t <= 10; t++) {
+        var cm = t / 2;
+        var inteiro = t % 2 === 0;
+        S.el('div', {
+          position: 'absolute', left: ((5 - cm) / 5 * 100) + '%', top: '0', width: '2px', marginLeft: '-1px',
+          height: inteiro ? '45%' : '26%', background: '#3A2A08'
+        }, null, regua);
+        if (inteiro) {
+          S.el('div', {
+            position: 'absolute', left: ((5 - cm) / 5 * 100) + '%', bottom: '1px',
+            transform: cm === 5 ? 'translateX(3px)' : cm === 0 ? 'translateX(calc(-100% - 3px))' : 'translateX(-50%)',
+            fontSize: '11px', fontWeight: '700', color: '#3A2A08'
+          }, String(cm), regua);
+        }
+      }
+      S.el('div', { position: 'absolute', left: '-30px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', fontWeight: '700', color: '#F2D88A' }, 'cm', regua);
+      // Marca de onde cortar.
+      var marca = S.el('div', {
+        position: 'absolute', top: '4px', bottom: '4px', width: '0', borderLeft: '3px dashed ' + C.laranja, display: 'none', pointerEvents: 'none'
+      }, null, area);
+      var etiq = S.el('div', {
+        position: 'absolute', top: (yCabo + altCabo + 6) + 'px', transform: 'translateX(-50%)', background: C.laranja, color: '#10203A',
+        fontSize: '12px', fontWeight: '700', padding: '1px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'none', pointerEvents: 'none'
+      }, '', area);
+      var msg1 = MG.mensagem(etapa1);
+      var acoes1 = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }, null, etapa1);
+      var marcado = null;
+      var fase1 = 'cortar';
+
+      var bCortar = S.ui.botao('✂ Cortar da bobina', 'primario', function () {
+        if (fase1 !== 'cortar') return;
+        fase1 = 'medir';
         S.som('corte');
-        etapa1.remove();
-        montarEtapa2();
-      }, etapa1);
+        capa.style.width = PONTA + '%';
+        capa.style.borderRight = '3px solid #071430';
+        bobina.style.transform = 'translateX(70px)';
+        bobina.style.opacity = '0';
+        bCortar.remove();
+        regua.style.display = 'block';
+        instr.textContent = '1) Decape a capa externa: exatamente 2 cm, nem mais nem menos.';
+        sub.textContent = 'Toque na régua (ou no cabo) para marcar onde cortar a capa. Depois aperte "Decapar".';
+        bDecapar.style.display = '';
+        area.style.cursor = 'crosshair';
+      }, acoes1);
+      var bDecapar = S.ui.botao('✂ Decapar aqui', 'primario', decapar, acoes1);
+      bDecapar.style.display = 'none';
+      bDecapar.disabled = true;
+      bDecapar.style.opacity = '0.5';
+
+      function marcar(cm) {
+        if (fase1 !== 'medir') return;
+        cm = Math.max(0.5, Math.min(5, Math.round(cm * 2) / 2));
+        marcado = cm;
+        marca.style.left = xCm(cm) + '%';
+        marca.style.display = 'block';
+        etiq.style.left = xCm(cm) + '%';
+        etiq.textContent = fmtCm(cm);
+        etiq.style.display = 'block';
+        bDecapar.disabled = false;
+        bDecapar.style.opacity = '1';
+        bDecapar.textContent = '✂ Decapar ' + fmtCm(cm);
+        msg1('', 'info');
+        S.som('fio');
+      }
+      area.addEventListener('pointerdown', S.protegido('crimp:medir', function (e) {
+        if (fase1 !== 'medir') return;
+        var r = area.getBoundingClientRect();
+        var pct = (e.clientX - r.left) / r.width * 100;
+        marcar((PONTA - pct) / POR_CM);
+      }));
+
+      function decapar() {
+        if (fase1 !== 'medir' || marcado === null) return;
+        if (marcado !== CERTO) {
+          J.erros++;
+          msg1(marcado < CERTO
+            ? '✖ Com ' + fmtCm(marcado) + ' os fios ficam curtos: não chegam até os contatos do conector. Decape 2 cm.'
+            : '✖ Com ' + fmtCm(marcado) + ' sobra fio sem capa fora do conector: o cabo fica frouxo e pega interferência. Decape 2 cm.', 'erro');
+          return;
+        }
+        fase1 = 'animando';
+        S.som('decapar');
+        bDecapar.remove();
+        marca.style.display = 'none';
+        etiq.style.display = 'none';
+        regua.style.opacity = '0.35';
+        // A capa encolhe até a marca; o pedaço cortado sai deslizando.
+        var solta = S.el('div', {
+          position: 'absolute', left: xCm(CERTO) + '%', width: (PONTA - xCm(CERTO)) + '%', top: yCabo + 'px', height: altCabo + 'px',
+          background: 'linear-gradient(#5BA2F0, #2D7FE0 45%, #1D5FB0)', border: '3px solid #071430', boxSizing: 'border-box',
+          borderRadius: '2px', transition: 'transform .7s ease-in, opacity .7s ease-in', zIndex: '2'
+        }, null, area);
+        capa.style.transition = 'none';
+        capa.style.width = xCm(CERTO) + '%';
+        // Os 4 pares trançados aparecem por baixo.
+        expostos.style.visibility = 'visible';
+        var alturaPar = altCabo / 4;
+        var fios = [];
+        PARES.forEach(function (par, k) {
+          par.forEach(function (id, j) {
+            var f = fio(id);
+            var el = S.el('div', {
+              position: 'absolute', left: '0', width: '100%', top: (k * alturaPar + j * alturaPar / 2) + 'px', height: (alturaPar / 2 + 0.5) + 'px',
+              background: j === 0 ? 'repeating-linear-gradient(115deg, #F4F4F4 0px, #F4F4F4 5px, ' + f.cor + ' 5px, ' + f.cor + ' 10px)'
+                : 'repeating-linear-gradient(115deg, ' + f.cor + ' 0px, ' + f.cor + ' 5px, #F4F4F4 5px, #F4F4F4 10px)',
+              borderRadius: '0 3px 3px 0', transition: 'top .7s ease, height .7s ease, width .7s ease, background .3s ease', boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.35)'
+            }, null, expostos);
+            fios.push({ el: el, f: f });
+          });
+        });
+        requestAnimationFrame(function () {
+          solta.style.transform = 'translate(120px, -6px) rotate(8deg)';
+          solta.style.opacity = '0';
+        });
+        msg1('Capa cortada e puxada: 2 cm de fios à mostra. Agora destrance os pares…', 'ok');
+        // Transição: os pares se destrançam e os 8 fios se abrem em leque.
+        setTimeout(function () {
+          if (!m.fundo.isConnected) return;
+          solta.remove();
+          S.som('fio');
+          var passo = ap ? 7 : 8;
+          var topo0 = altCabo / 2 - passo * 3.5;
+          fios.forEach(function (x, i) {
+            x.el.style.background = fundoFio(x.f, false);
+            x.el.style.top = (topo0 + i * passo) + 'px';
+            x.el.style.height = (passo - 2) + 'px';
+            x.el.style.width = '112%';
+            x.el.style.border = '1px solid #071430';
+            x.el.style.boxSizing = 'border-box';
+          });
+          msg1('✔ Pares destrançados: os 8 fios estão separados.', 'ok');
+          var bSeguir = S.ui.botao('Organizar os fios ▶', 'primario', function () {
+            etapa1.remove();
+            montarEtapa2();
+          }, acoes1);
+          bSeguir.focus({ preventScroll: true });
+        }, 900);
+      }
+      MG.crimpAtual = { marcar: marcar };
 
       function montarEtapa2() {
         var cp = S.ui.compacto();
@@ -5225,7 +5426,7 @@
           });
           desenhar();
         }, acoes);
-        var bCrimpar = S.ui.botao('Crimpar ✔', 'primario', crimpar, acoes);
+        var bCrimpar = S.ui.botao('Conferir a ordem ✔', 'primario', crimpar, acoes);
 
         function mostrarRef(contarDica) {
           if (refMostrada) return;
@@ -5302,17 +5503,144 @@
             if (tentativas >= 2) mostrarRef(false);
             return;
           }
-          S.som('crimpar');
-          msg('Clique! Conector crimpado. A outra ponta foi feita igual (cabo direto).', 'ok');
+          msg('✔ Ordem T-568B certa nas duas pontas!', 'ok');
           acoes.textContent = '';
           if (refBox) refBox.remove();
-          S.ui.botao('Pegar o cabo ▶', 'primario', function () {
-            m.fechar(true);
-            aoConcluir();
+          var bSeguir = S.ui.botao('Colocar os conectores RJ45 ▶', 'primario', function () {
+            corpo.textContent = '';
+            montarEtapa3();
           }, acoes);
+          bSeguir.focus({ preventScroll: true });
         }
 
         desenhar();
+      }
+
+      // ---- Etapa 3: conector RJ45 nas duas pontas e crimpar -------------
+      function montarEtapa3() {
+        var cp = S.ui.compacto();
+        S.el('div', { fontSize: '15px', marginBottom: '4px' }, '3) Coloque um conector RJ45 em cada ponta do cabo e crimpe.', corpo);
+        S.el('div', { fontSize: '12px', color: C.cinza, marginBottom: '8px' }, 'Toque no conector RJ45 na bandeja e depois em cada ponta do cabo (A e B).', corpo);
+        var linha = S.el('div', {
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0', background: '#0F1C30',
+          border: '3px solid #071430', borderRadius: '8px', padding: cp ? '10px 6px' : '16px 10px'
+        }, null, corpo);
+        var conectores = 2;
+        var naMao = false;
+        var pontas = {};
+        function ponta(id, esquerda) {
+          var b = S.el('button', {
+            position: 'relative', width: cp ? '76px' : '92px', height: cp ? '62px' : '74px', background: 'transparent',
+            border: '2px dashed #4A5D7A', borderRadius: '8px', cursor: 'pointer', padding: '0', flex: '0 0 auto', touchAction: 'manipulation'
+          }, null, linha);
+          b.type = 'button';
+          b.setAttribute('aria-label', 'Ponta ' + id);
+          b.setAttribute('data-som', 'nao');
+          // Fios em leque saindo do cabo (pino 1 em cima).
+          var leque = S.el('div', {
+            position: 'absolute', top: '46%', transform: 'translateY(-50%)', width: '80%', display: 'flex', flexDirection: 'column', gap: '1px'
+          }, null, b);
+          leque.style[esquerda ? 'right' : 'left'] = '0';
+          S.T568B.forEach(function (f) {
+            S.el('div', { height: cp ? '3px' : '4px', background: fundoFio(f, false), border: '1px solid #071430', borderRadius: esquerda ? '3px 0 0 3px' : '0 3px 3px 0' }, null, leque);
+          });
+          S.el('div', {
+            position: 'absolute', bottom: '-2px', left: '0', right: '0', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: C.cinza
+          }, 'Ponta ' + id, b);
+          var plug = desenharPlugue(b, esquerda, false, cp);
+          plug.style.opacity = '0';
+          plug.style.transform = 'translate(' + (esquerda ? '-30px' : '30px') + ', -50%)';
+          b.addEventListener('click', S.protegido('crimp:ponta', function () { colocar(id); }));
+          pontas[id] = { b: b, plug: plug, ok: false };
+        }
+        ponta('A', true);
+        S.el('div', { flex: '1 1 auto', maxWidth: '360px', height: cp ? '18px' : '22px', background: 'linear-gradient(#5BA2F0, #2D7FE0 45%, #1D5FB0)', borderTop: '3px solid #071430', borderBottom: '3px solid #071430' }, null, linha);
+        ponta('B', false);
+
+        var bandeja = S.el('div', { display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }, null, corpo);
+        var bConector = S.el('button', {
+          display: 'flex', alignItems: 'center', gap: '8px', background: '#071733', border: '3px solid ' + C.borda, borderRadius: '8px',
+          padding: '6px 12px', color: C.branco, fontWeight: '700', fontSize: '13px', cursor: 'pointer', touchAction: 'manipulation'
+        }, null, bandeja);
+        bConector.type = 'button';
+        bConector.setAttribute('aria-label', 'Conector RJ45');
+        var icone = S.el('div', { position: 'relative', width: '34px', height: '30px' }, null, bConector);
+        var ic = desenharPlugue(icone, false, true, false);
+        ic.style.left = '2px';
+        var rotConector = S.el('span', null, 'Conector RJ45 ×2', bConector);
+        bConector.addEventListener('click', function () {
+          if (!conectores) return msg('Os dois conectores já estão no cabo.', 'info');
+          naMao = !naMao;
+          bConector.style.borderColor = naMao ? C.laranja : C.borda;
+          bConector.style.background = naMao ? '#3A2A08' : '#071733';
+          msg(naMao ? 'Conector RJ45 na mão: toque numa ponta do cabo.' : '', 'info');
+        });
+        var msg = MG.mensagem(corpo);
+        var acoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }, null, corpo);
+
+        function colocar(id) {
+          var p = pontas[id];
+          if (p.ok) return msg('A ponta ' + id + ' já tem conector.', 'info');
+          if (!naMao) return msg('Primeiro pegue o conector RJ45 na bandeja.', 'info');
+          p.ok = true;
+          conectores--;
+          S.som('plugue');
+          p.plug.style.opacity = '1';
+          p.plug.style.transform = 'translate(0, -50%)';
+          p.b.style.borderStyle = 'solid';
+          p.b.style.borderColor = '#1E8E3E';
+          rotConector.textContent = 'Conector RJ45 ×' + conectores;
+          if (!conectores) {
+            naMao = false;
+            bConector.disabled = true;
+            bConector.style.opacity = '0.45';
+            bConector.style.borderColor = C.borda;
+            bConector.style.background = '#071733';
+            msg('✔ Conectores nas duas pontas. Agora crimpe!', 'ok');
+            var bCrimp = S.ui.botao('Crimpar as duas pontas ✔', 'primario', function () {
+              bCrimp.remove();
+              S.som('crimpar');
+              setTimeout(function () { S.som('crimpar'); }, 450);
+              ['A', 'B'].forEach(function (k) { pontas[k].plug.style.filter = 'brightness(0.92)'; });
+              msg('Clique! As duas pontas crimpadas: cabo direto T-568B pronto.', 'ok');
+              var bPegar = S.ui.botao('Pegar o cabo ▶', 'primario', function () {
+                m.fechar(true);
+                aoConcluir();
+              }, acoes);
+              bPegar.focus({ preventScroll: true });
+            }, acoes);
+            bCrimp.focus({ preventScroll: true });
+          } else {
+            msg('Conector na ponta ' + id + '. Falta a ponta ' + (id === 'A' ? 'B' : 'A') + '.', 'ok');
+          }
+        }
+      }
+
+      // Conector RJ45 macho: corpo transparente, contatos dourados e a trava.
+      // pequeno: ícone da bandeja; senão cobre a ponta dos fios (fica
+      // transparente, como o conector de verdade, e os fios aparecem dentro).
+      function desenharPlugue(pai, esquerda, pequeno, compacto) {
+        var w = pequeno ? 26 : compacto ? 40 : 48;
+        var h = pequeno ? 24 : compacto ? 40 : 50;
+        var p = S.el('div', {
+          position: 'absolute', top: '50%', width: w + 'px', height: h + 'px', transition: 'transform .35s ease, opacity .35s ease',
+          pointerEvents: 'none'
+        }, null, pai);
+        p.style[esquerda ? 'left' : 'right'] = '2px';
+        p.style.top = pequeno ? '50%' : '46%';
+        S.el('div', {
+          position: 'absolute', top: '0', bottom: '0', width: '86%', background: pequeno ? 'rgba(225,238,255,0.92)' : 'rgba(225,238,255,0.5)', border: '2px solid #8FA3BC',
+          borderRadius: esquerda ? '3px 1px 1px 3px' : '1px 3px 3px 1px', boxSizing: 'border-box'
+        }, null, p).style[esquerda ? 'left' : 'right'] = '0';
+        var cont = S.el('div', {
+          position: 'absolute', top: '3px', bottom: '3px', width: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
+        }, null, p);
+        cont.style[esquerda ? 'left' : 'right'] = '3px';
+        for (var i = 0; i < 8; i++) S.el('div', { height: '1.5px', background: '#D9A21B' }, null, cont);
+        // Trava (clip) do lado de cima.
+        var trava = S.el('div', { position: 'absolute', top: '-4px', width: '45%', height: '5px', background: 'rgba(225,238,255,0.92)', border: '2px solid #8FA3BC', borderBottom: 'none', boxSizing: 'border-box' }, null, p);
+        trava.style[esquerda ? 'left' : 'right'] = '20%';
+        return p;
       }
     };
   });
@@ -5453,7 +5781,7 @@
         { nome: 'USB', forma: { width: '30px', height: '12px', background: '#1d5fbf', border: '3px solid #ccc' }, dica: 'USB é para teclado, mouse e pendrive.' },
         { nome: 'VGA', forma: { width: '44px', height: '18px', background: '#2a4fb0', borderRadius: '0 0 8px 8px', border: '3px solid #ccc' }, dica: 'VGA é saída de vídeo para monitor.' },
         { nome: 'HDMI', forma: { width: '38px', height: '14px', background: '#000', borderRadius: '0 0 6px 6px', border: '3px solid #ccc' }, dica: 'HDMI é saída de vídeo e áudio.' },
-        { nome: 'Rede (RJ45)', forma: { width: '30px', height: '26px', background: '#000', border: '3px solid #ccc', borderRadius: '2px' }, certa: true },
+        { nome: 'Rede (RJ45)', rj: 'rj45', certa: true },
         { nome: 'Áudio', forma: { width: '18px', height: '18px', background: '#5cb85c', borderRadius: '50%', border: '3px solid #ccc' }, dica: 'Essa é a saída de som (fone/caixa).' },
         { nome: 'Serial', forma: { width: '44px', height: '16px', background: '#7a7f88', borderRadius: '0 0 8px 8px', border: '3px solid #ccc' }, dica: 'Porta serial (antiga, para equipamentos legados).' }
       ];
@@ -5475,8 +5803,8 @@
           touchAction: 'manipulation'
         }, null, painel);
         b.type = 'button';
-        var f = S.el('div', p.forma, null, b);
-        f.style.boxSizing = 'border-box';
+        if (p.rj) MG.portaRJ(b, p.rj, 1);
+        else S.el('div', p.forma, null, b).style.boxSizing = 'border-box';
         S.el('div', null, p.nome, b);
         b.addEventListener('click', S.protegido('porta-pc', function () {
           if (p.certa) {
@@ -8766,6 +9094,9 @@
         tampaPiv.add(orelha);
       });
       // "Cérebro" que brilha quando ele abre a cachola.
+      // Coleira laranja com a plaquinha do nome.
+      S.caixa(0.2, 0.03, 0.16, mat(C.laranja), 0, -0.065, -0.005, cab, true);
+      S.caixa(0.035, 0.035, 0.012, mat(0xf2c200), 0, -0.09, 0.08, cab, true);
       var cerebro = S.caixa(0.12, 0.05, 0.1, S.matUnico(0xff8fb3, { emissive: 0xff5c95, emissiveIntensity: 0.9 }), 0, 0.055, 0, cab, true);
       cerebro.visible = false;
       // Olhos verdes (fechados = risquinho escuro).
@@ -9046,9 +9377,16 @@
       prof: { pos: [2.3, 2.35, 4.45], alvo: [5.1, 1.45, 3.2] }
     };
 
+    // O professor já saiu da sala (ou está saindo)?
+    function semProfessor() {
+      var pr = S.professor;
+      return !pr || pr.foi || !!pr.caminho;
+    }
+
     function cenaApresentacao() {
       c.conversou = true;
       var fato = FATOS[Math.floor(Math.random() * FATOS.length)];
+      if (semProfessor()) return cenaSozinho(fato);
       S.cenaCurta({
         tomadas: TOMADAS,
         posAluno: MARCA_ALUNO,
@@ -9075,6 +9413,31 @@
       });
     }
 
+    // Sem o Herick na sala: o aluno descobre o gato sozinho.
+    function cenaSozinho(fato) {
+      S.cenaCurta({
+        tomadas: TOMADAS,
+        posAluno: MARCA_ALUNO,
+        falas: [
+          { quem: 'aluno', tomada: 'alunoGato', texto: 'Um gato? Aqui na coleira diz que o nome dele é Cachola...' },
+          { quem: 'cachola', tomada: 'gato', texto: '!!', acao: function () {
+            c.estado = 'sentado';
+            definirOlhos(true);
+          } },
+          { quem: 'cachola', tomada: 'gato', texto: fato, acao: function () { c.estado = 'falando'; } },
+          { quem: 'cachola', tomada: 'gato', texto: 'Zzz...', acao: function () {
+            c.estado = 'dormindo';
+            definirOlhos(false);
+          } },
+          { quem: 'aluno', tomada: 'alunoGato', texto: 'Acho que entendi por que o nome dele é Cachola....' }
+        ],
+        aoPular: function () {
+          c.estado = 'dormindo';
+          definirOlhos(false);
+        }
+      });
+    }
+
     function cenaVaiEmbora() {
       S.cenaCurta({
         tomadas: TOMADAS,
@@ -9090,7 +9453,7 @@
         },
         aoPular: sumir,
         aoFim: function () {
-          if (S.reacaoProfessor) S.reacaoProfessor('Vacilo com o Cachola, hein...');
+          if (S.reacaoProfessor && !semProfessor()) S.reacaoProfessor('Vacilo com o Cachola, hein...');
         }
       });
     }
@@ -10571,7 +10934,8 @@
       }, null, espelho);
       ks.type = 'button';
       ks.setAttribute('aria-label', 'Encaixar na keystone');
-      S.el('div', { width: '18px', height: '12px', margin: '6px auto 0', background: '#0A0C0F', borderRadius: '2px' }, null, ks);
+      var furoKs = MG.portaRJ(ks, 'rj45', 0.62);
+      S.estilo(furoKs, { marginTop: '5px', background: '#2D7FE0', padding: '2px', width: 'auto', height: 'auto', display: 'inline-block' });
       // Ponta RJ45 do patch cord (amarelo), esperando para entrar.
       var plugue = S.el('div', {
         position: 'absolute', left: '80px', top: ap ? '84px' : '100px', width: '26px', height: '30px',
@@ -10610,10 +10974,8 @@
       function desenho(b, id) {
         var d = function (estilo) { return S.el('div', estilo, null, b); };
         var base = { margin: '0 auto', boxSizing: 'border-box' };
-        if (id === 'rj45') {
-          d(Object.assign({ width: '30px', height: '26px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '2px', position: 'relative' }, base));
-        } else if (id === 'rj11') {
-          d(Object.assign({ width: '20px', height: '17px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '2px' }, base));
+        if (id === 'rj45' || id === 'rj11') {
+          MG.portaRJ(b, id, 1);
         } else if (id === 'usb' || id === 'usb2') {
           d(Object.assign({ width: '30px', height: '12px', background: '#0A0C0F', border: '3px solid #C9D2DC', borderRadius: '1px', borderBottomWidth: '6px', borderBottomColor: '#2D7FE0' }, base));
         } else if (id === 'hdmi') {
@@ -11111,6 +11473,17 @@
             tom({ t: t, f: 3400, f2: 2200, dur: 0.05, vol: 0.06, tipo: 'square', filtro: 'bandpass', ff: 3000, q: 2 });
           });
           ruido({ t: 0.34, dur: 0.22, vol: 0.16, filtro: 'bandpass', ff: 1400, ff2: 3200, q: 1.2, ataque: 0.05 });
+        }
+      },
+      // Capa do cabo sendo cortada em volta e puxada.
+      decapar: {
+        g: 2.4,
+        min: 0.3,
+        legenda: 'capa do cabo sendo puxada',
+        tocar: function () {
+          ruido({ dur: 0.06, vol: 0.3, filtro: 'bandpass', ff: 4800, q: 3 });
+          ruido({ t: 0.08, dur: 0.38, vol: 0.14, filtro: 'bandpass', ff: 700, ff2: 2600, q: 1.4, ataque: 0.12 });
+          tom({ t: 0.1, f: 260, f2: 520, dur: 0.32, vol: 0.03, tipo: 'triangle', ataque: 0.1 });
         }
       },
       // Alicate de crimpar: catraca + o estalo final do conector.
@@ -11806,6 +12179,9 @@
       if (!info || !info.meshes) return;
       info.meshes.forEach(function (m) {
         if (!m || !m.isMesh || !m.geometry) return;
+        // Áreas de clique invisíveis (ex.: a caixa em volta do gato) não ganham borda.
+        var mats = Array.isArray(m.material) ? m.material : [m.material];
+        if (!m.visible || mats.every(function (x) { return !x || x.visible === false || x.opacity === 0; })) return;
         var c = m.userData.contorno;
         if (!c && ligado) {
           if (!matContorno) matContorno = new THREE.MeshBasicMaterial({ color: COR_FORTE, side: THREE.BackSide });
@@ -11816,7 +12192,7 @@
           var sz = bb.max.z - bb.min.z;
           var esc = m.getWorldScale ? m.getWorldScale(new THREE.Vector3()) : { x: 1, y: 1, z: 1 };
           // Borda de ~3 cm em volta de cada peça, qualquer que seja o tamanho.
-          function f(tam, e) { return Math.min(1.6, 1 + 0.06 / Math.max(0.02, tam * Math.abs(e || 1))); }
+          function f(tam, e) { return Math.min(1.35, 1 + 0.06 / Math.max(0.04, tam * Math.abs(e || 1))); }
           c = new THREE.Mesh(m.geometry, matContorno);
           c.scale.set(f(sx, esc.x), f(sy, esc.y), f(sz, esc.z));
           c.position.set((bb.max.x + bb.min.x) / 2 * (1 - c.scale.x), (bb.max.y + bb.min.y) / 2 * (1 - c.scale.y), (bb.max.z + bb.min.z) / 2 * (1 - c.scale.z));
