@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.6.1',
+    versao: '3.8.0,
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
