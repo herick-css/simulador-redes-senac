@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.9.1',
+    versao: '3.10.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -7307,6 +7307,7 @@
         etapa: 'dialogo',
         virarAluno: false,
         manterGesto: !!cfg.manterGesto,
+        vozReal: !!cfg.vozReal, // lê as falas em voz alta mesmo com a leitura desligada
         tempo: 0,
         alvoAtual: S.camera.position.clone().add(dirAlvo.multiplyScalar(4)),
         ui: montarUi()
@@ -12044,7 +12045,7 @@
       estado.vozUlt = 0;
       estado.vozLida = false;
       pararBlips();
-      if (S.cfg.lerVoz && S.cfg.volFalas > 0) estado.vozLida = ler(quem, texto);
+      if ((S.cfg.lerVoz || estado.vozReal) && S.cfg.volFalas > 0) estado.vozLida = ler(quem, texto);
       else if (tts) { try { tts.cancel(); } catch (e) { /* ignora */ } }
     };
     // Chamado a cada quadro com quantas letras já apareceram. Os bipes são
@@ -15828,8 +15829,201 @@
       if (S.cfg.lerVoz && S.voz && S.voz.ler) S.voz.ler('prof', texto);
     }
 
-    // ---- Janela 1: "Não sei o que fazer" → explicação detalhada ----------
+    // ---- Ajuda da missão: ligar a dica do HUD e a seta laranja ------------
+    // Explicar conta como dica (igual ao sistema de dicas do jogo).
+    // Objeto que a missão quer que o aluno use agora (o mesmo da seta).
+    function alvoDe(m) {
+      try {
+        var a = m && m.alvos ? m.alvos() : [];
+        return a.length ? S.mundo.objetos[a[0]] || null : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function aplicarDica(m) {
+      if (!m) return;
+      if (J.nivelDica < 2) {
+        J.nivelDica = 2;
+        J.dicas++;
+      }
+      S.ui.definirDica(m.dica2 || m.dica1);
+      var info = alvoDe(m);
+      if (info) S.mundo.apontar(info);
+    }
+
+    // ---- Câmeras da explicação --------------------------------------------
+    // Close no professor, de frente-lado (ele fica sempre no mesmo canto).
+    var TOMADAS_PROF = {
+      profPerto: { pos: [4.25, 1.8, 4.55], alvo: [5.2, 1.5, 3.3] },
+      profLado: { pos: [4.0, 2.25, 1.75], alvo: [5.15, 1.35, 3.35] }
+    };
+    var ONDE_ALUNO = { x: 3.45, z: 3.3, angulo: Math.PI / 2 }; // de frente para o professor
+
+    function limitar(v) {
+      v.x = Math.max(-5.8, Math.min(5.8, v.x));
+      v.y = Math.max(0.7, Math.min(2.8, v.y));
+      v.z = Math.max(-4.3, Math.min(9, v.z));
+      return v;
+    }
+
+    // Três enquadramentos do objeto da missão: aberto (mostra onde fica),
+    // perto (mostra o detalhe) e lateral (outro ângulo, para variar o corte).
+    // A câmera fica do lado em que o aluno usa o objeto (a "âncora"), que é
+    // sempre o lado livre da sala.
+    function tomadasDoObjeto(info) {
+      if (!info || !info.meshes || !info.meshes.length) return null;
+      var caixa = new THREE.Box3();
+      info.meshes.forEach(function (m) { caixa.expandByObject(m); });
+      if (caixa.isEmpty()) return null;
+      var c = caixa.getCenter(new THREE.Vector3());
+      var tam = caixa.getSize(new THREE.Vector3());
+      var r = Math.max(0.35, Math.min(2.2, Math.max(tam.x, tam.y, tam.z)));
+      var dir = new THREE.Vector3(1, 0, 1);
+      var ateAncora = 2;
+      if (info.ancora) {
+        dir.set(info.ancora.x - c.x, 0, info.ancora.z - c.z);
+        ateAncora = dir.length();
+      }
+      if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
+      dir.normalize();
+      var cima = new THREE.Vector3(0, 1, 0);
+      function tiro(dist, altura, giro) {
+        var d = dir.clone().applyAxisAngle(cima, giro);
+        var pos = limitar(c.clone().addScaledVector(d, dist));
+        pos.y = Math.max(0.7, Math.min(2.8, c.y + altura));
+        return { pos: [pos.x, pos.y, pos.z], alvo: [c.x, c.y, c.z] };
+      }
+      return {
+        objAberto: tiro(Math.min(1.5 + r * 1.5, ateAncora + 1.6), 1.2 + r * 0.35, 0.3),
+        objPerto: tiro(0.75 + r * 0.8, 0.4, -0.2),
+        objLado: tiro(1.1 + r, 0.75, -0.65),
+        centro: [c.x, c.y, c.z]
+      };
+    }
+
+    // Divide uma explicação longa em falas curtas (cabem na caixa de diálogo).
+    function emFalas(texto, max) {
+      max = max || 170;
+      var frases = texto.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [texto];
+      var falas = [];
+      var atual = '';
+      frases.forEach(function (f) {
+        f = f.trim();
+        if (!f) return;
+        if (atual && (atual + ' ' + f).length > max) {
+          falas.push(atual);
+          atual = f;
+        } else {
+          atual = atual ? atual + ' ' + f : f;
+        }
+      });
+      if (atual) falas.push(atual);
+      return falas;
+    }
+
+    // A dica repete a explicação se quase todas as palavras dela já estão lá.
+    function repete(dica, explicacao) {
+      if (!explicacao) return false;
+      var base = explicacao.toLowerCase();
+      var palavras = dica.toLowerCase().match(/[a-zà-ú0-9-]{4,}/g) || [];
+      if (palavras.length < 4) return false;
+      var achou = palavras.filter(function (w) { return base.indexOf(w) >= 0; }).length;
+      return achou / palavras.length >= 0.8;
+    }
+
+    function juntarPt(itens) {
+      if (itens.length <= 1) return itens.join('');
+      return itens.slice(0, -1).join(', ') + ' e ' + itens[itens.length - 1];
+    }
+    function minuscula(t) { return t.charAt(0).toLowerCase() + t.slice(1); }
+
+    // ---- Cena 1: "Não sei o que fazer" → o professor explica falando -------
     S.ui.professorExplica = function () {
+      var fase = idFase();
+      var m = J.missaoAtual();
+      if (!m || !S.professor || !S.cenaCurta || (S.emCena && S.emCena())) return S.ui.professorExplicaJanela();
+      var nome = S.primeiroNome();
+      var obj = tomadasDoObjeto(alvoDe(m));
+      var tomadas = {
+        profPerto: TOMADAS_PROF.profPerto,
+        profLado: TOMADAS_PROF.profLado,
+        // Sem objeto (ou sem malha), mostra a sala inteira.
+        objAberto: obj ? obj.objAberto : { pos: [0.4, 5.6, 7.6], alvo: [-0.4, 0.4, -1.2] },
+        objPerto: obj ? obj.objPerto : { pos: [0.4, 5.6, 7.6], alvo: [-0.4, 0.4, -1.2] },
+        objLado: obj ? obj.objLado : { pos: [0.4, 5.6, 7.6], alvo: [-0.4, 0.4, -1.2] }
+      };
+      var olhar = obj ? obj.centro : null;
+
+      var falas = [
+        { quem: 'aluno', tomada: 'aluno', texto: 'Professor, não sei o que fazer agora...' },
+        { quem: 'prof', tomada: 'profPerto', gesto: 'falar', texto: 'Sem problema, ' + nome + '! Sua missão agora é: ' + minuscula(textoMissao(m)) }
+      ];
+      // "Como funciona": alterna o professor explicando com o objeto em cena.
+      var porque = (EXPLICA[fase] || {})[m.id];
+      if (porque) {
+        // O plano aberto fica para a dica de onde ir; aqui só lateral e close.
+        var cortes = ['profLado', 'objLado', 'profPerto', 'objPerto'];
+        emFalas(porque).forEach(function (t, i) {
+          var tomada = cortes[i % cortes.length];
+          var noObjeto = tomada.indexOf('obj') === 0;
+          falas.push({ quem: 'prof', tomada: tomada, gesto: noObjeto ? 'apontar' : 'explicar', olhar: noObjeto ? olhar : null, texto: t });
+        });
+      }
+      // "O que fazer agora": onde fica (plano aberto) e o detalhe (close).
+      // Uma dica que só repete a explicação fica de fora (falada, cansa).
+      if (m.dica1 && !repete(m.dica1, porque)) falas.push({ quem: 'prof', tomada: 'objAberto', gesto: 'apontar', olhar: olhar, texto: m.dica1 });
+      if (m.dica2 && !repete(m.dica2, porque)) falas.push({ quem: 'prof', tomada: 'objPerto', gesto: 'apontar', olhar: olhar, texto: m.dica2 });
+      falas.push({ quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Liguei a seta laranja para te guiar até lá. Qualquer coisa, me chama!' });
+      falas.push({ quem: 'aluno', tomada: 'aluno', texto: 'Entendi, professor! Valeu!' });
+
+      var ok = S.cenaCurta({
+        vozReal: true,
+        posAluno: ONDE_ALUNO,
+        tomadas: tomadas,
+        falas: falas,
+        aoFim: function () {
+          aplicarDica(m);
+          S.aviso('Siga a seta laranja: ' + m.quadro, 'info', 3600);
+        }
+      });
+      if (!ok) S.ui.professorExplicaJanela();
+    };
+
+    // ---- Cena 2: "Que prática é essa?" → UC e competências, falando --------
+    S.ui.professorPratica = function () {
+      var fase = idFase();
+      var p = praticaDe(fase);
+      if (!p) return;
+      if (!S.professor || !S.cenaCurta || (S.emCena && S.emCena())) return S.ui.professorPraticaJanela();
+      var conh = p.conhecimentos.map(function (t) { return minuscula(t.split(':')[0]); });
+      var hab = p.habilidades.slice(0, 2).map(minuscula);
+      var at = p.atitudes.slice(0, 2).map(minuscula);
+      var falas = [
+        { quem: 'aluno', tomada: 'aluno', texto: 'Professor, essa prática vale para quê?' },
+        { quem: 'prof', tomada: 'profPerto', gesto: 'explicar', texto: S.falaUc(fase) },
+        { quem: 'prof', tomada: 'sala', gesto: 'apontar', texto: S.falaDesenvolve(fase) },
+        { quem: 'prof', tomada: 'profLado', gesto: 'explicar', texto: 'Nos conhecimentos, você trabalha ' + juntarPt(conh) + '.' },
+        { quem: 'prof', tomada: 'profPerto', gesto: 'falar', texto: 'Nas habilidades, você vai ' + juntarPt(hab) + '.' },
+        { quem: 'prof', tomada: 'profLado', gesto: 'explicar', texto: 'E nas atitudes, a gente cobra ' + juntarPt(at) + '.' }
+      ];
+      if (p.reforca && p.reforca.length) {
+        falas.push({ quem: 'prof', tomada: 'sala', gesto: 'falar', texto: 'E ainda reforça a ' + p.reforca.map(ucNome).join(' e a ') + '.' });
+      }
+      falas.push({ quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'No fim do laboratório, você recebe um certificado com tudo isso. Bora praticar!' });
+      falas.push({ quem: 'aluno', tomada: 'aluno', texto: 'Bora!' });
+      var ok = S.cenaCurta({
+        vozReal: true,
+        posAluno: ONDE_ALUNO,
+        tomadas: TOMADAS_PROF,
+        falas: falas
+      });
+      if (!ok) S.ui.professorPraticaJanela();
+    };
+
+    // ---- Janelas de reserva (quando não dá para rodar a cena) -------------
+    // Janela 1: "Não sei o que fazer" → explicação detalhada em texto.
+    S.ui.professorExplicaJanela = function () {
       var fase = idFase();
       var m = J.missaoAtual();
       var janela = S.ui.abrirModal('Prof. Herick explica', { largura: '600px' });
@@ -15845,22 +16039,14 @@
 
         var porque = (EXPLICA[fase] || {})[m.id];
         if (porque) {
-          secaoTitulo('💡 COMO FUNCIONA', corpo);
+          secaoTitulo('COMO FUNCIONA', corpo);
           paragrafo(porque, corpo);
         }
-        secaoTitulo('🧭 O QUE FAZER AGORA', corpo);
+        secaoTitulo('O QUE FAZER AGORA', corpo);
         lista([m.dica1, m.dica2].filter(Boolean), corpo, '▸', C.laranja);
         paragrafo('Eu liguei a seta laranja: ela aponta para onde você precisa ir.', corpo, { color: C.cinza, fontSize: '13px' });
 
-        // Explicar conta como dica (igual ao sistema de dicas do jogo) e liga a seta.
-        if (J.nivelDica < 2) {
-          J.nivelDica = 2;
-          J.dicas++;
-        }
-        S.ui.definirDica(m.dica2 || m.dica1);
-        var alvos = m.alvos ? m.alvos() : [];
-        var info = alvos.length ? S.mundo.objetos[alvos[0]] : null;
-        if (info) S.mundo.apontar(info);
+        aplicarDica(m);
         ler(textoMissao(m) + '. ' + (porque || ''));
       }
 
@@ -15872,19 +16058,19 @@
           borderTop: '2px solid ' + C.borda,
           fontSize: '13px',
           color: C.cinza
-        }, '🎓 Esta prática faz parte da UC ' + p.uc + ' (' + UC[p.uc].titulo + ') do curso ' + CURSO.nome + '.', corpo);
+        }, 'Esta prática faz parte da UC ' + p.uc + ' (' + UC[p.uc].titulo + ') do curso ' + CURSO.nome + '.', corpo);
       }
 
       var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }, null, corpo);
-      S.estilo(S.ui.botao('Entendi, vou tentar! 👍', 'primario', function () {
+      S.estilo(S.ui.botao('Entendi, vou tentar!', 'primario', function () {
         janela.fechar();
         S.professorFalar('Isso! Qualquer coisa, me chama.', 2600, 'aceno');
       }, botoes), { flex: '1 1 200px' });
-      if (p) S.ui.botao('🎓 Que prática é essa?', 'secundario', function () { S.ui.professorPratica(); }, botoes);
+      if (p) S.ui.botao('Que prática é essa?', 'secundario', function () { janela.fechar(); S.ui.professorPratica(); }, botoes);
     };
 
-    // ---- Janela 2: "Que prática é essa?" → UC e competências -------------
-    S.ui.professorPratica = function () {
+    // Janela 2: "Que prática é essa?" → UC e competências em texto.
+    S.ui.professorPraticaJanela = function () {
       var fase = idFase();
       var p = praticaDe(fase);
       if (!p) return;
@@ -15897,22 +16083,22 @@
       cartaoUc(p.uc, corpo, true);
       (p.reforca || []).forEach(function (n) { cartaoUc(n, corpo, false); });
 
-      secaoTitulo('📘 CONHECIMENTOS', corpo);
+      secaoTitulo('CONHECIMENTOS', corpo);
       lista(p.conhecimentos, corpo, '•', C.laranja);
-      secaoTitulo('🛠 HABILIDADES', corpo);
+      secaoTitulo('HABILIDADES', corpo);
       lista(p.habilidades, corpo, '•', C.laranja);
-      secaoTitulo('🤝 ATITUDES E VALORES', corpo);
+      secaoTitulo('ATITUDES E VALORES', corpo);
       lista(p.atitudes, corpo, '•', C.laranja);
 
-      secaoTitulo('🔁 AÇÃO → REFLEXÃO → AÇÃO', corpo, C.cinza);
+      secaoTitulo('AÇÃO → REFLEXÃO → AÇÃO', corpo, C.cinza);
       paragrafo('Agora é a hora da ação: faça, teste e, se errar, tente de novo. No fim do laboratório, a gente reflete sobre o que você aprendeu, e no próximo você aplica tudo isso de novo, ainda melhor.', corpo, { fontSize: '13px', color: C.cinza });
 
       S.el('div', { fontSize: '11px', color: C.cinza, marginTop: '8px' },
         'Turma ' + CURSO.turma + ' · ' + CURSO.nome + ' · ' + CURSO.unidade, corpo);
 
       var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }, null, corpo);
-      S.estilo(S.ui.botao('Bora praticar! 👍', 'primario', function () { janela.fechar(); }, botoes), { flex: '1 1 200px' });
-      if (J.missaoAtual()) S.ui.botao('🤔 Não sei o que fazer', 'secundario', function () { S.ui.professorExplica(); }, botoes);
+      S.estilo(S.ui.botao('Bora praticar!', 'primario', function () { janela.fechar(); }, botoes), { flex: '1 1 200px' });
+      if (J.missaoAtual()) S.ui.botao('Não sei o que fazer', 'secundario', function () { janela.fechar(); S.ui.professorExplica(); }, botoes);
     };
 
     // ---- Falar com o professor: pergunta se o aluno precisa de ajuda -----
@@ -15933,7 +16119,7 @@
           margin: '0 0 10px',
           fontSize: '13px'
         }, null, corpo);
-        S.el('div', { fontWeight: '700', color: C.laranja, fontSize: '12px' }, '🎓 UC ' + p.uc + ' · ' + UC[p.uc].titulo, faixa);
+        S.el('div', { fontWeight: '700', color: C.laranja, fontSize: '12px' }, 'UC ' + p.uc + ' · ' + UC[p.uc].titulo, faixa);
         S.el('div', { color: C.cinza, marginTop: '2px' }, S.falaDesenvolve(), faixa);
       }
       paragrafo(m
@@ -15941,9 +16127,9 @@
         : 'Você já terminou as missões deste laboratório!', corpo, { fontWeight: '700' });
       paragrafo('Sobre o que você quer conversar?', corpo, { color: C.cinza });
       var botoes = S.el('div', { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }, null, corpo);
-      if (m) S.ui.botao('🤔 Não sei o que fazer, me explica', 'primario', function () { S.ui.professorExplica(); }, botoes);
-      if (praticaDe()) S.ui.botao('🎓 Que prática é essa? (UC e competências)', m ? 'secundario' : 'primario', function () { S.ui.professorPratica(); }, botoes);
-      S.ui.botao('👍 Tô de boa, valeu!', 'secundario', function () {
+      if (m) S.ui.botao('Não sei o que fazer, me explica', 'primario', function () { janela.fechar(); S.ui.professorExplica(); }, botoes);
+      if (praticaDe()) S.ui.botao('Que prática é essa? (UC e competências)', m ? 'secundario' : 'primario', function () { janela.fechar(); S.ui.professorPratica(); }, botoes);
+      S.ui.botao('Tô de boa, valeu!', 'secundario', function () {
         janela.fechar();
         S.professorFalar(J.missoesFeitas() === 0 ? 'Boa sorte com a atividade, ' + nome + '!' : 'Você está indo bem, ' + nome + '!', 3000);
       }, botoes);
