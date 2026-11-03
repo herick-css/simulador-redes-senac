@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.8.1',
+    versao: '3.8.2',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -2484,6 +2484,8 @@
       r.domElement.addEventListener('webglcontextlost', function (ev) {
         ev.preventDefault();
         S.contextoPerdido = true;
+        // Soltamos a memória de propósito (câmera do celular): sem aviso.
+        if (S.liberandoMemoria) return;
         S.perdasDeContexto = (S.perdasDeContexto || 0) + 1; // aparece no painel F9
         if (avisoContexto) return;
         avisoContexto = S.ui.camada(60, {
@@ -6768,7 +6770,8 @@
       S.ui.mostrarHud(false);
       S.jogo.atualizarMissoes();
       S.pausado = false;
-      if (S.cenaAbertura) S.cenaAbertura(S.liberarJogo);
+      // Voltando de uma recarga (câmera do celular no Lab 4): sem a cena de abertura.
+      if (S.cenaAbertura && !S.retomarImersao) S.cenaAbertura(S.liberarJogo);
       else S.liberarJogo();
     });
 
@@ -6783,6 +6786,11 @@
       S.jogo.atualizarMissoes();
       S.ui.atualizarControlesToque();
       S.raiz.focus({ preventScroll: true });
+      if (S.retomarImersao && S.aoRetomar) {
+        S.protegido('retomar', S.aoRetomar)(S.retomarImersao);
+        S.retomarImersao = null;
+        return;
+      }
       S.aviso('Boa sorte, ' + S.primeiroNome() + '! Siga as missões do quadro.', 'info', 3200);
     });
   });
@@ -13122,6 +13130,66 @@
     }
 
     // ---- 1. Escolha: foto da mesa ou bancada virtual ----------------------
+    // ---- Câmera do celular sem perder o jogo ----------------------------
+    // No celular, abrir o app da câmera deixa o navegador em segundo plano;
+    // com pouca memória o Android fecha a aba e, na volta, ela recarrega
+    // (a foto se perde). Por isso, antes de abrir a câmera:
+    //  1. o 3D do laboratório solta a memória de vídeo (volta depois);
+    //  2. o jogo anota onde estava: se a aba recarregar, ele volta sozinho
+    //     para a imersão e pede a foto pela galeria.
+    var CHAVE_RETOMAR = 'sim-retomar';
+    var aguardandoCamera = false;
+    F4.anotarRetomada = function () {
+      S.armazenar(CHAVE_RETOMAR, JSON.stringify({
+        t: Date.now(), fase: 'crimpagem', abriu: true,
+        pontas: F4.pontas, testeOk: F4.testeOk, erros: S.jogo.erros, dicas: S.jogo.dicas,
+        tempo: S.tempoDeJogo(), modo: F4.modo
+      }));
+    };
+    F4.esquecerRetomada = function () { S.armazenar(CHAVE_RETOMAR, ''); };
+    F4.lerRetomada = function () {
+      var r = null;
+      try { r = JSON.parse(S.armazenar(CHAVE_RETOMAR) || 'null'); } catch (e) { r = null; }
+      if (!r || r.fase !== 'crimpagem' || !(Date.now() - r.t < 15 * 60 * 1000)) return null;
+      return r;
+    };
+    function extensaoPerda() {
+      try { return S.renderer && S.renderer.getContext().getExtension('WEBGL_lose_context'); } catch (e) { return null; }
+    }
+    var extGuardada = null; // com o contexto perdido, getExtension devolve null
+    function soltarMemoria() {
+      var ext = extensaoPerda();
+      if (!ext || S.contextoPerdido) return;
+      extGuardada = ext;
+      S.liberandoMemoria = true;
+      try { ext.loseContext(); } catch (e) { S.liberandoMemoria = false; }
+    }
+    function voltarMemoria() {
+      if (!S.liberandoMemoria) return;
+      var ext = extGuardada;
+      setTimeout(function () {
+        try { if (ext) ext.restoreContext(); } catch (e) { /* ignora */ }
+        S.liberandoMemoria = false;
+      }, 50);
+    }
+    function voltouDaCamera() {
+      if (!aguardandoCamera) return;
+      aguardandoCamera = false;
+      voltarMemoria();
+      F4.esquecerRetomada();
+    }
+    window.addEventListener('focus', function () { setTimeout(voltouDaCamera, 400); });
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) setTimeout(voltouDaCamera, 400);
+    });
+    function abrirCamera(campo) {
+      aguardandoCamera = true;
+      F4.anotarRetomada();
+      soltarMemoria();
+      campo.click();
+    }
+    F4.abrirCameraTeste = abrirCamera;
+
     function campoFoto(captura, aoEscolher) {
       var i = document.createElement('input');
       i.type = 'file';
@@ -13133,8 +13201,10 @@
       i.addEventListener('change', S.protegido('imersao:foto', function () {
         var f = i.files && i.files[0];
         i.value = '';
+        voltouDaCamera();
         if (f) aoEscolher(f);
       }));
+      i.addEventListener('cancel', function () { voltouDaCamera(); });
       return i;
     }
     function abrirImagem(arquivo) {
@@ -13163,6 +13233,16 @@
       S.el('div', { fontSize: ap ? '17px' : '20px', fontWeight: '700', marginBottom: '6px' }, '📷 Fotografe a sua mesa', caixa);
       S.el('div', { fontSize: '13px', color: C.cinza, lineHeight: '1.45', marginBottom: '8px' },
         'O sistema vai estudar o tampo da mesa, calcular a profundidade e colocar o cabo e as ferramentas em cima dela.', caixa);
+      var recarregou = !!F4.voltouDaRecarga;
+      if (F4.voltouDaRecarga) {
+        F4.voltouDaRecarga = false;
+        var av = S.el('div', {
+          background: '#3A2A08', border: '2px solid ' + C.amarelo, borderRadius: '8px', padding: '8px 10px',
+          color: C.amarelo, fontSize: '12px', fontWeight: '700', lineHeight: '1.45', marginBottom: '8px'
+        }, null, caixa);
+        av.textContent = 'O celular fechou o jogo enquanto a câmera estava aberta (falta de memória), mas seu progresso voltou. ' +
+          'Faça assim: tire a foto da mesa pelo app da câmera do celular e depois toque em "Escolher da galeria".';
+      }
       var dicas = S.el('div', {
         background: '#071733', border: '2px dashed ' + C.borda, borderRadius: '8px', padding: '8px 10px',
         fontSize: '12px', lineHeight: '1.5', marginBottom: ap ? '8px' : '12px'
@@ -13174,8 +13254,16 @@
       var tirar = campoFoto(true, carregarFoto);
       var escolher = campoFoto(false, carregarFoto);
       if (S.toque) {
-        S.ui.botao('📷 Tirar foto da mesa', 'primario', function () { tirar.click(); }, botoes);
-        S.ui.botao('🖼 Escolher da galeria', 'secundario', function () { escolher.click(); }, botoes);
+        // Depois de uma recarga, a galeria vira o caminho principal.
+        if (recarregou) {
+          S.ui.botao('🖼 Escolher da galeria', 'primario', function () { abrirCamera(escolher); }, botoes);
+          S.ui.botao('📷 Tirar foto da mesa', 'secundario', function () { abrirCamera(tirar); }, botoes);
+        } else {
+          S.ui.botao('📷 Tirar foto da mesa', 'primario', function () { abrirCamera(tirar); }, botoes);
+          S.ui.botao('🖼 Escolher da galeria', 'secundario', function () { abrirCamera(escolher); }, botoes);
+        }
+        S.el('div', { fontSize: '11px', color: C.cinza, lineHeight: '1.4', textAlign: 'center' },
+          'Se o jogo reiniciar ao abrir a câmera, tire a foto pelo app da câmera e use "Escolher da galeria".', botoes);
       } else {
         S.ui.botao('🖼 Escolher uma foto da mesa', 'primario', function () { escolher.click(); }, botoes);
       }
@@ -13573,6 +13661,44 @@
       }
     };
   });
+
+  /* ================================================================== */
+  secao('F4F-retomar-depois-da-camera', function () {
+    // Se a aba recarregou enquanto a câmera do celular estava aberta, volta
+    // direto para a imersão do Lab 4, com o progresso de antes.
+    var F4 = S.f4;
+    var J = S.jogo;
+    S.aoRetomar = function (r) {
+      if (!S.faseAtual || S.faseAtual.id !== 'crimpagem') return;
+      F4.abriu = true;
+      if (r.pontas) F4.pontas = r.pontas;
+      F4.testeOk = !!r.testeOk;
+      J.erros = r.erros || 0;
+      J.dicas = r.dicas || 0;
+      S.tempoInicio = S.agora() - (r.tempo || 0) * 1000;
+      F4.modo = null; // a foto se perdeu na recarga: pede de novo pela galeria
+      F4.mesa = null;
+      F4.voltouDaRecarga = true;
+      F4.esquecerRetomada();
+      J.atualizarMissoes();
+      setTimeout(function () { F4.abrirImersao(); }, 300);
+    };
+    var r = F4.lerRetomada();
+    var nome = S.armazenar('sim-nome');
+    var turma = S.normalizarTurma(S.armazenar('sim-turma') || '');
+    if (r && S.fase === 'login' && nome && turma.length >= 2) {
+      S.aluno.nome = nome;
+      S.aluno.turma = turma;
+      S.aluno.genero = S.armazenar('sim-genero') === 'f' ? 'f' : 'm';
+      S.faseEscolhida = 'crimpagem';
+      S.retomarImersao = r;
+      if (S.telaLogin) S.telaLogin.fechar();
+      setTimeout(function () { S.iniciarCarregamento(); }, 50);
+    } else if (r) {
+      F4.esquecerRetomada();
+    }
+  });
+
 
 
   /* ================================================================== */
@@ -15262,7 +15388,7 @@
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4D-bancada-3d","F4E-closeups"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4F-retomar-depois-da-camera","F4D-bancada-3d","F4E-closeups"];
   var painel = null;
   var timer = null;
   var gpu = null;
