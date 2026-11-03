@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.8.2',
+    versao: '3.8.3',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -11345,6 +11345,38 @@
     });
     A.destravar = destravar;
 
+    // Saiu do navegador (outro app, outra aba, tela apagada): a música e as
+    // falas param; voltando, continuam de onde estavam.
+    var pausadoPorFundo = false;
+    function irParaFundo() {
+      var ctx = A.ctx;
+      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignora */ }
+      if (!ctx || ctx.state !== 'running' || !ctx.suspend) return;
+      pausadoPorFundo = true;
+      try { ctx.suspend().catch(function () {}); } catch (e) { /* ignora */ }
+    }
+    function voltarDoFundo() {
+      if (!pausadoPorFundo || document.hidden) return;
+      pausadoPorFundo = false;
+      var ctx = A.ctx;
+      if (ctx && ctx.resume) { try { ctx.resume().catch(function () {}); } catch (e) { /* ignora */ } }
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) irParaFundo();
+      else voltarDoFundo();
+    });
+    window.addEventListener('pagehide', irParaFundo);
+    window.addEventListener('blur', function () {
+      // Perder o foco por um instante (um clique no Canva) não conta; só se
+      // a janela continuar sem foco, como ao trocar de aplicativo.
+      setTimeout(function () {
+        if (document.hidden || (document.hasFocus && !document.hasFocus())) irParaFundo();
+      }, 1200);
+    });
+    window.addEventListener('focus', voltarDoFundo);
+    A.irParaFundo = irParaFundo; // testes
+    A.voltarDoFundo = voltarDoFundo;
+
     // ---- Blocos de construção -------------------------------------------
     // Tom com envelope: { f, f2, t, dur, vol, tipo, ataque, filtro, q, canal, vib }
     A.tom = function (o) {
@@ -13389,85 +13421,202 @@
       limparConteudo();
       F4.modo = 'foto';
       var u = im.ui;
-      u.camada.style.background = '#000000';
+      u.camada.style.background = '#05080F';
       var iw = img.width || img.naturalWidth;
       var ih = img.height || img.naturalHeight;
-      var cv = S.el('canvas', { position: 'absolute', touchAction: 'none' }, null, u.conteudo);
+      // O canvas ocupa a tela toda e a foto fica um pouco menor no meio: sobra
+      // uma margem para colocar um canto que ficou fora da foto.
+      var cv = S.el('canvas', { position: 'absolute', left: '0', top: '0', touchAction: 'none' }, null, u.conteudo);
       var ctx = cv.getContext('2d');
-      var painel = S.el('div', {
-        position: 'absolute', left: '8px', bottom: '8px', right: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap',
-        alignItems: 'flex-end', justifyContent: 'space-between', pointerEvents: 'none', zIndex: '2'
-      }, null, u.conteudo);
-      // O quadro de informações deixa o toque passar (para arrastar um canto
-      // que esteja por baixo dele); só os botões de largura são clicáveis.
+      var statusAntes = u.status.style.display;
+      u.status.style.display = 'none'; // as instruções ficam dentro do cartão
+
+      // ---- Cartão flutuante: compacto, no topo e arrastável ---------------
       var compacto = S.ui.compacto();
-      var info = S.el('div', {
-        background: 'rgba(7,20,48,0.82)', border: '2px solid ' + C.borda, borderRadius: '8px', padding: compacto ? '4px 8px' : '6px 10px',
-        color: '#FFFFFF', fontSize: compacto ? '11px' : '12px', lineHeight: '1.4', maxWidth: compacto ? '58%' : '520px', pointerEvents: 'none',
-        transition: 'opacity .15s'
-      }, null, painel);
-      var infoTxt = S.el('div', { fontWeight: '700' }, '', info);
-      var chips = S.el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px', pointerEvents: 'auto' }, null, info);
-      S.el('span', { fontSize: '11px', color: C.cinza, alignSelf: 'center', marginRight: '2px' }, 'Largura da borda da frente:', chips);
-      var acoes = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', pointerEvents: 'auto' }, null, painel);
+      var card = S.el('div', {
+        position: 'absolute', left: '8px', top: '8px', zIndex: '4', width: compacto ? 'min(330px, calc(100% - 110px))' : 'min(380px, calc(100% - 120px))',
+        background: 'rgba(10,26,51,0.93)', border: '2px solid ' + C.laranja, borderRadius: '10px', color: '#FFFFFF',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.45)', boxSizing: 'border-box', transition: 'opacity .15s', userSelect: 'none'
+      }, null, u.conteudo);
+      card.setAttribute('role', 'group');
+      card.setAttribute('aria-label', 'Estudo da mesa');
+      var cab = S.el('div', {
+        display: 'flex', alignItems: 'center', gap: '6px', padding: compacto ? '4px 6px' : '5px 8px',
+        cursor: 'grab', touchAction: 'none', borderBottom: '1px solid rgba(255,255,255,0.12)'
+      }, null, card);
+      var pega = S.el('span', { fontSize: '15px', color: C.laranja, lineHeight: '1', flex: '0 0 auto' }, '⠿', cab);
+      pega.setAttribute('aria-hidden', 'true');
+      var resumo = S.el('div', {
+        flex: '1 1 auto', minWidth: '0', fontWeight: '700', fontSize: compacto ? '11px' : '12px', lineHeight: '1.3',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+      }, '', cab);
+      var bMin = S.el('button', {
+        flex: '0 0 auto', width: '26px', height: '22px', borderRadius: '5px', border: '2px solid #071430', background: C.painel2,
+        color: '#FFFFFF', fontWeight: '700', fontSize: '13px', lineHeight: '1', cursor: 'pointer', padding: '0', touchAction: 'manipulation'
+      }, '–', cab);
+      bMin.type = 'button';
+      bMin.setAttribute('aria-label', 'Recolher o cartão');
+      var corpo = S.el('div', { padding: compacto ? '4px 6px 6px' : '6px 8px 8px' }, null, card);
+      var dica = S.el('div', { fontSize: '11px', color: C.cinza, lineHeight: '1.35', marginBottom: '5px' }, '', corpo);
+      dica.setAttribute('aria-live', 'polite');
+      var linhaLarg = S.el('label', { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: C.cinza, marginBottom: '6px' }, null, corpo);
+      S.el('span', null, 'Largura da frente da mesa:', linhaLarg);
+      var sel = S.el('select', {
+        flex: '1 1 auto', minWidth: '0', background: C.painel2, color: '#FFFFFF', border: '2px solid #071430', borderRadius: '5px',
+        fontFamily: C.fonte, fontWeight: '700', fontSize: '12px', padding: '2px 4px'
+      }, null, linhaLarg);
       var largura = F4.larguraMesa || 1.2;
-      var chipEls = [];
       LARGURAS.forEach(function (L) {
-        var b = S.el('button', {
-          padding: '3px 8px', borderRadius: '5px', border: '2px solid #071430', fontFamily: C.fonte, fontWeight: '700',
-          fontSize: '11px', cursor: 'pointer', touchAction: 'manipulation'
-        }, L.rotulo, chips);
-        b.type = 'button';
-        b.addEventListener('click', function () {
-          largura = L.m;
-          F4.larguraMesa = L.m;
-          marcarChips();
-          recalcular();
-        });
-        chipEls.push({ b: b, m: L.m });
+        var o = document.createElement('option');
+        o.value = String(L.m);
+        o.textContent = L.rotulo;
+        if (Math.abs(L.m - largura) < 1e-6) o.selected = true;
+        sel.appendChild(o);
       });
-      function marcarChips() {
-        chipEls.forEach(function (c) {
-          var sel = Math.abs(c.m - largura) < 1e-6;
-          c.b.style.background = sel ? C.laranja : C.painel2;
-          c.b.style.color = sel ? '#10203A' : '#FFFFFF';
-        });
+      sel.addEventListener('change', function () {
+        largura = Number(sel.value) || 1.2;
+        F4.larguraMesa = largura;
+        recalcular();
+      });
+      var acoes = S.el('div', { display: 'flex', gap: '5px' }, null, corpo);
+      function miniBotao(txt, rotulo, tipo, fn, pai) {
+        var b = S.ui.botao(txt, tipo, fn, pai);
+        S.estilo(b, { padding: '4px 8px', fontSize: '12px' });
+        if (rotulo) { b.setAttribute('aria-label', rotulo); b.title = rotulo; }
+        return b;
       }
-      marcarChips();
-      var bRedetectar = S.ui.botao('🔍 Detectar de novo', 'secundario', function () { detectar(true); }, acoes);
-      var bOutra = S.ui.botao('📷 Outra foto', 'secundario', mostrarEscolha, acoes);
-      var bOk = S.ui.botao('Confirmar a mesa ✔', 'primario', confirmar, acoes);
-      [bRedetectar, bOutra, bOk].forEach(function (b) { S.estilo(b, { padding: '6px 10px', fontSize: '12px' }); });
+      miniBotao('🔍', 'Detectar a mesa de novo', 'secundario', function () { detectar(true); }, acoes);
+      miniBotao('📷', 'Outra foto', 'secundario', mostrarEscolha, acoes);
+      var bOk = miniBotao('Confirmar a mesa ✔', null, 'primario', confirmar, acoes);
+      S.estilo(bOk, { flex: '1 1 auto' });
+      // Recolhido: só o resumo e um "Confirmar" pequeno no cabeçalho.
+      var bOkMini = miniBotao('✔', 'Confirmar a mesa', 'primario', confirmar, null);
+      S.estilo(bOkMini, { padding: '2px 8px', display: 'none', flex: '0 0 auto' });
+      cab.insertBefore(bOkMini, bMin);
+      var recolhido = false;
+      function recolher(sim) {
+        recolhido = sim;
+        corpo.style.display = sim ? 'none' : '';
+        bOkMini.style.display = sim ? '' : 'none';
+        bMin.textContent = sim ? '+' : '–';
+        bMin.setAttribute('aria-label', sim ? 'Abrir o cartão' : 'Recolher o cartão');
+        prenderCard();
+      }
+      bMin.addEventListener('click', function (e) { e.stopPropagation(); recolher(!recolhido); });
+      function aviso(t) { dica.textContent = t; }
+
+      // Arrastar o cartão pelo cabeçalho.
+      var arrCard = null;
+      function prenderCard() {
+        var W = u.conteudo.clientWidth, H = u.conteudo.clientHeight;
+        var x = Math.max(4, Math.min(W - card.offsetWidth - 4, card.offsetLeft));
+        var y = Math.max(4, Math.min(H - card.offsetHeight - 4, card.offsetTop));
+        card.style.left = x + 'px';
+        card.style.top = y + 'px';
+      }
+      cab.addEventListener('pointerdown', function (e) {
+        if (e.target.closest && e.target.closest('button')) return;
+        arrCard = { x: e.clientX - card.offsetLeft, y: e.clientY - card.offsetTop };
+        cab.style.cursor = 'grabbing';
+        try { cab.setPointerCapture(e.pointerId); } catch (er) { /* ignora */ }
+        e.preventDefault();
+      });
+      cab.addEventListener('pointermove', function (e) {
+        if (!arrCard) return;
+        card.style.left = (e.clientX - arrCard.x) + 'px';
+        card.style.top = (e.clientY - arrCard.y) + 'px';
+        prenderCard();
+      });
+      function soltarCard() { if (arrCard) cardMovido = true; arrCard = null; cab.style.cursor = 'grab'; }
+      // Até o aluno mover o cartão, ele vai sozinho para o canto da tela mais
+      // longe dos cantos da mesa (para não cobrir nenhum).
+      var cardMovido = false;
+      function posicaoAutomatica() {
+        if (cardMovido || !rect) return;
+        var W = rect.W, H = rect.H, cw = card.offsetWidth, ch = card.offsetHeight;
+        var alcas = cantos.concat([centro()]).map(function (c) { return [rect.x + c[0] * rect.e, rect.y + c[1] * rect.e]; });
+        var opcoes = [[8, 8], [W - cw - 8, 52], [8, H - ch - 8], [W - cw - 8, H - ch - 8]];
+        var melhor = null, nota = -1;
+        opcoes.forEach(function (o) {
+          var menor = 1e9;
+          alcas.forEach(function (a) {
+            var dx = Math.max(o[0] - a[0], 0, a[0] - (o[0] + cw));
+            var dy = Math.max(o[1] - a[1], 0, a[1] - (o[1] + ch));
+            menor = Math.min(menor, Math.hypot(dx, dy));
+          });
+          if (menor > nota + 1) { nota = menor; melhor = o; }
+        });
+        card.style.left = Math.max(4, melhor[0]) + 'px';
+        card.style.top = Math.max(4, melhor[1]) + 'px';
+      }
+      cab.addEventListener('pointerup', soltarCard);
+      cab.addEventListener('pointercancel', soltarCard);
 
       var cantos = cantosPadrao(iw, ih);
       var cal = null;
-      var arrastando = -1;
+      var arrastando = -1; // 0..3 = um canto; 4 = a área toda
+      var arrIni = null;
       var estudando = 0; // animação "estudando a mesa"
       var rect = null;
       function posicionar() {
-        rect = F4.retanguloFoto(iw, ih);
+        var W = Math.max(1, u.conteudo.clientWidth), H = Math.max(1, u.conteudo.clientHeight);
         var k = Math.min(2, window.devicePixelRatio || 1);
-        cv.width = Math.round(rect.w * k);
-        cv.height = Math.round(rect.h * k);
-        S.estilo(cv, { left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
-        rect.k = k;
+        var e = Math.min(W / iw, H / ih) * 0.86;
+        rect = { e: e, k: k, w: iw * e, h: ih * e };
+        rect.x = (W - rect.w) / 2;
+        rect.y = (H - rect.h) / 2;
+        cv.width = Math.round(W * k);
+        cv.height = Math.round(H * k);
+        S.estilo(cv, { width: W + 'px', height: H + 'px' });
+        rect.W = W;
+        rect.H = H;
+        prenderCard();
       }
-      function imgParaTela(p) { return [p[0] * cv.width / iw, p[1] * cv.height / ih]; }
+      function imgParaTela(p) { return [(rect.x + p[0] * rect.e) * rect.k, (rect.y + p[1] * rect.e) * rect.k]; }
+      // Até onde um canto pode ir (a margem em volta da foto).
+      function limitar(p) {
+        return [
+          Math.max(-rect.x / rect.e, Math.min((rect.W - rect.x) / rect.e, p[0])),
+          Math.max(-rect.y / rect.e, Math.min((rect.H - rect.y) / rect.e, p[1]))
+        ];
+      }
+      function dentroDoQuad(p) {
+        var dentro = false;
+        for (var i = 0, j = 3; i < 4; j = i++) {
+          var a = cantos[i], b = cantos[j];
+          if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) dentro = !dentro;
+        }
+        return dentro;
+      }
+      function centro() {
+        return [(cantos[0][0] + cantos[1][0] + cantos[2][0] + cantos[3][0]) / 4, (cantos[0][1] + cantos[1][1] + cantos[2][1] + cantos[3][1]) / 4];
+      }
       function desenhar() {
         if (!im || !cv.isConnected) return;
-        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        var k = rect.k;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = '#05080F';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        // margem em xadrez discreto: mostra que dá para pôr um canto ali
+        ctx.fillStyle = 'rgba(255,255,255,0.025)';
+        var q0 = 24 * k;
+        for (var gy = 0; gy * q0 < cv.height; gy++) for (var gx = gy % 2; gx * q0 < cv.width; gx += 2) ctx.fillRect(gx * q0, gy * q0, q0, q0);
+        ctx.drawImage(img, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = k;
+        ctx.strokeRect(rect.x * k, rect.y * k, rect.w * k, rect.h * k);
         var agora = S.agora() / 1000;
         if (estudando > agora) {
           // varredura de "estudo"
           var f = 1 - (estudando - agora) / 1.4;
-          var y = f * cv.height;
+          var y = (rect.y + f * rect.h) * k;
           var g = ctx.createLinearGradient(0, y - 60, 0, y);
           g.addColorStop(0, 'rgba(247,148,29,0)');
           g.addColorStop(1, 'rgba(247,148,29,0.45)');
           ctx.fillStyle = g;
-          ctx.fillRect(0, y - 60, cv.width, 60);
+          ctx.fillRect(rect.x * k, y - 60, rect.w * k, 60);
           ctx.fillStyle = '#F7941D';
-          ctx.fillRect(0, y - 2, cv.width, 3);
+          ctx.fillRect(rect.x * k, y - 2, rect.w * k, 3);
           return;
         }
         var q = cantos.map(imgParaTela);
@@ -13475,111 +13624,164 @@
         ctx.beginPath();
         q.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
         ctx.closePath();
-        ctx.fillStyle = cal && cal.ok ? 'rgba(247,148,29,0.18)' : 'rgba(214,58,51,0.2)';
+        ctx.fillStyle = arrastando === 4 ? 'rgba(255,211,107,0.28)' : cal && cal.ok ? 'rgba(247,148,29,0.18)' : 'rgba(214,58,51,0.2)';
         ctx.fill();
         // grade de profundidade (a cada 10 cm) projetada no tampo
         if (cal && cal.ok) {
-          ctx.lineWidth = Math.max(1, rect.k);
+          ctx.lineWidth = Math.max(1, k);
           ctx.strokeStyle = 'rgba(255,255,255,0.55)';
           var passoU = Math.max(0.05, 0.1 / cal.largura), passoV = Math.max(0.05, 0.1 / cal.profundidade);
           var cx = iw / 2, cy = ih / 2;
-          function P(u, v) { var r = G.aplicar(cal.H, u, v); return imgParaTela([r[0] + cx, r[1] + cy]); }
-          for (var u = passoU; u < 1 - 1e-6; u += passoU) {
-            var a = P(u, 0), b = P(u, 1);
+          function P(uu, vv) { var r = G.aplicar(cal.H, uu, vv); return imgParaTela([r[0] + cx, r[1] + cy]); }
+          for (var uu = passoU; uu < 1 - 1e-6; uu += passoU) {
+            var a = P(uu, 0), b = P(uu, 1);
             ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
           }
-          for (var v = passoV; v < 1 - 1e-6; v += passoV) {
-            var c = P(0, v), d = P(1, v);
+          for (var vv = passoV; vv < 1 - 1e-6; vv += passoV) {
+            var c = P(0, vv), d = P(1, vv);
             ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.stroke();
           }
-          // distância da câmera em 3 linhas (frente, meio, fundo)
-          ctx.font = 'bold ' + Math.round(12 * rect.k) + 'px Arial';
+          // distância da câmera (frente e fundo); o meio fica para o ícone de mover
+          ctx.font = 'bold ' + Math.round(11 * k) + 'px Arial';
           ctx.textAlign = 'center';
-          [0.04, 0.5, 0.96].forEach(function (vv) {
-            var p = P(0.5, vv);
-            var dtx = (G.distancia(cal, 0.5, vv) * 100).toFixed(0) + ' cm';
-            var tw = ctx.measureText(dtx).width + 10 * rect.k;
+          [0.06, 0.94].forEach(function (v2) {
+            var p = P(0.5, v2);
+            var dtx = (G.distancia(cal, 0.5, v2) * 100).toFixed(0) + ' cm';
+            var tw = ctx.measureText(dtx).width + 10 * k;
             ctx.fillStyle = 'rgba(7,20,48,0.85)';
-            ctx.fillRect(p[0] - tw / 2, p[1] - 9 * rect.k, tw, 18 * rect.k);
+            ctx.fillRect(p[0] - tw / 2, p[1] - 8 * k, tw, 16 * k);
             ctx.fillStyle = '#FFD36B';
-            ctx.fillText(dtx, p[0], p[1] + 4 * rect.k);
+            ctx.fillText(dtx, p[0], p[1] + 4 * k);
           });
         }
-        ctx.lineWidth = 3 * rect.k;
+        ctx.lineWidth = 3 * k;
         ctx.strokeStyle = cal && cal.ok ? '#F7941D' : '#D63A33';
         ctx.beginPath();
         q.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
         ctx.closePath();
         ctx.stroke();
+        // alça do meio: segura aqui para mover a área inteira
+        var m = imgParaTela(centro());
+        ctx.beginPath();
+        ctx.arc(m[0], m[1], 15 * k, 0, Math.PI * 2);
+        ctx.fillStyle = arrastando === 4 ? '#FFD36B' : 'rgba(255,255,255,0.92)';
+        ctx.fill();
+        ctx.lineWidth = 2.5 * k;
+        ctx.strokeStyle = '#071430';
+        ctx.stroke();
+        ctx.fillStyle = '#071430';
+        ctx.font = 'bold ' + Math.round(17 * k) + 'px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✥', m[0], m[1] + k);
+        ctx.textBaseline = 'alphabetic';
         var nomes = ['FE', 'FD', 'TD', 'TE'];
+        var raioAlca = (S.toque ? 14 : 11) * k;
         q.forEach(function (p, i) {
           ctx.beginPath();
-          ctx.arc(p[0], p[1], 11 * rect.k, 0, Math.PI * 2);
+          ctx.arc(p[0], p[1], raioAlca, 0, Math.PI * 2);
           ctx.fillStyle = i === arrastando ? '#FFD36B' : '#FFFFFF';
           ctx.fill();
-          ctx.lineWidth = 3 * rect.k;
+          ctx.lineWidth = 3 * k;
           ctx.strokeStyle = '#071430';
           ctx.stroke();
           ctx.fillStyle = '#071430';
-          ctx.font = 'bold ' + Math.round(8 * rect.k) + 'px Arial';
+          ctx.font = 'bold ' + Math.round(9 * k) + 'px Arial';
           ctx.textAlign = 'center';
-          ctx.fillText(nomes[i], p[0], p[1] + 3 * rect.k);
+          ctx.fillText(nomes[i], p[0], p[1] + 3 * k);
         });
         ctx.restore();
       }
       function recalcular() {
         cal = G.calibrar(cantos, iw, ih, largura);
         if (cal.ok) {
-          infoTxt.textContent = '✔ Mesa estudada · tampo ≈ ' + fmtM(cal.largura) + ' × ' + fmtM(cal.profundidade) +
-            ' · câmera a ' + fmtM(cal.distanciaFrente) + ' da frente, ' + fmtM(cal.altura) + ' acima do tampo, ' +
-            Math.round(cal.angulo) + '° de inclinação';
+          resumo.textContent = '✔ Mesa ' + fmtM(cal.largura).replace(' m', '') + ' × ' + fmtM(cal.profundidade) +
+            ' · câmera a ' + fmtM(cal.distanciaFrente) + ' · ' + Math.round(cal.angulo) + '°';
+          resumo.title = 'Tampo ≈ ' + fmtM(cal.largura) + ' × ' + fmtM(cal.profundidade) + '; câmera a ' + fmtM(cal.distanciaFrente) +
+            ' da frente, ' + fmtM(cal.altura) + ' acima do tampo, ' + Math.round(cal.angulo) + '° de inclinação';
+          resumo.style.color = '#FFFFFF';
           bOk.disabled = false;
           bOk.style.opacity = '1';
+          bOkMini.disabled = false;
+          bOkMini.style.opacity = '1';
         } else {
-          infoTxt.textContent = '✖ ' + cal.motivo;
+          resumo.textContent = '✖ ' + cal.motivo;
+          resumo.title = cal.motivo;
+          resumo.style.color = '#FF9A94';
           bOk.disabled = true;
           bOk.style.opacity = '0.5';
+          bOkMini.disabled = true;
+          bOkMini.style.opacity = '0.5';
         }
       }
       function detectar(manual) {
         estudando = S.agora() / 1000 + 1.4;
-        F4.status('Estudando a mesa…');
+        aviso('Estudando a mesa…');
+        resumo.textContent = '🔍 Estudando a mesa…';
         S.som('bip');
         setTimeout(function () {
           if (!im || !cv.isConnected) return;
           var d = F4.detectarTampo(img);
           cantos = d || cantosPadrao(iw, ih);
           recalcular();
-          F4.status(d ? 'Achei o tampo! Arraste os 4 cantos (FE, FD, TD, TE) até as quinas da mesa, se precisar.'
-            : 'Não achei o tampo sozinho: arraste os 4 cantos até as quinas da mesa.');
+          aviso((d ? 'Achei o tampo! ' : 'Não achei o tampo sozinho. ') +
+            'Arraste os cantos até as quinas ou o ✥ para mover tudo. Este cartão anda pelo ⠿.');
+          posicaoAutomatica();
           if (manual && !d) F4.toast('Dica: foto com o tampo inteiro e vazio ajuda a detecção.', 'info');
         }, 1400);
       }
       function pontoEvento(e) {
         var r = cv.getBoundingClientRect();
-        return [(e.clientX - r.left) / r.width * iw, (e.clientY - r.top) / r.height * ih];
+        return [(e.clientX - r.left - rect.x) / rect.e, (e.clientY - r.top - rect.y) / rect.e];
       }
       cv.addEventListener('pointerdown', S.protegido('mesa:canto', function (e) {
+        if (estudando > S.agora() / 1000) return;
         var p = pontoEvento(e);
-        var raio = 34 / rect.e;
+        var raio = (S.toque ? 40 : 30) / rect.e;
         var melhor = -1, dm = 1e9;
         cantos.forEach(function (c, i) {
           var d = Math.hypot(c[0] - p[0], c[1] - p[1]);
           if (d < dm) { dm = d; melhor = i; }
         });
-        if (dm <= raio) {
-          arrastando = melhor;
-          info.style.opacity = '0.2';
-          try { cv.setPointerCapture(e.pointerId); } catch (er) { /* ignora */ }
-        }
+        var c0 = centro();
+        if (dm <= raio) arrastando = melhor;
+        else if (Math.hypot(c0[0] - p[0], c0[1] - p[1]) <= raio || dentroDoQuad(p)) {
+          arrastando = 4;
+          arrIni = { p: p, cantos: cantos.map(function (c) { return c.slice(); }) };
+        } else return;
+        card.style.opacity = '0.25';
+        card.style.pointerEvents = 'none';
+        try { cv.setPointerCapture(e.pointerId); } catch (er) { /* ignora */ }
       }));
       cv.addEventListener('pointermove', function (e) {
-        if (arrastando < 0) return;
         var p = pontoEvento(e);
-        cantos[arrastando] = [Math.max(0, Math.min(iw, p[0])), Math.max(0, Math.min(ih, p[1]))];
+        if (arrastando < 0) {
+          if (!S.toque) {
+            var perto = cantos.some(function (c) { return Math.hypot(c[0] - p[0], c[1] - p[1]) <= 30 / rect.e; });
+            cv.style.cursor = perto ? 'pointer' : dentroDoQuad(p) ? 'move' : 'default';
+          }
+          return;
+        }
+        if (arrastando === 4) {
+          // move os 4 cantos juntos, sem deixar nenhum sair da margem
+          var dx = p[0] - arrIni.p[0], dy = p[1] - arrIni.p[1];
+          var lo = limitar([-1e9, -1e9]), hi = limitar([1e9, 1e9]);
+          arrIni.cantos.forEach(function (c) {
+            dx = Math.max(lo[0] - c[0], Math.min(hi[0] - c[0], dx));
+            dy = Math.max(lo[1] - c[1], Math.min(hi[1] - c[1], dy));
+          });
+          cantos = arrIni.cantos.map(function (c) { return [c[0] + dx, c[1] + dy]; });
+        } else {
+          cantos[arrastando] = limitar(p);
+        }
         recalcular();
       });
-      function soltar() { arrastando = -1; info.style.opacity = '1'; }
+      function soltar() {
+        arrastando = -1;
+        arrIni = null;
+        card.style.opacity = '1';
+        card.style.pointerEvents = '';
+      }
       cv.addEventListener('pointerup', soltar);
       cv.addEventListener('pointercancel', soltar);
 
@@ -13592,7 +13794,10 @@
         S.som('ok');
         F4.abrirBancada();
       }
-      F4.estudo = { cantos: function () { return cantos; }, definir: function (c) { cantos = c; recalcular(); }, cal: function () { return cal; }, confirmar: confirmar }; // testes
+      F4.estudo = {
+        cantos: function () { return cantos; }, definir: function (c) { cantos = c; recalcular(); }, cal: function () { return cal; },
+        confirmar: confirmar, card: card, rect: function () { return rect; }, recolher: recolher
+      }; // testes
 
       posicionar();
       var raf = 0;
@@ -13602,7 +13807,11 @@
         desenhar();
       })();
       im.aoRedimensionar = posicionar;
-      im.limpar = function () { cancelAnimationFrame(raf); im.aoRedimensionar = null; };
+      im.limpar = function () {
+        cancelAnimationFrame(raf);
+        im.aoRedimensionar = null;
+        u.status.style.display = statusAntes;
+      };
       recalcular();
       detectar(false);
     }
