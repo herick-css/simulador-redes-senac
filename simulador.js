@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.10.0',
+    versao: '3.10.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -7307,7 +7307,6 @@
         etapa: 'dialogo',
         virarAluno: false,
         manterGesto: !!cfg.manterGesto,
-        vozReal: !!cfg.vozReal, // lê as falas em voz alta mesmo com a leitura desligada
         tempo: 0,
         alvoAtual: S.camera.position.clone().add(dirAlvo.multiplyScalar(4)),
         ui: montarUi()
@@ -12045,7 +12044,7 @@
       estado.vozUlt = 0;
       estado.vozLida = false;
       pararBlips();
-      if ((S.cfg.lerVoz || estado.vozReal) && S.cfg.volFalas > 0) estado.vozLida = ler(quem, texto);
+      if (S.cfg.lerVoz && S.cfg.volFalas > 0) estado.vozLida = ler(quem, texto);
       else if (tts) { try { tts.cancel(); } catch (e) { /* ignora */ } }
     };
     // Chamado a cada quadro com quantas letras já apareceram. Os bipes são
@@ -15978,7 +15977,6 @@
       falas.push({ quem: 'aluno', tomada: 'aluno', texto: 'Entendi, professor! Valeu!' });
 
       var ok = S.cenaCurta({
-        vozReal: true,
         posAluno: ONDE_ALUNO,
         tomadas: tomadas,
         falas: falas,
@@ -16013,7 +16011,6 @@
       falas.push({ quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'No fim do laboratório, você recebe um certificado com tudo isso. Bora praticar!' });
       falas.push({ quem: 'aluno', tomada: 'aluno', texto: 'Bora!' });
       var ok = S.cenaCurta({
-        vozReal: true,
         posAluno: ONDE_ALUNO,
         tomadas: TOMADAS_PROF,
         falas: falas
