@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.6.1',
+    versao: '3.8.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -1051,7 +1051,7 @@
       S.el('div', { fontSize: ap ? '18px' : '22px', fontWeight: '700', marginBottom: '4px' }, 'Escolha o laboratório', t.cartao);
       S.el('div', { color: C.cinza, fontSize: '13px', marginBottom: ap ? '8px' : '14px' }, 'Cada laboratório tem o seu próprio ranking.', t.cartao);
       var lista = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
-      ['laboratorio', 'servidores', 'cabeamento'].forEach(function (id) {
+      ['laboratorio', 'servidores', 'cabeamento', 'crimpagem'].forEach(function (id) {
         var f = S.fases[id];
         if (!f) return;
         var b = S.el('button', {
@@ -4934,7 +4934,7 @@
       S.mundo.apontar(null);
       if (aviso) S.aviso(aviso, 'ok', 3200);
       var esperar = S.protegido('fim', function () {
-        if (S.ui.modalAberto() || S.fase !== 'jogo') {
+        if (S.ui.modalAberto() || S.fase !== 'jogo' || (S.f4 && S.f4.emAR)) {
           setTimeout(esperar, 200);
           return;
         }
@@ -11187,6 +11187,7 @@
       numero: 3,
       nome: 'Laboratório 3 · Cabeamento estruturado',
       titulo: 'Cabeamento',
+      proxima: 'crimpagem',
       resumoCurto: 'Pregue presilhas, passe 6 cabos do switch até a parede, instale canaleta e tomadas e coloque 6 PCs na rede.',
       missaoCurta: 'Pregue presilhas, passe o feixe de 6 cabos, instale canaleta e keystones, ligue os PCs e peça IP automático.',
       missaoLonga: 'Faça o cabeamento estruturado de 6 computadores: pregue as presilhas na parede, conecte 6 cabos no switch, passe o feixe até os 6 pontos, esconda tudo na canaleta, monte as tomadas keystone, ligue os patch cords e coloque os PCs na rede com IP automático.',
@@ -11473,6 +11474,18 @@
             tom({ t: t, f: 3400, f2: 2200, dur: 0.05, vol: 0.06, tipo: 'square', filtro: 'bandpass', ff: 3000, q: 2 });
           });
           ruido({ t: 0.34, dur: 0.22, vol: 0.16, filtro: 'bandpass', ff: 1400, ff2: 3200, q: 1.2, ataque: 0.05 });
+        }
+      },
+      // Cachola surgindo na realidade aumentada (brilho subindo).
+      aparecer: {
+        g: 1.4,
+        min: 0.2,
+        legenda: 'Cachola apareceu',
+        tocar: function () {
+          [659.25, 880, 1174.66, 1567.98].forEach(function (f, i) {
+            tom({ f: f, t: i * 0.05, dur: 0.16, vol: 0.08, tipo: 'triangle' });
+          });
+          ruido({ dur: 0.25, vol: 0.06, filtro: 'highpass', ff: 5000, ataque: 0.05 });
         }
       },
       // Capa do cabo sendo cortada em volta e puxada.
@@ -12638,10 +12651,2618 @@
     S.ui.configAberta = function () { return !!telaCfg; };
   });
 
+
+  /* ================================================================== */
+  secao('F4A-sala-imersao', function () {
+    // Laboratório 4: crimpagem real, em primeira pessoa. Na sala há um botão
+    // de "imersão": ele pede a foto de uma mesa de verdade, estuda a mesa
+    // (cantos, tamanho e profundidade) e coloca as ferramentas em cima dela.
+    // Lá o aluno decapa, organiza, corta, encaixa, crimpa as duas pontas e
+    // testa o cabo. Sem foto, usa uma bancada virtual.
+    var F4 = S.f4 = {
+      BOTAO: { x: 4.45, y: 1.25, z: -4.44 }
+    };
+
+    F4.reiniciar = function () {
+      F4.abriu = false; // já entrou na imersão
+      F4.testeOk = false; // cabo aprovado no testador
+      F4.mesa = null; // calibração da mesa (foto)
+      F4.modo = null; // 'foto' | 'virtual'
+      F4.mao = null; // ferramenta na mão (dentro da imersão)
+      F4.refeitas = 0; // pontas refeitas depois do teste
+      F4.testes = 0;
+      F4.pontas = {
+        A: { estado: 'capa', ordem: null },
+        B: { estado: 'capa', ordem: null }
+      };
+    };
+
+    F4.pontasProntas = function () {
+      return ['A', 'B'].filter(function (k) { return F4.pontas[k].estado === 'crimpada'; }).length;
+    };
+
+    F4.MISSOES = [
+      {
+        id: 'botao',
+        quadro: 'Entrar na imersão (botão na parede)',
+        texto: 'Aperte o botão de imersão na parede.',
+        feita: function () { return F4.abriu; },
+        alvos: function () { return ['botaoImersao']; },
+        dica1: 'O painel "IMERSÃO" fica na parede do fundo, à direita, perto da mesa do professor.',
+        dica2: 'Chegue perto do painel e use (E ou USAR).'
+      },
+      {
+        id: 'pontas',
+        quadro: 'Crimpar as duas pontas do cabo',
+        texto: function () { return 'Na imersão, crimpe as duas pontas do cabo (' + F4.pontasProntas() + '/2).'; },
+        feita: function () { return F4.pontasProntas() === 2; },
+        alvos: function () { return ['botaoImersao']; },
+        dica1: 'Use o botão da parede para voltar à bancada. O passo atual aparece no canto de cima.',
+        dica2: 'A ordem é: decapar, destrançar e organizar, cortar, encaixar o RJ45 e crimpar. Depois a outra ponta.'
+      },
+      {
+        id: 'teste',
+        quadro: 'Testar o cabo no testador',
+        texto: 'Teste o cabo: os 8 LEDs precisam acender na mesma ordem nos dois lados.',
+        feita: function () { return F4.testeOk; },
+        alvos: function () { return ['botaoImersao']; },
+        dica1: 'Na bancada, pegue o testador e encaixe as duas pontas.',
+        dica2: 'Se algum LED acender fora de ordem, a ponta errada precisa ser cortada e refeita no padrão T-568B.'
+      }
+    ];
+
+    function texturaPainel() {
+      return S.textura(64, 96, function (ctx, w, h) {
+        ctx.fillStyle = '#0E2547';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#F7941D';
+        ctx.fillRect(0, 0, w, 4);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('IMERSÃO', w / 2, 17);
+        ctx.font = 'bold 7px Arial';
+        ctx.fillText('CRIMPAGEM REAL', w / 2, 28);
+        // alicate estilizado
+        ctx.fillStyle = '#C9443D';
+        ctx.fillRect(16, 78, 22, 4);
+        ctx.fillRect(16, 86, 22, 4);
+        ctx.fillStyle = '#C9D2DC';
+        ctx.fillRect(38, 76, 12, 16);
+        ctx.fillStyle = '#2D7FE0';
+        ctx.fillRect(50, 82, 10, 4);
+      });
+    }
+
+    F4.montarSala = function () {
+      S.mundo.montarSala({ quadroX: -2.2, placaX: 1.6 });
+      var C = S.COR;
+      var b = F4.BOTAO;
+      var painel = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.93), new THREE.MeshLambertMaterial({ map: texturaPainel() }));
+      painel.position.set(b.x, b.y + 0.3, b.z + 0.035);
+      S.adicionar(painel);
+      S.caixa(0.7, 1.0, 0.04, S.mat(C.azulEscuro), b.x, b.y + 0.3, b.z + 0.01, null, true);
+      var botao = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.08, 16), S.matUnico(C.laranja, { emissive: 0x7a3c00, emissiveIntensity: 0.6 }));
+      botao.rotation.x = Math.PI / 2;
+      botao.position.set(b.x, b.y + 0.33, b.z + 0.08);
+      S.adicionar(botao);
+      F4.botaoMalha = botao;
+      S.interativo([botao, painel], {
+        id: 'botaoImersao',
+        nome: 'Botão da imersão (crimpagem real)',
+        ancora: new THREE.Vector3(b.x - 0.1, 0, -3.65)
+      });
+      // Bancadas no meio da sala, com um rolo de cabo e ferramentas.
+      var mTampo = S.mat(C.madeira);
+      var mPe = S.mat(C.metalEscuro);
+      [[-3.2, -1.2], [0.0, -1.2], [-1.6, 1.0]].forEach(function (p, i) {
+        S.caixa(1.6, 0.06, 0.8, mTampo, p[0], 0.75, p[1]);
+        [[-0.72, -0.32], [0.72, -0.32], [-0.72, 0.32], [0.72, 0.32]].forEach(function (q) {
+          S.caixa(0.05, 0.72, 0.05, mPe, p[0] + q[0], 0.36, p[1] + q[1]);
+        });
+        S.colisor(p[0], p[1], 1.6, 0.8);
+        var rolo = S.cilindro(0.14, 0.14, 0.09, 12, S.mat(C.caboAzul), p[0] - 0.45, 0.83, p[1]);
+        rolo.rotation.z = Math.PI / 2;
+        S.caixa(0.2, 0.025, 0.05, S.mat(0xc9443d), p[0] + 0.3, 0.79, p[1] + (i % 2 ? 0.1 : -0.1));
+      });
+    };
+
+    F4.atualizar = function () {
+      var b = F4.botaoMalha;
+      if (!b || !b.material) return;
+      var t = S.agora() / 1000;
+      b.material.emissiveIntensity = F4.testeOk ? 0.3 : 0.45 + Math.sin(t * 4) * 0.35;
+    };
+
+    // Fim do laboratório 4: não entra no ranking (é um treino).
+    S.ui.mostrarFimImersao = function () {
+      var C = S.CSS;
+      var J = S.jogo;
+      S.fase = 'fim';
+      S.pausado = true;
+      S.ui.atualizarControlesToque();
+      S.ui.mostrarHud(false);
+      S.som('vitoria');
+      var t = S.ui.tela(30, '520px');
+      S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO 4 CONCLUÍDO', t.cartao);
+      S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 12px' }, 'Cabo crimpado e testado! 🎉', t.cartao);
+      var stats = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }, null, t.cartao);
+      function stat(rotulo, valor, cor) {
+        var c = S.el('div', { flex: '1 1 110px', background: '#071733', border: '3px solid ' + cor, borderRadius: '8px', padding: '8px 12px' }, null, stats);
+        S.el('div', { fontSize: '11px', fontWeight: '700', color: cor }, rotulo, c);
+        S.el('div', { fontSize: '20px', fontWeight: '700', fontFamily: C.mono }, valor, c);
+      }
+      stat('TEMPO', S.formatarTempo(S.tempoDeJogo()), C.laranja);
+      stat('ERROS', String(J.erros), J.erros ? C.amarelo : C.verde);
+      stat('TESTES', String(F4.testes), C.cinza);
+      var m = F4.mesa;
+      S.el('div', { fontSize: '13px', color: C.cinza, lineHeight: '1.5', marginBottom: '12px' },
+        (F4.modo === 'foto' && m ? 'Bancada: sua mesa (' + m.texto + '). ' : 'Bancada virtual. ') +
+        'Este laboratório é um treino e não entra no ranking.', t.cartao);
+      var linha = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
+      S.estilo(S.ui.botao('Escolher outro laboratório', 'primario', function () {
+        t.fechar();
+        S.ui.mostrarFases();
+      }, linha), { flex: '1 1 200px' });
+      S.ui.botao('Jogar de novo', 'secundario', function () { window.location.reload(); }, linha);
+    };
+
+    S.registrarFase('crimpagem', {
+      numero: 4,
+      nome: 'Laboratório 4 · Crimpagem real',
+      titulo: 'Crimpagem real',
+      resumoCurto: 'Imersão em primeira pessoa: decape, organize, corte, crimpe as duas pontas e teste o cabo em cima da sua mesa. (Não entra no ranking.)',
+      missaoCurta: 'Entre na imersão, fotografe uma mesa, crimpe as duas pontas do cabo e teste no testador.',
+      missaoLonga: 'Treino de crimpagem como na vida real, em primeira pessoa: aperte o botão de imersão, fotografe uma mesa de verdade (o jogo estuda o tampo e calcula a profundidade) e, com as ferramentas em cima dela, decape o cabo, destrance e organize os fios no T-568B, corte no tamanho, encaixe o RJ45 e crimpe — nas duas pontas. No fim, teste o cabo no testador. Este laboratório não entra no ranking.',
+      usar: function (info) {
+        if (info.id === 'botaoImersao') return F4.abrirImersao();
+      },
+      rotulo: function (info) {
+        if (info.id === 'botaoImersao') return F4.abriu ? 'Voltar à bancada (imersão)' : 'Entrar na imersão (crimpagem real)';
+        return null;
+      },
+      concluir: function () {
+        S.jogo.encerrarFase('Cabo aprovado no testador!', function () { S.ui.mostrarFimImersao(); });
+      },
+      textoConcluido: 'Cabo crimpado e testado!',
+      atualizar: function (dt) { F4.atualizar(dt); },
+      etapas: [
+        ['Preparando as missões…', function () {
+          F4.reiniciar();
+          S.jogo.reiniciar(F4.MISSOES);
+        }],
+        ['Construindo o laboratório 4…', function () { F4.montarSala(); }],
+        ['Chamando o professor e o aluno…', function () {
+          S.criarProfessor();
+          S.criarPersonagem(S.aluno.nome, S.aluno.genero);
+          S.mundo.montarCaboMao();
+          S.mundo.montarSeta();
+        }]
+      ],
+      desmontar: function () {
+        if (F4.emAR) F4.fecharImersao(true);
+        if (S.esconderBalaoProfessor) S.esconderBalaoProfessor();
+      },
+      abertura: {
+        titulo: 'LABORATÓRIO 4 · CRIMPAGEM REAL',
+        portaAberta: true,
+        inicio: { x: -5.35, z: 3.0 },
+        tomadas: {
+          abertura: { pos: [-1.2, 4.6, 8.6], alvo: [-4.2, 0.8, 2.4] },
+          botao: { pos: [3.0, 1.8, -1.6], alvo: [4.45, 1.45, -4.4] },
+          mesas: { pos: [-1.0, 2.6, 2.4], alvo: [-1.6, 0.75, -0.8] }
+        },
+        falas: function () {
+          var n = S.primeiroNome();
+          return [
+            { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Último desafio, ' + n + '! Hoje é treino de verdade: crimpar e testar um cabo, do jeito que se faz na vida real.' },
+            { quem: 'prof', tomada: 'botao', gesto: 'apontar', texto: 'Aquele botão laranja na parede leva para uma imersão mais realista, em primeira pessoa.' },
+            { quem: 'prof', tomada: 'mesas', gesto: 'explicar', texto: 'Lá, tire uma foto de uma mesa de verdade. O sistema estuda o tampo, calcula a profundidade e coloca as ferramentas em cima dela.' },
+            { quem: 'prof', tomada: 'mesas', gesto: 'falar', texto: 'Decapador, alicate de crimpagem, conectores RJ45 e o testador. Faça as duas pontas no T-568B.' },
+            { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'No fim, o testador não perdoa: se um fio estiver fora do lugar, os LEDs entregam!' },
+            { quem: 'aluno', tomada: 'aluno', texto: 'Bora crimpar de verdade!' }
+          ];
+        }
+      },
+      final: {
+        sair: false,
+        falas: function () {
+          var n = S.primeiroNome();
+          return [
+            { quem: 'prof', tomada: 'despedida', gesto: 'aceno', texto: 'Cabo aprovado, ' + n + '! Agora você sabe fazer isso numa bancada de verdade.' },
+            { quem: 'prof', tomada: 'despedida', gesto: 'falar', texto: 'Decapar, organizar, cortar, crimpar e testar: é assim no dia a dia de um técnico.' }
+          ];
+        }
+      }
+    });
+  });
+
+
+  /* ================================================================== */
+  secao('F4B-matematica-mesa', function () {
+    // Geometria da "AR por foto": a partir dos 4 cantos do tampo na foto,
+    // calcula a homografia, a distância focal provável, a posição da câmera
+    // e a profundidade (em metros) de cada ponto da mesa.
+    var F4 = S.f4;
+    var G = F4.geo = {};
+
+    // Resolve A·x = b (Gauss com pivô parcial).
+    function resolver(A, b) {
+      var n = b.length;
+      var M = A.map(function (l, i) { return l.concat([b[i]]); });
+      for (var c = 0; c < n; c++) {
+        var p = c;
+        for (var r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+        if (Math.abs(M[p][c]) < 1e-12) return null;
+        var t = M[c]; M[c] = M[p]; M[p] = t;
+        for (var r2 = 0; r2 < n; r2++) {
+          if (r2 === c) continue;
+          var k = M[r2][c] / M[c][c];
+          for (var c2 = c; c2 <= n; c2++) M[r2][c2] -= k * M[c][c2];
+        }
+      }
+      return M.map(function (l, i) { return l[n] / l[i]; });
+    }
+
+    // Homografia do quadrado unitário (0,0)(1,0)(1,1)(0,1) para os 4 pontos.
+    G.homografia = function (pts) {
+      var src = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      var A = [];
+      var b = [];
+      for (var i = 0; i < 4; i++) {
+        var X = src[i][0], Y = src[i][1], x = pts[i][0], y = pts[i][1];
+        A.push([X, Y, 1, 0, 0, 0, -x * X, -x * Y]); b.push(x);
+        A.push([0, 0, 0, X, Y, 1, -y * X, -y * Y]); b.push(y);
+      }
+      var h = resolver(A, b);
+      if (!h) return null;
+      return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1]];
+    };
+    G.aplicar = function (H, u, v) {
+      var w = H[2][0] * u + H[2][1] * v + H[2][2];
+      return [(H[0][0] * u + H[0][1] * v + H[0][2]) / w, (H[1][0] * u + H[1][1] * v + H[1][2]) / w];
+    };
+
+    function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+    function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+    function norma(a) { return Math.sqrt(dot(a, a)); }
+    function esc(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
+    G.convexo = function (p) {
+      var sinal = 0;
+      for (var i = 0; i < 4; i++) {
+        var a = p[i], b = p[(i + 1) % 4], c = p[(i + 2) % 4];
+        var z = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(z) < 1e-6) return false;
+        var s = z > 0 ? 1 : -1;
+        if (sinal && s !== sinal) return false;
+        sinal = s;
+      }
+      return true;
+    };
+
+    // cantos (px na imagem, origem no canto superior esquerdo), na ordem:
+    // frente-esquerda, frente-direita, fundo-direita, fundo-esquerda.
+    // largura: largura real da borda da frente (m). Devolve a pose da câmera.
+    G.calibrar = function (cantos, imgW, imgH, largura) {
+      if (!G.convexo(cantos)) return { ok: false, motivo: 'Os cantos estão cruzados: arraste cada um para a quina certa do tampo.' };
+      var cx = imgW / 2, cy = imgH / 2;
+      var pts = cantos.map(function (p) { return [p[0] - cx, p[1] - cy]; });
+      var H = G.homografia(pts);
+      if (!H) return { ok: false, motivo: 'Não consegui calcular: afaste um pouco os cantos.' };
+      // Distância focal pela ortogonalidade das bordas (pixels quadrados).
+      var f = null;
+      var cand = [];
+      var d1 = H[2][0] * H[2][1];
+      if (Math.abs(d1) > 1e-12) cand.push(-(H[0][0] * H[0][1] + H[1][0] * H[1][1]) / d1);
+      var maior = Math.max(imgW, imgH);
+      var fPadrao = 0.78 * maior; // câmera de celular (~65° na horizontal)
+      cand.forEach(function (f2) {
+        if (f2 > 0) {
+          var fc = Math.sqrt(f2);
+          var fovH = 2 * Math.atan(maior / 2 / fc) * 180 / Math.PI;
+          if (fovH > 40 && fovH < 100) f = fc;
+        }
+      });
+      var focalEstimada = !!f;
+      if (!f) f = fPadrao;
+      // M = K^-1 · H
+      var m1 = [H[0][0] / f, H[1][0] / f, H[2][0]];
+      var m2 = [H[0][1] / f, H[1][1] / f, H[2][1]];
+      var m3 = [H[0][2] / f, H[1][2] / f, H[2][2]];
+      var n1 = norma(m1), n2 = norma(m2);
+      var lambda = n1 / largura; // escala: unidade da foto → metros
+      var profundidade = n2 / lambda; // tamanho real da borda lateral (m)
+      var r1 = esc(m1, 1 / n1);
+      var r2 = esc(m2, 1 / n2);
+      var t = esc(m3, 1 / lambda);
+      if (t[2] < 0) {
+        r1 = esc(r1, -1);
+        r2 = esc(r2, -1);
+        t = esc(t, -1);
+      }
+      // Ortogonaliza (a foto e os cantos nunca são perfeitos).
+      r2 = sub(r2, esc(r1, dot(r1, r2)));
+      r2 = esc(r2, 1 / norma(r2));
+      var r3 = cross(r1, r2);
+      // Plano da mesa em metros: X na largura, Y na profundidade (para o
+      // fundo), Z para cima. Como r1 e r2 vieram normalizados, a mesma pose
+      // vale para coordenadas métricas: x_câmera = r1·X + r2·Y + t.
+      var R = [[r1[0], r2[0], r3[0]], [r1[1], r2[1], r3[1]], [r1[2], r2[2], r3[2]]];
+      var C = [
+        -(R[0][0] * t[0] + R[1][0] * t[1] + R[2][0] * t[2]),
+        -(R[0][1] * t[0] + R[1][1] * t[1] + R[2][1] * t[2]),
+        -(R[0][2] * t[0] + R[1][2] * t[1] + R[2][2] * t[2])
+      ];
+      var altura = C[2];
+      if (!(altura > 0.05)) return { ok: false, motivo: 'A câmera ficou "embaixo" da mesa: confira se os cantos da frente estão embaixo e os do fundo em cima.' };
+      if (!(profundidade > 0.15 && profundidade < 4)) return { ok: false, motivo: 'As medidas não fecharam: ajuste os cantos sobre as quinas do tampo.' };
+      var frente = Math.sqrt(Math.pow(C[0] - largura / 2, 2) + C[1] * C[1] + altura * altura);
+      var angulo = Math.asin(Math.min(1, altura / Math.max(frente, 1e-6))) * 180 / Math.PI;
+      return {
+        ok: true,
+        H: H, f: f, focalEstimada: focalEstimada,
+        R: R, t: t, C: C,
+        largura: largura, profundidade: profundidade,
+        altura: altura, distanciaFrente: frente, angulo: angulo,
+        imgW: imgW, imgH: imgH
+      };
+    };
+
+    // Distância da câmera até um ponto (u, v) do tampo (0..1 nos dois eixos).
+    G.distancia = function (cal, u, v) {
+      var X = u * cal.largura, Y = v * cal.profundidade;
+      return Math.sqrt(Math.pow(cal.C[0] - X, 2) + Math.pow(cal.C[1] - Y, 2) + Math.pow(cal.C[2], 2));
+    };
+
+    // Câmera do three.js igual à câmera da foto. O "mundo" é o plano da mesa
+    // em metros (Z para cima); o grupo da bancada converte para Y para cima.
+    G.aplicarCamera = function (cam, cal) {
+      var R = cal.R, t = cal.t;
+      // OpenCV (x direita, y baixo, z frente) → three.js (y cima, olha para -z).
+      var V = new THREE.Matrix4().set(
+        R[0][0], R[0][1], R[0][2], t[0],
+        -R[1][0], -R[1][1], -R[1][2], -t[1],
+        -R[2][0], -R[2][1], -R[2][2], -t[2],
+        0, 0, 0, 1
+      );
+      cam.matrixAutoUpdate = false;
+      cam.matrix.copy(V.clone().invert());
+      cam.updateMatrixWorld(true);
+      cam.fov = 2 * Math.atan(cal.imgH / 2 / cal.f) * 180 / Math.PI;
+      cam.aspect = cal.imgW / cal.imgH;
+      cam.near = 0.02;
+      cam.far = 30;
+      cam.updateProjectionMatrix();
+    };
+    // Grupo da bancada: local (x direita, y cima, z para a frente, origem no
+    // centro do tampo) → plano da mesa (X, Y em metros, Z para cima).
+    G.matrizBancada = function (cal) {
+      return new THREE.Matrix4().set(
+        1, 0, 0, cal.largura / 2,
+        0, 0, -1, cal.profundidade / 2,
+        0, 1, 0, 0,
+        0, 0, 0, 1
+      );
+    };
+  });
+
+
+  /* ================================================================== */
+  secao('F4C-imersao-foto', function () {
+    var C = S.CSS;
+    var F4 = S.f4;
+    var J = S.jogo;
+    var G = F4.geo;
+    var im = null; // estado da tela de imersão aberta
+
+    var LARGURAS = [
+      { rotulo: 'Carteira · 0,60 m', m: 0.6 },
+      { rotulo: 'Mesa · 0,80 m', m: 0.8 },
+      { rotulo: 'Mesa · 1,20 m', m: 1.2 },
+      { rotulo: 'Bancada · 1,50 m', m: 1.5 }
+    ];
+
+    function fmtM(v) { return v.toFixed(2).replace('.', ',') + ' m'; }
+
+    // ---- Camada por cima do jogo -----------------------------------------
+    function montarCamada() {
+      var u = {};
+      u.camada = S.el('div', {
+        position: 'absolute', inset: '0', zIndex: '45', overflow: 'hidden', touchAction: 'none',
+        background: 'radial-gradient(ellipse at 50% 0%, #163E78 0%, #0A1A33 70%)'
+      }, null, S.raiz);
+      u.camada.setAttribute('role', 'dialog');
+      u.camada.setAttribute('aria-label', 'Imersão: crimpagem real');
+      u.conteudo = S.el('div', { position: 'absolute', inset: '0' }, null, u.camada);
+      u.topo = S.el('div', {
+        position: 'absolute', top: '8px', left: '8px', right: '8px', display: 'flex', gap: '8px',
+        alignItems: 'flex-start', justifyContent: 'space-between', pointerEvents: 'none', zIndex: '3'
+      }, null, u.camada);
+      u.status = S.el('div', {
+        background: 'rgba(7,20,48,0.88)', border: '2px solid ' + C.laranja, borderRadius: '8px', padding: '6px 10px',
+        color: '#FFFFFF', fontSize: '13px', fontWeight: '700', lineHeight: '1.35', maxWidth: '72%', pointerEvents: 'none'
+      }, '', u.topo);
+      u.status.setAttribute('aria-live', 'polite');
+      u.sair = S.ui.botao('✕ Sair', 'secundario', function () { F4.fecharImersao(); }, u.topo);
+      S.estilo(u.sair, { pointerEvents: 'auto', padding: '6px 12px', fontSize: '13px' });
+      u.toast = S.el('div', {
+        position: 'absolute', top: '56px', left: '50%', transform: 'translateX(-50%)', background: '#1F7A3E', color: '#FFFFFF',
+        border: '3px solid #071430', borderRadius: '8px', padding: '6px 14px', fontSize: '13px', fontWeight: '700',
+        display: 'none', pointerEvents: 'none', zIndex: '6', maxWidth: 'calc(100% - 24px)', textAlign: 'center'
+      }, '', u.camada);
+      return u;
+    }
+    F4.status = function (texto) { if (im) im.ui.status.textContent = texto; };
+    F4.toast = function (texto, tipo) {
+      if (!im) return;
+      var t = im.ui.toast;
+      t.textContent = S.marcarSimbolo ? S.marcarSimbolo(texto, tipo) : texto;
+      t.style.background = tipo === 'erro' ? '#A8322C' : tipo === 'info' ? C.painel2 : '#1F7A3E';
+      t.style.display = 'block';
+      if (S.somGenerico) S.somGenerico(tipo);
+      clearTimeout(im.timerToast);
+      im.timerToast = setTimeout(function () { if (im) t.style.display = 'none'; }, tipo === 'erro' ? 4200 : 2800);
+    };
+    F4.imersao = function () { return im; };
+    // A bancada (p21) troca o conteúdo da camada por ela.
+    F4.novoConteudo = function () {
+      limparConteudo();
+      return im.ui;
+    };
+    F4.definirConteudo = function (limpar, redimensionar) {
+      if (!im) return;
+      im.limpar = limpar;
+      im.aoRedimensionar = redimensionar;
+    };
+    function limparConteudo() {
+      if (im.limpar) { try { im.limpar(); } catch (e) { /* ignora */ } }
+      im.limpar = null;
+      im.ui.conteudo.textContent = '';
+    }
+
+    // ---- 1. Escolha: foto da mesa ou bancada virtual ----------------------
+    function campoFoto(captura, aoEscolher) {
+      var i = document.createElement('input');
+      i.type = 'file';
+      i.accept = 'image/*';
+      if (captura) i.setAttribute('capture', 'environment');
+      i.style.display = 'none';
+      i.setAttribute('aria-hidden', 'true');
+      im.ui.conteudo.appendChild(i);
+      i.addEventListener('change', S.protegido('imersao:foto', function () {
+        var f = i.files && i.files[0];
+        i.value = '';
+        if (f) aoEscolher(f);
+      }));
+      return i;
+    }
+    function abrirImagem(arquivo) {
+      // createImageBitmap: desenha direto no canvas (o Canva bloqueia imagens por endereço).
+      var tentativa = window.createImageBitmap ? window.createImageBitmap(arquivo) : Promise.reject(new Error('sem createImageBitmap'));
+      return tentativa.catch(function () {
+        return new Promise(function (ok, falha) {
+          var img = new Image();
+          img.onload = function () { ok(img); };
+          img.onerror = function () { falha(new Error('imagem inválida')); };
+          img.src = URL.createObjectURL(arquivo);
+        });
+      });
+    }
+
+    function mostrarEscolha() {
+      limparConteudo();
+      im.ui.camada.style.background = 'radial-gradient(ellipse at 50% 0%, #163E78 0%, #0A1A33 70%)';
+      F4.status('Imersão · crimpagem real');
+      var ap = S.ui.compacto();
+      var caixa = S.el('div', {
+        position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(520px, calc(100% - 24px))',
+        maxHeight: 'calc(100% - 70px)', overflowY: 'auto', background: C.painel, border: '3px solid ' + C.borda, borderRadius: '10px',
+        padding: ap ? '12px 14px' : '18px 20px', boxSizing: 'border-box', color: '#FFFFFF', boxShadow: '0 8px 0 #050E1F'
+      }, null, im.ui.conteudo);
+      S.el('div', { fontSize: ap ? '17px' : '20px', fontWeight: '700', marginBottom: '6px' }, '📷 Fotografe a sua mesa', caixa);
+      S.el('div', { fontSize: '13px', color: C.cinza, lineHeight: '1.45', marginBottom: '8px' },
+        'O sistema vai estudar o tampo da mesa, calcular a profundidade e colocar o cabo e as ferramentas em cima dela.', caixa);
+      var dicas = S.el('div', {
+        background: '#071733', border: '2px dashed ' + C.borda, borderRadius: '8px', padding: '8px 10px',
+        fontSize: '12px', lineHeight: '1.5', marginBottom: ap ? '8px' : '12px'
+      }, null, caixa);
+      ['Sentado, como se fosse trabalhar na mesa (de cima, em ângulo).',
+        'O tampo inteiro aparecendo, com as 4 quinas na foto.',
+        'Mesa vazia e com boa luz.'].forEach(function (d) { S.el('div', null, '✔ ' + d, dicas); });
+      var botoes = S.el('div', { display: 'flex', flexDirection: 'column', gap: '8px' }, null, caixa);
+      var tirar = campoFoto(true, carregarFoto);
+      var escolher = campoFoto(false, carregarFoto);
+      if (S.toque) {
+        S.ui.botao('📷 Tirar foto da mesa', 'primario', function () { tirar.click(); }, botoes);
+        S.ui.botao('🖼 Escolher da galeria', 'secundario', function () { escolher.click(); }, botoes);
+      } else {
+        S.ui.botao('🖼 Escolher uma foto da mesa', 'primario', function () { escolher.click(); }, botoes);
+      }
+      S.ui.botao('Usar a bancada virtual (sem foto)', 'secundario', function () {
+        F4.modo = 'virtual';
+        F4.mesa = null;
+        F4.abrirBancada();
+      }, botoes);
+      F4.campos = { tirar: tirar, escolher: escolher }; // para os testes
+    }
+
+    function carregarFoto(arquivo) {
+      if (!im) return;
+      if (arquivo.type && arquivo.type.indexOf('image/') !== 0) return F4.toast('Esse arquivo não é uma imagem.', 'erro');
+      F4.status('Abrindo a foto…');
+      abrirImagem(arquivo).then(function (img) {
+        if (!im) return;
+        estudarMesa(img);
+      }, function () {
+        F4.toast('Não consegui abrir essa imagem. Tente outra foto.', 'erro');
+      });
+    }
+
+    // ---- 2. Estudar a mesa: acha o tampo e calcula a profundidade ---------
+    // Detecção automática: a partir de pontos onde a mesa costuma estar
+    // (meio e parte de baixo da foto), cresce a região de cor parecida e
+    // pega as 4 quinas dela. O aluno pode arrastar os cantos para ajustar.
+    F4.detectarTampo = function (img) {
+      var iw = img.width || img.naturalWidth;
+      var ih = img.height || img.naturalHeight;
+      var w = 220;
+      var h = Math.max(40, Math.round(w * ih / iw));
+      var cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      var ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      var px;
+      try { px = ctx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+      function cor(x, y) {
+        var o = (y * w + x) * 4;
+        return [px[o], px[o + 1], px[o + 2]];
+      }
+      function dist(a, b) {
+        var dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+        return Math.sqrt(dr * dr * 0.8 + dg * dg + db * db * 0.7);
+      }
+      function crescer(sx, sy, tol) {
+        // cor média em volta da semente
+        var m = [0, 0, 0], n = 0;
+        for (var dy = -3; dy <= 3; dy++) for (var dx = -3; dx <= 3; dx++) {
+          var c = cor(Math.min(w - 1, Math.max(0, sx + dx)), Math.min(h - 1, Math.max(0, sy + dy)));
+          m[0] += c[0]; m[1] += c[1]; m[2] += c[2]; n++;
+        }
+        m = [m[0] / n, m[1] / n, m[2] / n];
+        var vis = new Uint8Array(w * h);
+        var fila = [sy * w + sx];
+        vis[sy * w + sx] = 1;
+        var qtd = 0;
+        var ext = { fe: null, fd: null, td: null, te: null, vfe: -1e9, vfd: -1e9, vtd: -1e9, vte: 1e9 };
+        while (fila.length) {
+          var id = fila.pop();
+          var x = id % w, y = (id - x) / w;
+          qtd++;
+          // quinas: frente-esq (max y-x), frente-dir (max x+y), fundo-dir (max x-y), fundo-esq (min x+y)
+          if (y - x > ext.vfe) { ext.vfe = y - x; ext.fe = [x, y]; }
+          if (x + y > ext.vfd) { ext.vfd = x + y; ext.fd = [x, y]; }
+          if (x - y > ext.vtd) { ext.vtd = x - y; ext.td = [x, y]; }
+          if (x + y < ext.vte) { ext.vte = x + y; ext.te = [x, y]; }
+          var c0 = cor(x, y);
+          var viz = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+          for (var k = 0; k < 4; k++) {
+            var nx = x + viz[k][0], ny = y + viz[k][1];
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            var nid = ny * w + nx;
+            if (vis[nid]) continue;
+            var cn = cor(nx, ny);
+            if (dist(cn, m) < tol && dist(cn, c0) < tol * 0.55) {
+              vis[nid] = 1;
+              fila.push(nid);
+            }
+          }
+        }
+        return { qtd: qtd, ext: ext };
+      }
+      var melhor = null;
+      var sementes = [[0.5, 0.66], [0.5, 0.55], [0.5, 0.78], [0.38, 0.68], [0.62, 0.68], [0.5, 0.45]];
+      [34, 46, 26].forEach(function (tol) {
+        sementes.forEach(function (sm) {
+          var r = crescer(Math.round(sm[0] * (w - 1)), Math.round(sm[1] * (h - 1)), tol);
+          var frac = r.qtd / (w * h);
+          if (frac < 0.08 || frac > 0.9) return;
+          var q = [r.ext.fe, r.ext.fd, r.ext.td, r.ext.te];
+          if (q.some(function (p) { return !p; }) || !G.convexo(q)) return;
+          // nota: região grande e bem "quadrilateral" (área do polígono ≈ região)
+          var area = 0;
+          for (var i = 0; i < 4; i++) area += q[i][0] * q[(i + 1) % 4][1] - q[(i + 1) % 4][0] * q[i][1];
+          area = Math.abs(area) / 2;
+          var preench = r.qtd / Math.max(1, area);
+          var nota = frac * Math.min(1, preench) * (preench > 1.25 ? 0.5 : 1);
+          if (!melhor || nota > melhor.nota) melhor = { nota: nota, q: q, frac: frac };
+        });
+      });
+      if (!melhor) return null;
+      var k = iw / w;
+      return melhor.q.map(function (p) { return [(p[0] + 0.5) * k, (p[1] + 0.5) * (ih / h)]; });
+    };
+
+    function cantosPadrao(iw, ih) {
+      return [[iw * 0.12, ih * 0.88], [iw * 0.88, ih * 0.88], [iw * 0.74, ih * 0.5], [iw * 0.26, ih * 0.5]];
+    }
+
+    // Retângulo onde a foto aparece inteira ("contain") dentro da camada.
+    F4.retanguloFoto = function (iw, ih) {
+      var W = Math.max(1, im.ui.camada.clientWidth);
+      var H = Math.max(1, im.ui.camada.clientHeight);
+      var e = Math.min(W / iw, H / ih);
+      var w = iw * e, h = ih * e;
+      return { x: (W - w) / 2, y: (H - h) / 2, w: w, h: h, e: e };
+    };
+
+    function estudarMesa(img) {
+      limparConteudo();
+      F4.modo = 'foto';
+      var u = im.ui;
+      u.camada.style.background = '#000000';
+      var iw = img.width || img.naturalWidth;
+      var ih = img.height || img.naturalHeight;
+      var cv = S.el('canvas', { position: 'absolute', touchAction: 'none' }, null, u.conteudo);
+      var ctx = cv.getContext('2d');
+      var painel = S.el('div', {
+        position: 'absolute', left: '8px', bottom: '8px', right: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap',
+        alignItems: 'flex-end', justifyContent: 'space-between', pointerEvents: 'none', zIndex: '2'
+      }, null, u.conteudo);
+      // O quadro de informações deixa o toque passar (para arrastar um canto
+      // que esteja por baixo dele); só os botões de largura são clicáveis.
+      var compacto = S.ui.compacto();
+      var info = S.el('div', {
+        background: 'rgba(7,20,48,0.82)', border: '2px solid ' + C.borda, borderRadius: '8px', padding: compacto ? '4px 8px' : '6px 10px',
+        color: '#FFFFFF', fontSize: compacto ? '11px' : '12px', lineHeight: '1.4', maxWidth: compacto ? '58%' : '520px', pointerEvents: 'none',
+        transition: 'opacity .15s'
+      }, null, painel);
+      var infoTxt = S.el('div', { fontWeight: '700' }, '', info);
+      var chips = S.el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px', pointerEvents: 'auto' }, null, info);
+      S.el('span', { fontSize: '11px', color: C.cinza, alignSelf: 'center', marginRight: '2px' }, 'Largura da borda da frente:', chips);
+      var acoes = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', pointerEvents: 'auto' }, null, painel);
+      var largura = F4.larguraMesa || 1.2;
+      var chipEls = [];
+      LARGURAS.forEach(function (L) {
+        var b = S.el('button', {
+          padding: '3px 8px', borderRadius: '5px', border: '2px solid #071430', fontFamily: C.fonte, fontWeight: '700',
+          fontSize: '11px', cursor: 'pointer', touchAction: 'manipulation'
+        }, L.rotulo, chips);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          largura = L.m;
+          F4.larguraMesa = L.m;
+          marcarChips();
+          recalcular();
+        });
+        chipEls.push({ b: b, m: L.m });
+      });
+      function marcarChips() {
+        chipEls.forEach(function (c) {
+          var sel = Math.abs(c.m - largura) < 1e-6;
+          c.b.style.background = sel ? C.laranja : C.painel2;
+          c.b.style.color = sel ? '#10203A' : '#FFFFFF';
+        });
+      }
+      marcarChips();
+      var bRedetectar = S.ui.botao('🔍 Detectar de novo', 'secundario', function () { detectar(true); }, acoes);
+      var bOutra = S.ui.botao('📷 Outra foto', 'secundario', mostrarEscolha, acoes);
+      var bOk = S.ui.botao('Confirmar a mesa ✔', 'primario', confirmar, acoes);
+      [bRedetectar, bOutra, bOk].forEach(function (b) { S.estilo(b, { padding: '6px 10px', fontSize: '12px' }); });
+
+      var cantos = cantosPadrao(iw, ih);
+      var cal = null;
+      var arrastando = -1;
+      var estudando = 0; // animação "estudando a mesa"
+      var rect = null;
+      function posicionar() {
+        rect = F4.retanguloFoto(iw, ih);
+        var k = Math.min(2, window.devicePixelRatio || 1);
+        cv.width = Math.round(rect.w * k);
+        cv.height = Math.round(rect.h * k);
+        S.estilo(cv, { left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
+        rect.k = k;
+      }
+      function imgParaTela(p) { return [p[0] * cv.width / iw, p[1] * cv.height / ih]; }
+      function desenhar() {
+        if (!im || !cv.isConnected) return;
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        var agora = S.agora() / 1000;
+        if (estudando > agora) {
+          // varredura de "estudo"
+          var f = 1 - (estudando - agora) / 1.4;
+          var y = f * cv.height;
+          var g = ctx.createLinearGradient(0, y - 60, 0, y);
+          g.addColorStop(0, 'rgba(247,148,29,0)');
+          g.addColorStop(1, 'rgba(247,148,29,0.45)');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, y - 60, cv.width, 60);
+          ctx.fillStyle = '#F7941D';
+          ctx.fillRect(0, y - 2, cv.width, 3);
+          return;
+        }
+        var q = cantos.map(imgParaTela);
+        ctx.save();
+        ctx.beginPath();
+        q.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+        ctx.closePath();
+        ctx.fillStyle = cal && cal.ok ? 'rgba(247,148,29,0.18)' : 'rgba(214,58,51,0.2)';
+        ctx.fill();
+        // grade de profundidade (a cada 10 cm) projetada no tampo
+        if (cal && cal.ok) {
+          ctx.lineWidth = Math.max(1, rect.k);
+          ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+          var passoU = Math.max(0.05, 0.1 / cal.largura), passoV = Math.max(0.05, 0.1 / cal.profundidade);
+          var cx = iw / 2, cy = ih / 2;
+          function P(u, v) { var r = G.aplicar(cal.H, u, v); return imgParaTela([r[0] + cx, r[1] + cy]); }
+          for (var u = passoU; u < 1 - 1e-6; u += passoU) {
+            var a = P(u, 0), b = P(u, 1);
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+          }
+          for (var v = passoV; v < 1 - 1e-6; v += passoV) {
+            var c = P(0, v), d = P(1, v);
+            ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.stroke();
+          }
+          // distância da câmera em 3 linhas (frente, meio, fundo)
+          ctx.font = 'bold ' + Math.round(12 * rect.k) + 'px Arial';
+          ctx.textAlign = 'center';
+          [0.04, 0.5, 0.96].forEach(function (vv) {
+            var p = P(0.5, vv);
+            var dtx = (G.distancia(cal, 0.5, vv) * 100).toFixed(0) + ' cm';
+            var tw = ctx.measureText(dtx).width + 10 * rect.k;
+            ctx.fillStyle = 'rgba(7,20,48,0.85)';
+            ctx.fillRect(p[0] - tw / 2, p[1] - 9 * rect.k, tw, 18 * rect.k);
+            ctx.fillStyle = '#FFD36B';
+            ctx.fillText(dtx, p[0], p[1] + 4 * rect.k);
+          });
+        }
+        ctx.lineWidth = 3 * rect.k;
+        ctx.strokeStyle = cal && cal.ok ? '#F7941D' : '#D63A33';
+        ctx.beginPath();
+        q.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+        ctx.closePath();
+        ctx.stroke();
+        var nomes = ['FE', 'FD', 'TD', 'TE'];
+        q.forEach(function (p, i) {
+          ctx.beginPath();
+          ctx.arc(p[0], p[1], 11 * rect.k, 0, Math.PI * 2);
+          ctx.fillStyle = i === arrastando ? '#FFD36B' : '#FFFFFF';
+          ctx.fill();
+          ctx.lineWidth = 3 * rect.k;
+          ctx.strokeStyle = '#071430';
+          ctx.stroke();
+          ctx.fillStyle = '#071430';
+          ctx.font = 'bold ' + Math.round(8 * rect.k) + 'px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(nomes[i], p[0], p[1] + 3 * rect.k);
+        });
+        ctx.restore();
+      }
+      function recalcular() {
+        cal = G.calibrar(cantos, iw, ih, largura);
+        if (cal.ok) {
+          infoTxt.textContent = '✔ Mesa estudada · tampo ≈ ' + fmtM(cal.largura) + ' × ' + fmtM(cal.profundidade) +
+            ' · câmera a ' + fmtM(cal.distanciaFrente) + ' da frente, ' + fmtM(cal.altura) + ' acima do tampo, ' +
+            Math.round(cal.angulo) + '° de inclinação';
+          bOk.disabled = false;
+          bOk.style.opacity = '1';
+        } else {
+          infoTxt.textContent = '✖ ' + cal.motivo;
+          bOk.disabled = true;
+          bOk.style.opacity = '0.5';
+        }
+      }
+      function detectar(manual) {
+        estudando = S.agora() / 1000 + 1.4;
+        F4.status('Estudando a mesa…');
+        S.som('bip');
+        setTimeout(function () {
+          if (!im || !cv.isConnected) return;
+          var d = F4.detectarTampo(img);
+          cantos = d || cantosPadrao(iw, ih);
+          recalcular();
+          F4.status(d ? 'Achei o tampo! Arraste os 4 cantos (FE, FD, TD, TE) até as quinas da mesa, se precisar.'
+            : 'Não achei o tampo sozinho: arraste os 4 cantos até as quinas da mesa.');
+          if (manual && !d) F4.toast('Dica: foto com o tampo inteiro e vazio ajuda a detecção.', 'info');
+        }, 1400);
+      }
+      function pontoEvento(e) {
+        var r = cv.getBoundingClientRect();
+        return [(e.clientX - r.left) / r.width * iw, (e.clientY - r.top) / r.height * ih];
+      }
+      cv.addEventListener('pointerdown', S.protegido('mesa:canto', function (e) {
+        var p = pontoEvento(e);
+        var raio = 34 / rect.e;
+        var melhor = -1, dm = 1e9;
+        cantos.forEach(function (c, i) {
+          var d = Math.hypot(c[0] - p[0], c[1] - p[1]);
+          if (d < dm) { dm = d; melhor = i; }
+        });
+        if (dm <= raio) {
+          arrastando = melhor;
+          info.style.opacity = '0.2';
+          try { cv.setPointerCapture(e.pointerId); } catch (er) { /* ignora */ }
+        }
+      }));
+      cv.addEventListener('pointermove', function (e) {
+        if (arrastando < 0) return;
+        var p = pontoEvento(e);
+        cantos[arrastando] = [Math.max(0, Math.min(iw, p[0])), Math.max(0, Math.min(ih, p[1]))];
+        recalcular();
+      });
+      function soltar() { arrastando = -1; info.style.opacity = '1'; }
+      cv.addEventListener('pointerup', soltar);
+      cv.addEventListener('pointercancel', soltar);
+
+      function confirmar() {
+        if (!cal || !cal.ok) return;
+        F4.mesa = {
+          img: img, iw: iw, ih: ih, cantos: cantos.slice(), cal: cal,
+          texto: 'tampo ≈ ' + fmtM(cal.largura) + ' × ' + fmtM(cal.profundidade) + ', câmera a ' + fmtM(cal.distanciaFrente)
+        };
+        S.som('ok');
+        F4.abrirBancada();
+      }
+      F4.estudo = { cantos: function () { return cantos; }, definir: function (c) { cantos = c; recalcular(); }, cal: function () { return cal; }, confirmar: confirmar }; // testes
+
+      posicionar();
+      var raf = 0;
+      (function laco() {
+        if (!im || !cv.isConnected) return;
+        raf = requestAnimationFrame(laco);
+        desenhar();
+      })();
+      im.aoRedimensionar = posicionar;
+      im.limpar = function () { cancelAnimationFrame(raf); im.aoRedimensionar = null; };
+      recalcular();
+      detectar(false);
+    }
+
+    // ---- Abrir / fechar ---------------------------------------------------
+    F4.abrirImersao = S.protegido('imersao:abrir', function () {
+      if (im) return;
+      S.pausado = true;
+      S.teclas = {};
+      S.joy.x = 0;
+      S.joy.z = 0;
+      if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+      if (S.limparHover) S.limparHover();
+      im = { ui: montarCamada() };
+      F4.emAR = true;
+      if (!F4.abriu) {
+        F4.abriu = true;
+        J.atualizarMissoes();
+      }
+      im.redimensionar = function () { if (im && im.aoRedimensionar) im.aoRedimensionar(); };
+      window.addEventListener('resize', im.redimensionar);
+      im.tecla = function (e) {
+        if ((e.key || '').toLowerCase() !== 'escape') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (F4.closeAberto && F4.closeAberto()) F4.fecharClose();
+        else F4.fecharImersao();
+      };
+      window.addEventListener('keydown', im.tecla, true);
+      // Já tem uma bancada montada (voltou depois de sair)? Continua nela.
+      if (F4.modo === 'virtual' || (F4.modo === 'foto' && F4.mesa)) F4.abrirBancada();
+      else mostrarEscolha();
+    });
+    F4.trocarMesa = function () { if (im) mostrarEscolha(); };
+
+    F4.fecharImersao = function (semVoltar) {
+      if (!im) return;
+      var a = im;
+      limparConteudo();
+      im = null;
+      F4.emAR = false;
+      clearTimeout(a.timerToast);
+      window.removeEventListener('resize', a.redimensionar);
+      window.removeEventListener('keydown', a.tecla, true);
+      if (S.voz && S.voz.parar) S.voz.parar();
+      a.ui.camada.remove();
+      if (semVoltar) return;
+      if (S.fase === 'jogo') {
+        S.pausado = !!S.ui.modalAberto();
+        if (S.ui.atualizarControlesToque) S.ui.atualizarControlesToque();
+        try { S.raiz.focus({ preventScroll: true }); } catch (e) { /* ignora */ }
+      }
+      J.atualizarMissoes();
+      if (!J.concluido && F4.abriu && !F4.testeOk) {
+        S.aviso('Seu progresso na bancada foi guardado. Use o botão da parede para continuar.', 'info', 3600);
+      }
+    };
+  });
+
+
+  /* ================================================================== */
+  secao('F4D-bancada-3d', function () {
+    // Bancada em primeira pessoa: o cabo e as ferramentas em tamanho real
+    // em cima da mesa da foto (ou de uma mesa virtual). O aluno pega uma
+    // ferramenta e toca na ponta do cabo; cada operação abre um close-up.
+    var C = S.CSS;
+    var F4 = S.f4;
+    var J = S.jogo;
+    var G = F4.geo;
+    var b = null; // bancada aberta
+
+    var ORDEM_ESTADO = ['capa', 'decapada', 'organizada', 'cortada', 'conector', 'crimpada'];
+    var NOMES = {
+      decapador: 'decapador de cabos',
+      alicate: 'alicate de crimpagem',
+      conectores: 'conector RJ45',
+      testador: 'testador de cabos',
+      pontaA: 'ponta A do cabo',
+      pontaB: 'ponta B do cabo'
+    };
+    F4.NOMES = NOMES;
+
+    // ---- Passos ---------------------------------------------------------
+    F4.passoAtual = function () {
+      var lados = ['A', 'B'];
+      for (var i = 0; i < 2; i++) {
+        var k = lados[i];
+        var e = F4.pontas[k].estado;
+        if (e === 'capa') return { acao: 'decapar', ferramenta: 'decapador', ponta: k, texto: 'Ponta ' + k + ': pegue o decapador e decape a capa externa (≈ 2 cm).' };
+        if (e === 'decapada') return { acao: 'organizar', ferramenta: null, ponta: k, texto: 'Ponta ' + k + ': toque na ponta, destrance os pares e organize os 8 fios no T-568B.' };
+        if (e === 'organizada') return { acao: 'cortar', ferramenta: 'alicate', ponta: k, texto: 'Ponta ' + k + ': pegue o alicate e corte os fios no tamanho (≈ 1,3 cm).' };
+        if (e === 'cortada') return { acao: 'conector', ferramenta: 'conectores', ponta: k, texto: 'Ponta ' + k + ': pegue um conector RJ45 e encaixe os fios até o fim.' };
+        if (e === 'conector') return { acao: 'crimpar', ferramenta: 'alicate', ponta: k, texto: 'Ponta ' + k + ': pegue o alicate e crimpe o conector.' };
+      }
+      if (!F4.testeOk) return { acao: 'testar', ferramenta: 'testador', ponta: null, texto: 'Teste o cabo: pegue o testador e encaixe as duas pontas.' };
+      return { acao: 'fim', ferramenta: null, ponta: null, texto: '✔ Cabo aprovado! Toque em "Concluir" para voltar ao laboratório.' };
+    };
+    F4.passosFeitos = function () {
+      return ORDEM_ESTADO.indexOf(F4.pontas.A.estado) + ORDEM_ESTADO.indexOf(F4.pontas.B.estado) + (F4.testeOk ? 1 : 0);
+    };
+    F4.TOTAL_PASSOS = 11;
+
+    var DICAS = {
+      decapar: 'O decapador tem uma lâmina que corta só a capa azul. Passe uns 2 cm de cabo pela lâmina, gire 2 voltas em volta do cabo e puxe a capa. Girar demais corta os fios de dentro!',
+      organizar: 'Destrance os 4 pares, desenrolando cada um. Depois coloque na ordem T-568B, do pino 1 ao 8: branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom.',
+      cortar: 'Corte os 8 fios retos, deixando uns 1,3 cm fora da capa. Mais curto, os fios não chegam aos contatos; mais comprido, a capa fica fora do conector.',
+      conector: 'Segure o RJ45 com a trava (a lingueta) para baixo e os contatos dourados para cima. Empurre os fios até encostarem no fim do conector: dá para ver as pontinhas de cobre pela frente.',
+      crimpar: 'O RJ45 vai na abertura 8P do alicate (a 6P é para RJ11/RJ12 de telefone). Aperte o alicate até o fim: a catraca só solta quando a crimpagem está completa.',
+      testar: 'Encaixe a ponta A no testador principal e a ponta B no remoto e ligue. Num cabo direto, os LEDs acendem 1-1, 2-2… até 8-8 nos dois lados ao mesmo tempo.',
+      fim: 'Tudo certo! Toque em Concluir.'
+    };
+
+    // ---- Materiais e peças ----------------------------------------------
+    function mat(cor, op) {
+      var p = { color: cor };
+      if (op) for (var k in op) p[k] = op[k];
+      return new THREE.MeshLambertMaterial(p);
+    }
+    function caixa(l, a, p, m, x, y, z, pai) {
+      var me = new THREE.Mesh(new THREE.BoxGeometry(l, a, p), m);
+      me.position.set(x, y, z);
+      pai.add(me);
+      return me;
+    }
+    var texSombra = null;
+    function sombra(pai, l, p, op) {
+      if (!texSombra) {
+        var cs = document.createElement('canvas');
+        cs.width = cs.height = 64;
+        var cx = cs.getContext('2d');
+        var gr = cx.createRadialGradient(32, 32, 3, 32, 32, 31);
+        gr.addColorStop(0, 'rgba(0,0,0,0.6)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        cx.fillStyle = gr;
+        cx.fillRect(0, 0, 64, 64);
+        texSombra = new THREE.CanvasTexture(cs);
+      }
+      var m = new THREE.Mesh(new THREE.PlaneGeometry(l, p), new THREE.MeshBasicMaterial({ map: texSombra, transparent: true, depthWrite: false, opacity: op || 0.8 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 0.0015;
+      m.renderOrder = -1;
+      pai.add(m);
+      return m;
+    }
+    function alvoClique(pai, l, a, p, y) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(l, a, p), new THREE.MeshBasicMaterial({ visible: false }));
+      m.position.y = y;
+      pai.add(m);
+      return m;
+    }
+
+    function criarDecapador(E) {
+      var g = new THREE.Group();
+      g.scale.setScalar(E);
+      var amarelo = mat(0xf2c200), preto = mat(0x1d1f24), metal = mat(0xb8c0ca);
+      var corpo = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.014, 18), amarelo);
+      corpo.position.y = 0.007;
+      g.add(corpo);
+      var anel = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.016, 12), metal);
+      anel.position.y = 0.008;
+      g.add(anel);
+      caixa(0.055, 0.012, 0.016, preto, 0.045, 0.006, 0, g);
+      caixa(0.004, 0.004, 0.02, metal, -0.006, 0.015, 0, g); // lâmina
+      sombra(g, 0.13, 0.06);
+      g.userData.alvo = alvoClique(g, 0.12, 0.04, 0.06, 0.012);
+      g.userData.mats = [amarelo, preto];
+      return g;
+    }
+    function criarAlicate(E) {
+      var g = new THREE.Group();
+      g.scale.setScalar(E);
+      var vermelho = mat(0xc9443d), metal = mat(0xaeb6c0), escuro = mat(0x3a4048);
+      var h1 = caixa(0.12, 0.012, 0.018, vermelho, -0.06, 0.008, 0.012, g);
+      h1.rotation.y = 0.12;
+      var h2 = caixa(0.12, 0.012, 0.018, vermelho, -0.06, 0.008, -0.012, g);
+      h2.rotation.y = -0.12;
+      caixa(0.06, 0.016, 0.036, metal, 0.025, 0.009, 0, g);
+      caixa(0.02, 0.018, 0.012, escuro, 0.04, 0.01, 0.0, g); // aberturas 8P/6P
+      caixa(0.012, 0.006, 0.03, metal, 0.062, 0.006, 0, g); // lâmina de corte
+      sombra(g, 0.22, 0.08);
+      g.userData.alvo = alvoClique(g, 0.2, 0.04, 0.07, 0.012);
+      g.userData.mats = [vermelho];
+      return g;
+    }
+    function criarConectores(E) {
+      var g = new THREE.Group();
+      g.scale.setScalar(E);
+      var bandeja = mat(0x2a3038);
+      caixa(0.06, 0.006, 0.04, bandeja, 0, 0.003, 0, g);
+      var claro = mat(0xdde8ff, { transparent: true, opacity: 0.75 });
+      var ouro = mat(0xd9a21b);
+      for (var i = 0; i < 6; i++) {
+        var x = -0.018 + (i % 3) * 0.018, z = i < 3 ? -0.009 : 0.009;
+        caixa(0.014, 0.008, 0.012, claro, x, 0.01, z, g);
+        caixa(0.01, 0.001, 0.003, ouro, x, 0.0145, z - 0.003, g);
+      }
+      sombra(g, 0.09, 0.07);
+      g.userData.alvo = alvoClique(g, 0.08, 0.04, 0.06, 0.012);
+      g.userData.mats = [bandeja];
+      return g;
+    }
+    function criarTestador(E) {
+      var g = new THREE.Group();
+      g.scale.setScalar(E);
+      var azul = mat(0x1d3f7a), cinza = mat(0x9aa4b0);
+      [-0.022, 0.03].forEach(function (z, u) {
+        caixa(0.075, 0.022, 0.042, azul, 0, 0.011, z, g);
+        for (var i = 0; i < 8; i++) caixa(0.0045, 0.002, 0.0045, mat(0x2a3530), -0.025 + i * 0.0072, 0.023, z - 0.008, g);
+        caixa(0.016, 0.01, 0.012, cinza, 0.03, 0.012, z + 0.022 * (u ? 1 : -1) * 0 + 0.0, g);
+      });
+      sombra(g, 0.12, 0.12);
+      g.userData.alvo = alvoClique(g, 0.1, 0.05, 0.11, 0.015);
+      g.userData.mats = [azul];
+      return g;
+    }
+
+    // Ponta do cabo: fios aparecendo, conector, crimpado.
+    function criarPonta(E) {
+      var g = new THREE.Group();
+      var fios = new THREE.Group();
+      g.add(fios);
+      var claro = mat(0xdde8ff, { transparent: true, opacity: 0.55, depthWrite: false });
+      var plug = new THREE.Group();
+      caixa(0.022, 0.009, 0.0145, claro, 0.006, 0, 0, plug);
+      caixa(0.01, 0.003, 0.006, claro, 0.002, -0.0055, 0, plug); // trava
+      var contatos = caixa(0.006, 0.0008, 0.012, mat(0xd9a21b), 0.013, 0.0047, 0, plug);
+      plug.add(contatos);
+      g.add(plug);
+      plug.scale.setScalar(E);
+      fios.scale.setScalar(E);
+      g.userData = { fios: fios, plug: plug, contatos: contatos, alvo: alvoClique(g, 0.07, 0.04, 0.06, 0.006) };
+      return g;
+    }
+    function corFio(id) { return parseInt(S.T568B.filter(function (f) { return f.id === id; })[0].cor.slice(1), 16); }
+    function atualizarPonta(k) {
+      var p = b.pontas[k];
+      var est = F4.pontas[k].estado;
+      var fios = p.userData.fios;
+      while (fios.children.length) {
+        var c = fios.children.pop();
+        c.geometry.dispose();
+      }
+      var plugVis = est === 'conector' || est === 'crimpada';
+      p.userData.plug.visible = plugVis;
+      p.userData.contatos.visible = est === 'crimpada';
+      if (est === 'capa' || plugVis) return;
+      if (est === 'decapada') {
+        // 4 pares ainda trançados
+        [['bl', 'l'], ['bv', 'v'], ['ba', 'a'], ['bm', 'm']].forEach(function (par, i) {
+          var m = caixa(0.025, 0.0028, 0.0028, mat(corFio(par[1])), 0.0125, 0, -0.0045 + i * 0.003, fios);
+          m.rotation.x = i * 0.6;
+        });
+        return;
+      }
+      var ordem = F4.pontas[k].ordem || S.T568B.map(function (f) { return f.id; });
+      var L = est === 'organizada' ? 0.025 : 0.013;
+      ordem.forEach(function (id, i) {
+        var f = S.T568B.filter(function (x) { return x.id === id; })[0];
+        caixa(L, 0.0016, 0.0014, mat(f.listrado ? 0xf0f0f0 : corFio(id)), L / 2, 0, -0.0055 + i * 0.0016, fios);
+        if (f.listrado) caixa(L * 0.9, 0.0017, 0.0007, mat(corFio(id)), L / 2, 0, -0.0055 + i * 0.0016, fios);
+      });
+    }
+
+    // Monta toda a bancada no grupo (y para cima, origem no centro do tampo).
+    function montarCena(W, D) {
+      var grupo = new THREE.Group();
+      // Ferramentas maiores que o real: ficam fáceis de ver e de tocar na foto.
+      var E = (F4.modo === 'foto' ? 1.75 : 1.4) * Math.min(1, Math.max(0.65, W / 0.9));
+      var zf = Math.min(D / 2 - 0.07, 0.2);
+      var zb = -Math.min(D / 2 - 0.07, 0.13);
+      var a = Math.min(0.3, W * 0.33);
+      // Cabo UTP azul, em "U" deitado, com as pontas viradas para a frente.
+      var pts = [
+        new THREE.Vector3(-a, 0, zf), new THREE.Vector3(-a * 0.75, 0, zf - 0.05), new THREE.Vector3(-a * 0.25, 0, zf - 0.11),
+        new THREE.Vector3(a * 0.25, 0, zf - 0.11), new THREE.Vector3(a * 0.75, 0, zf - 0.05), new THREE.Vector3(a, 0, zf)
+      ];
+      var curva = new THREE.CatmullRomCurve3(pts);
+      var raio = 0.0045 * E / 1.3;
+      var cabo = new THREE.Mesh(new THREE.TubeGeometry(curva, 80, raio, 8, false), mat(0x2d7fe0));
+      cabo.position.y = raio;
+      grupo.add(cabo);
+      // Sombra do cabo: tubo achatado escuro.
+      var somb = new THREE.Mesh(new THREE.TubeGeometry(curva, 60, raio * 1.6, 6, false), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false }));
+      somb.scale.y = 0.05;
+      somb.position.y = 0.001;
+      grupo.add(somb);
+      b.pontas = {};
+      [['A', 0, -1], ['B', 1, 1]].forEach(function (cfg) {
+        var p = criarPonta(E / 1.3);
+        var pos = curva.getPoint(cfg[1]);
+        var tg = curva.getTangent(cfg[1]);
+        if (cfg[1] === 0) tg.multiplyScalar(-1);
+        p.position.set(pos.x, raio, pos.z);
+        p.rotation.y = Math.atan2(-tg.z, tg.x);
+        grupo.add(p);
+        b.pontas[cfg[0]] = p;
+        p.userData.id = 'ponta' + cfg[0];
+      });
+      var dec = criarDecapador(E);
+      dec.position.set(-a * 0.95, 0, zb);
+      dec.rotation.y = 0.4;
+      var ali = criarAlicate(E);
+      ali.position.set(-a * 0.05, 0, zb - 0.01);
+      ali.rotation.y = -0.15;
+      var con = criarConectores(E);
+      con.position.set(a * 0.55, 0, zb + 0.01);
+      var tes = criarTestador(E);
+      tes.position.set(a * 1.0, 0, zb + 0.05);
+      tes.rotation.y = -0.3;
+      [dec, ali, con, tes].forEach(function (o) { grupo.add(o); });
+      b.objetos = { decapador: dec, alicate: ali, conectores: con, testador: tes, pontaA: b.pontas.A, pontaB: b.pontas.B };
+      ['decapador', 'alicate', 'conectores', 'testador'].forEach(function (k) { b.objetos[k].userData.id = k; });
+      // Luz
+      grupo.add(new THREE.HemisphereLight(0xffffff, 0x8a7b68, 0.85));
+      var sol = new THREE.DirectionalLight(0xfff4e0, 0.55);
+      sol.position.set(0.3, 1.2, 0.5);
+      grupo.add(sol);
+      return grupo;
+    }
+
+    function mesaVirtual(grupo, W, D) {
+      var cs = document.createElement('canvas');
+      cs.width = 128;
+      cs.height = 64;
+      var cx = cs.getContext('2d');
+      cx.fillStyle = '#C79A66';
+      cx.fillRect(0, 0, 128, 64);
+      for (var i = 0; i < 26; i++) {
+        cx.fillStyle = 'rgba(110,70,35,' + (0.05 + Math.random() * 0.08) + ')';
+        cx.fillRect(0, Math.random() * 64, 128, 1 + Math.random() * 2);
+      }
+      var tex = new THREE.CanvasTexture(cs);
+      var tampo = new THREE.Mesh(new THREE.BoxGeometry(W, 0.03, D), [mat(0x8a6440), mat(0x8a6440), new THREE.MeshLambertMaterial({ map: tex }), mat(0x8a6440), mat(0x9b7048), mat(0x8a6440)]);
+      tampo.position.y = -0.015;
+      grupo.add(tampo);
+      // Esteira de corte verde (como em bancada de técnico).
+      var esteira = new THREE.Mesh(new THREE.BoxGeometry(W * 0.8, 0.002, D * 0.75), mat(0x2f6b45));
+      esteira.position.y = 0.0005;
+      grupo.add(esteira);
+    }
+
+    // ---- Abrir a bancada ------------------------------------------------
+    F4.abrirBancada = S.protegido('bancada:abrir', function () {
+      var ui = F4.novoConteudo();
+      if (!ui) return;
+      var foto = F4.modo === 'foto' && F4.mesa;
+      ui.camada.style.background = foto ? '#000000' : 'linear-gradient(#1C2D45, #0A1A33)';
+      b = { ui: ui };
+      var fotoCv = null;
+      if (foto) {
+        fotoCv = S.el('canvas', { position: 'absolute' }, null, ui.conteudo);
+        b.fotoCv = fotoCv;
+      }
+      var r = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      r.setClearColor(0x000000, 0);
+      S.estilo(r.domElement, { position: 'absolute', display: 'block', touchAction: 'none' });
+      ui.conteudo.appendChild(r.domElement);
+      b.renderer = r;
+      var cena = new THREE.Scene();
+      var cam = new THREE.PerspectiveCamera(50, 1, 0.02, 30);
+      b.cena = cena;
+      b.cam = cam;
+      var W, D;
+      if (foto) {
+        var cal = F4.mesa.cal;
+        W = cal.largura;
+        D = cal.profundidade;
+        G.aplicarCamera(cam, cal);
+      } else {
+        W = 1.0;
+        D = 0.6;
+      }
+      var grupo = montarCena(W, D);
+      if (foto) {
+        grupo.matrixAutoUpdate = false;
+        grupo.matrix.copy(G.matrizBancada(F4.mesa.cal));
+      } else {
+        mesaVirtual(grupo, W, D);
+        cam.position.set(0, 0.42, D / 2 + 0.3);
+        cam.lookAt(0, 0, -0.03);
+      }
+      cena.add(grupo);
+      b.grupo = grupo;
+      ['A', 'B'].forEach(atualizarPonta);
+
+      // HUD da bancada
+      b.mao = S.el('div', {
+        position: 'absolute', left: '8px', bottom: '8px', background: 'rgba(7,20,48,0.88)', border: '2px solid ' + C.laranja,
+        borderRadius: '8px', padding: '5px 10px', color: '#FFFFFF', fontSize: '12px', fontWeight: '700', zIndex: '3', pointerEvents: 'none'
+      }, '', ui.conteudo);
+      var acoes = S.el('div', { position: 'absolute', right: '8px', bottom: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end', zIndex: '3', maxWidth: '70%' }, null, ui.conteudo);
+      function mini(txt, fn) {
+        var bt = S.ui.botao(txt, 'secundario', fn, acoes);
+        S.estilo(bt, { padding: '6px 10px', fontSize: '12px' });
+        return bt;
+      }
+      mini('💡 Dica', function () {
+        var p = F4.passoAtual();
+        J.dicas++;
+        F4.toast('💡 ' + DICAS[p.acao], 'info');
+        if (p.acao === 'organizar' && S.minigames.cartaz) S.minigames.cartaz();
+      });
+      mini('📋 Passos', mostrarPassos);
+      mini('🔁 Trocar a mesa', function () {
+        if (F4.closeAberto && F4.closeAberto()) return;
+        F4.trocarMesa();
+      });
+      b.concluir = S.ui.botao('Concluir ✔', 'primario', function () { F4.fecharImersao(); }, acoes);
+      S.estilo(b.concluir, { padding: '6px 12px', fontSize: '13px', display: 'none' });
+      b.seta = S.el('div', {
+        position: 'absolute', zIndex: '2', transform: 'translate(-50%, -100%)', background: C.laranja, color: '#10203A',
+        border: '2px solid #071430', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: '700',
+        whiteSpace: 'nowrap', pointerEvents: 'none', display: 'none'
+      }, '', ui.conteudo);
+      b.etiqueta = S.el('div', {
+        position: 'absolute', zIndex: '2', background: 'rgba(0,0,0,0.82)', color: '#FFFFFF', fontSize: '12px', fontWeight: '700',
+        padding: '3px 8px', borderRadius: '4px', pointerEvents: 'none', display: 'none', whiteSpace: 'nowrap'
+      }, '', ui.conteudo);
+
+      // Interação
+      var rc = new THREE.Raycaster();
+      var ndc = new THREE.Vector2();
+      function objetoEm(e) {
+        var rect = r.domElement.getBoundingClientRect();
+        ndc.set((e.clientX - rect.left) / rect.width * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        rc.setFromCamera(ndc, cam);
+        var alvos = [];
+        Object.keys(b.objetos).forEach(function (k) { alvos.push(b.objetos[k].userData.alvo); });
+        var hits = rc.intersectObjects(alvos, false);
+        if (!hits.length) return null;
+        var o = hits[0].object;
+        while (o && !o.userData.id) o = o.parent;
+        return o ? o.userData.id : null;
+      }
+      r.domElement.addEventListener('pointerdown', S.protegido('bancada:toque', function (e) {
+        if (F4.closeAberto && F4.closeAberto()) return;
+        var id = objetoEm(e);
+        if (id) usarObjeto(id);
+      }));
+      r.domElement.addEventListener('pointermove', function (e) {
+        if (S.toque) return;
+        var id = objetoEm(e);
+        r.domElement.style.cursor = id ? 'pointer' : 'default';
+        if (id) {
+          var rect = ui.conteudo.getBoundingClientRect();
+          b.etiqueta.textContent = NOMES[id];
+          b.etiqueta.style.left = (e.clientX - rect.left + 14) + 'px';
+          b.etiqueta.style.top = (e.clientY - rect.top + 14) + 'px';
+          b.etiqueta.style.display = 'block';
+        } else b.etiqueta.style.display = 'none';
+      });
+
+      function posicionar() {
+        var rect;
+        if (foto) {
+          rect = F4.retanguloFoto(F4.mesa.iw, F4.mesa.ih);
+          var k = Math.min(2, window.devicePixelRatio || 1);
+          fotoCv.width = Math.round(rect.w * k);
+          fotoCv.height = Math.round(rect.h * k);
+          S.estilo(fotoCv, { left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
+          fotoCv.getContext('2d').drawImage(F4.mesa.img, 0, 0, fotoCv.width, fotoCv.height);
+        } else {
+          rect = { x: 0, y: 0, w: Math.max(1, ui.camada.clientWidth), h: Math.max(1, ui.camada.clientHeight) };
+          cam.aspect = rect.w / rect.h;
+          cam.fov = rect.w / rect.h < 1.2 ? 62 : 50;
+          cam.updateProjectionMatrix();
+        }
+        b.rect = rect;
+        r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        r.setSize(rect.w, rect.h, false);
+        S.estilo(r.domElement, { left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
+      }
+      posicionar();
+      atualizarHud();
+      var raf = 0;
+      var v = new THREE.Vector3();
+      (function laco() {
+        if (!b || b.renderer !== r) return;
+        raf = requestAnimationFrame(laco);
+        var t = S.agora() / 1000;
+        // destaque pulsando no próximo alvo
+        var alvo = alvoAtual();
+        Object.keys(b.objetos).forEach(function (k) {
+          var o = b.objetos[k];
+          var aceso = k === alvo || (k === F4.mao);
+          (o.userData.mats || []).forEach(function (m) {
+            m.emissive.setHex(aceso ? 0xff8a00 : 0x000000);
+            m.emissiveIntensity = k === alvo ? 0.35 + Math.sin(t * 5) * 0.25 : 0.25;
+          });
+          if (o.userData.levantado !== undefined) o.position.y = k === F4.mao ? 0.02 : 0;
+        });
+        if (alvo && !(F4.closeAberto && F4.closeAberto())) {
+          var o2 = b.objetos[alvo];
+          o2.updateWorldMatrix(true, false);
+          v.setFromMatrixPosition(o2.matrixWorld);
+          v.applyMatrix4(new THREE.Matrix4().identity());
+          var up = foto ? new THREE.Vector3(0, 0, 0.045) : new THREE.Vector3(0, 0.045, 0);
+          v.add(up).project(cam);
+          b.seta.style.left = (b.rect.x + (v.x + 1) / 2 * b.rect.w) + 'px';
+          b.seta.style.top = (b.rect.y + (1 - v.y) / 2 * b.rect.h - 4 + Math.sin(t * 4) * 3) + 'px';
+          b.seta.textContent = '▼ ' + (alvo.indexOf('ponta') === 0 ? 'Ponta ' + alvo.slice(-1) : NOMES[alvo]);
+          b.seta.style.display = v.z < 1 ? 'block' : 'none';
+        } else b.seta.style.display = 'none';
+        r.render(cena, cam);
+      })();
+      F4.definirConteudo(function () {
+        cancelAnimationFrame(raf);
+        if (F4.fecharClose) F4.fecharClose(true);
+        cena.traverse(function (o) {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m.map) m.map.dispose(); m.dispose(); });
+        });
+        texSombra = null;
+        r.dispose();
+        try { r.forceContextLoss(); } catch (e) { /* ignora */ }
+        b = null;
+      }, posicionar);
+      F4.toast(foto ? '✔ Ferramentas em cima da sua mesa!' : 'Bancada virtual pronta.', 'ok');
+    });
+
+    function alvoAtual() {
+      var p = F4.passoAtual();
+      if (p.acao === 'fim') return null;
+      if (p.acao === 'testar') return 'testador';
+      if (!p.ferramenta || F4.mao === p.ferramenta) return 'ponta' + p.ponta;
+      return p.ferramenta;
+    }
+
+    function atualizarHud() {
+      if (!b) return;
+      var p = F4.passoAtual();
+      var n = Math.min(F4.TOTAL_PASSOS, F4.passosFeitos() + 1);
+      F4.status(p.acao === 'fim' ? p.texto : 'Passo ' + n + ' de ' + F4.TOTAL_PASSOS + ' · ' + p.texto);
+      b.mao.textContent = '✋ Na mão: ' + (F4.mao ? NOMES[F4.mao] : '—');
+      b.concluir.style.display = F4.testeOk ? '' : 'none';
+    }
+    F4.atualizarBancada = function () {
+      if (!b) return;
+      ['A', 'B'].forEach(atualizarPonta);
+      atualizarHud();
+    };
+
+    function usarObjeto(id) {
+      var p = F4.passoAtual();
+      if (p.acao === 'fim') return F4.toast('O cabo já foi aprovado. Toque em Concluir.', 'info');
+      if (id.indexOf('ponta') !== 0) {
+        // Ferramenta
+        if (F4.mao === id) {
+          F4.mao = null;
+          S.som('fio');
+          atualizarHud();
+          return;
+        }
+        if (id !== p.ferramenta) {
+          F4.toast('Ainda não é a vez do ' + NOMES[id] + '. Agora: ' + p.texto.replace(/^Ponta [AB]: /, ''), 'info');
+          return;
+        }
+        F4.mao = id;
+        S.som('pegar');
+        atualizarHud();
+        if (id === 'testador') return abrirOperacao(p);
+        return;
+      }
+      // Ponta do cabo
+      var k = id.slice(-1);
+      if (p.acao === 'testar') return F4.toast('As duas pontas estão crimpadas: agora pegue o testador.', 'info');
+      if (k !== p.ponta) return F4.toast(F4.pontas[k].estado === 'crimpada' ? 'A ponta ' + k + ' já está pronta.' : 'Termine a ponta ' + p.ponta + ' primeiro.', 'info');
+      if (p.ferramenta && F4.mao !== p.ferramenta) {
+        return F4.toast(F4.mao ? 'Com o ' + NOMES[F4.mao] + ' não dá: agora precisa do ' + NOMES[p.ferramenta] + '.' : 'Primeiro pegue o ' + NOMES[p.ferramenta] + '.', 'info');
+      }
+      if (!p.ferramenta && F4.mao) F4.mao = null;
+      abrirOperacao(p);
+    }
+
+    function abrirOperacao(p) {
+      F4.abrirClose(p.acao, p.ponta, function (res) {
+        F4.mao = null;
+        if (p.acao === 'testar') {
+          if (res && res.aprovado) {
+            F4.testeOk = true;
+            J.atualizarMissoes();
+            S.som('missao');
+            F4.toast('✔ Cabo aprovado no testador! Toque em "Concluir".', 'ok');
+          } else if (res && res.refazer && res.refazer.length) {
+            res.refazer.forEach(function (k) { F4.pontas[k].estado = 'capa'; F4.pontas[k].ordem = null; });
+            F4.refeitas += res.refazer.length;
+            J.atualizarMissoes();
+            F4.toast('Corte fora o conector da ponta ' + res.refazer.join(' e ') + ' e refaça no T-568B.', 'erro');
+          }
+        } else {
+          var e = F4.pontas[p.ponta];
+          if (res && res.voltarPara) e.estado = res.voltarPara;
+          else e.estado = ORDEM_ESTADO[ORDEM_ESTADO.indexOf(e.estado) + 1];
+          if (res && res.ordem) e.ordem = res.ordem;
+          if (e.estado === 'crimpada') {
+            J.atualizarMissoes();
+            F4.toast(F4.pontasProntas() === 2 ? '✔ As duas pontas crimpadas! Agora teste o cabo.' : '✔ Ponta ' + p.ponta + ' crimpada! Agora a outra ponta.', 'ok');
+            if (F4.pontasProntas() === 2) S.som('missao');
+          }
+        }
+        F4.atualizarBancada();
+      });
+      atualizarHud();
+    }
+    F4.usarObjetoBancada = usarObjeto; // testes
+    F4.bancada = function () { return b; };
+
+    function mostrarPassos() {
+      if (!b || b.passos) {
+        if (b && b.passos) { b.passos.remove(); b.passos = null; }
+        return;
+      }
+      var cx = S.el('div', {
+        position: 'absolute', right: '8px', bottom: '52px', width: 'min(340px, calc(100% - 16px))', maxHeight: 'calc(100% - 120px)',
+        overflowY: 'auto', background: 'rgba(14,37,71,0.96)', border: '3px solid ' + C.borda, borderRadius: '10px',
+        padding: '10px 12px', color: '#FFFFFF', fontSize: '12px', lineHeight: '1.5', zIndex: '4', boxSizing: 'border-box'
+      }, null, b.ui.conteudo);
+      b.passos = cx;
+      S.el('div', { fontWeight: '700', color: C.laranja, marginBottom: '4px' }, 'Passos da crimpagem', cx);
+      var feitos = F4.passosFeitos();
+      var lista = [];
+      ['A', 'B'].forEach(function (k) {
+        ['Decapar a capa (decapador)', 'Destrançar e organizar no T-568B', 'Cortar os fios (alicate)', 'Encaixar o RJ45', 'Crimpar (alicate)'].forEach(function (t) {
+          lista.push('Ponta ' + k + ': ' + t);
+        });
+      });
+      lista.push('Testar o cabo (testador)');
+      // passos feitos em ordem de execução: A inteira, depois B
+      var feitosA = ORDEM_ESTADO.indexOf(F4.pontas.A.estado);
+      var feitosB = ORDEM_ESTADO.indexOf(F4.pontas.B.estado);
+      lista.forEach(function (t, i) {
+        var ok = i < 5 ? i < feitosA : i < 10 ? i - 5 < feitosB : F4.testeOk;
+        S.el('div', { color: ok ? C.verde : C.branco, textDecoration: ok ? 'line-through' : 'none' }, (ok ? '✔ ' : '□ ') + t, cx);
+      });
+      S.el('div', { color: C.cinza, marginTop: '4px' }, feitos + ' de ' + F4.TOTAL_PASSOS + ' feitos', cx);
+    }
+  });
+
+
+  /* ================================================================== */
+  secao('F4E-closeups', function () {
+    // Close-ups das operações (desenhados em canvas 2D, 800×450 unidades):
+    // decapar, destrançar/organizar, cortar, encaixar o RJ45, crimpar e testar.
+    var C = S.CSS;
+    var F4 = S.f4;
+    var J = S.jogo;
+    var W = 800, H = 450;
+    var aberto = null;
+
+    function fio(id) { return S.T568B.filter(function (f) { return f.id === id; })[0]; }
+    var T568B = S.T568B.map(function (f) { return f.id; });
+    function fmtCm(v) { return v.toFixed(1).replace('.', ',') + ' cm'; }
+
+    // ---- Desenho -----------------------------------------------------------
+    function rr(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    function capa(ctx, x0, x1, y, h) {
+      var g = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
+      g.addColorStop(0, '#6FB0F5');
+      g.addColorStop(0.35, '#2D7FE0');
+      g.addColorStop(1, '#174E94');
+      ctx.fillStyle = g;
+      rr(ctx, x0, y - h / 2, Math.max(1, x1 - x0), h, 4);
+      ctx.fill();
+      ctx.strokeStyle = '#0B2E5C';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // texto impresso na capa
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.font = 'bold 9px Arial';
+      for (var x = x0 + 20; x < x1 - 60; x += 150) ctx.fillText('UTP CAT5e 4P 24AWG', x, y + 3);
+    }
+    function fioH(ctx, x0, x1, y, esp, f) {
+      if (x1 <= x0) return;
+      ctx.save();
+      ctx.fillStyle = f.listrado ? '#F4F4F4' : f.cor;
+      rr(ctx, x0, y - esp / 2, x1 - x0, esp, esp / 2);
+      ctx.fill();
+      if (f.listrado) {
+        ctx.clip();
+        ctx.fillStyle = f.cor;
+        for (var x = x0 - 20; x < x1; x += 14) {
+          ctx.beginPath();
+          ctx.moveTo(x, y + esp / 2);
+          ctx.lineTo(x + 6, y + esp / 2);
+          ctx.lineTo(x + 12, y - esp / 2);
+          ctx.lineTo(x + 6, y - esp / 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      rr(ctx, x0, y - esp / 2, x1 - x0, esp, esp / 2);
+      ctx.stroke();
+    }
+    // fio em curva (do ponto a ao b passando por controle)
+    function fioCurva(ctx, pts, esp, f) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = esp + 2;
+      linha(ctx, pts);
+      ctx.strokeStyle = f.listrado ? '#F4F4F4' : f.cor;
+      ctx.lineWidth = esp;
+      linha(ctx, pts);
+      if (f.listrado) {
+        ctx.setLineDash([5, 7]);
+        ctx.strokeStyle = f.cor;
+        linha(ctx, pts);
+      }
+      ctx.restore();
+    }
+    function linha(ctx, pts) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
+    }
+    // par trançado: dois fios em senoide, alternando quem fica na frente
+    function parTrancado(ctx, x0, x1, yc, f1, f2, amp, fase, esp) {
+      var n = Math.max(2, Math.round((x1 - x0) / 3));
+      var a = [], b = [];
+      for (var i = 0; i <= n; i++) {
+        var x = x0 + (x1 - x0) * i / n;
+        var s = Math.sin((x - x0) * 0.09 + fase);
+        a.push([x, yc + s * amp]);
+        b.push([x, yc - s * amp]);
+      }
+      fioCurva(ctx, b, esp, f2);
+      fioCurva(ctx, a, esp, f1);
+      // recoloca o f2 por cima nos trechos em que ele passa na frente
+      ctx.save();
+      for (var j = 0; j < n; j += 2) {
+        var x = x0 + (x1 - x0) * j / n;
+        if (Math.cos((x - x0) * 0.09 + fase) < 0) fioCurva(ctx, [b[j], b[Math.min(n, j + 2)]], esp, f2);
+      }
+      ctx.restore();
+    }
+    function regua(ctx, x0, y, pxcm, cmMax, inverter) {
+      ctx.save();
+      ctx.fillStyle = '#F2D88A';
+      rr(ctx, x0 - 6, y, pxcm * cmMax + 12, 28, 3);
+      ctx.fill();
+      ctx.strokeStyle = '#3A2A08';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#3A2A08';
+      ctx.font = 'bold 10px Arial';
+      ctx.textAlign = 'center';
+      for (var mm = 0; mm <= cmMax * 10; mm++) {
+        var x = x0 + mm * pxcm / 10;
+        var alto = mm % 10 === 0 ? 12 : mm % 5 === 0 ? 8 : 5;
+        ctx.fillRect(x - 0.5, y, 1, alto);
+        if (mm % 10 === 0) ctx.fillText(String(mm / 10), x, y + 24);
+      }
+      ctx.textAlign = 'left';
+      ctx.fillText('cm', x0 + pxcm * cmMax + 9, y + 24);
+      ctx.restore();
+    }
+    function etiqueta(ctx, x, y, txt, fundo, cor) {
+      ctx.save();
+      ctx.font = 'bold 13px Arial';
+      var w = ctx.measureText(txt).width + 14;
+      ctx.fillStyle = fundo || '#F7941D';
+      rr(ctx, x - w / 2, y - 12, w, 22, 5);
+      ctx.fill();
+      ctx.fillStyle = cor || '#10203A';
+      ctx.textAlign = 'center';
+      ctx.fillText(txt, x, y + 4);
+      ctx.restore();
+    }
+    function fundoBancada(ctx) {
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#3B6E4F');
+      g.addColorStop(1, '#2A5239');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = 1;
+      for (var x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (var y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    }
+
+    // ---- Painel ------------------------------------------------------------
+    F4.closeAberto = function () { return !!aberto; };
+    F4.fecharClose = function () {
+      if (!aberto) return;
+      var a = aberto;
+      aberto = null;
+      cancelAnimationFrame(a.raf);
+      window.removeEventListener('keydown', a.teclaDown, true);
+      window.removeEventListener('keyup', a.teclaUp, true);
+      a.painel.remove();
+      if (F4.atualizarBancada) F4.atualizarBancada();
+    };
+
+    var TITULOS = {
+      decapar: 'Decapar a ponta', organizar: 'Destrançar e organizar', cortar: 'Cortar os fios',
+      conector: 'Encaixar o conector RJ45', crimpar: 'Crimpar', testar: 'Testar o cabo'
+    };
+
+    F4.abrirClose = function (acao, ponta, aoConcluir) {
+      var im = F4.imersao();
+      if (!im || aberto) return;
+      var ap = S.ui.compacto();
+      var painel = S.el('div', {
+        position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: '5',
+        width: 'min(860px, calc(100% - 12px))', maxHeight: 'calc(100% - 12px)', display: 'flex', flexDirection: 'column',
+        background: C.painel, border: '3px solid ' + C.laranja, borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+        boxSizing: 'border-box', overflowY: 'auto'
+      }, null, im.ui.camada);
+      var topo = S.el('div', {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+        padding: ap ? '4px 10px' : '8px 12px', background: C.painel2, borderBottom: '3px solid ' + C.borda
+      }, null, painel);
+      S.el('div', { fontWeight: '700', color: C.laranja, fontSize: ap ? '13px' : '15px' }, TITULOS[acao] + (ponta ? ' · ponta ' + ponta : ''), topo);
+      var bx = S.ui.botao('✕', 'secundario', function () { F4.fecharClose(); }, topo);
+      S.estilo(bx, { padding: '3px 10px', fontSize: '13px' });
+      bx.setAttribute('aria-label', 'Fechar o close-up');
+      var area = S.el('div', { position: 'relative', flex: '1 1 auto', minHeight: '0', display: 'flex', justifyContent: 'center', background: '#0B1A2E' }, null, painel);
+      var cv = S.el('canvas', { display: 'block', touchAction: 'none', maxWidth: '100%' }, null, area);
+      var rodape = S.el('div', { padding: ap ? '4px 10px 6px' : '8px 12px 10px', borderTop: '2px solid ' + C.borda }, null, painel);
+      var instr = S.el('div', { color: '#FFFFFF', fontWeight: '700', fontSize: ap ? '12px' : '14px', lineHeight: '1.35' }, '', rodape);
+      var msgEl = S.el('div', { minHeight: '18px', fontWeight: '700', fontSize: ap ? '12px' : '13px', marginTop: '2px' }, '', rodape);
+      msgEl.setAttribute('aria-live', 'polite');
+      var botoes = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }, null, rodape);
+      var ctx = cv.getContext('2d');
+
+      var api = {
+        ponta: ponta,
+        ordem: ponta ? F4.pontas[ponta].ordem : null,
+        instr: function (t) { instr.textContent = t; },
+        msg: function (t, tipo) {
+          msgEl.textContent = S.marcarSimbolo ? S.marcarSimbolo(t || '', tipo) : (t || '');
+          msgEl.style.color = tipo === 'erro' ? C.vermelho : tipo === 'ok' ? C.verde : C.amarelo;
+          if (t) S.somGenerico(tipo);
+        },
+        botoes: function (lista) {
+          botoes.textContent = '';
+          (lista || []).forEach(function (b) {
+            var el = S.ui.botao(b[0], b[2] || 'primario', S.protegido('close:' + b[0], b[1]), botoes);
+            S.estilo(el, { padding: ap ? '5px 10px' : '7px 12px', fontSize: ap ? '12px' : '13px' });
+            if (b[3]) el.setAttribute('data-som', 'nao');
+          });
+        },
+        concluir: function (res) {
+          var fn = aoConcluir;
+          F4.fecharClose();
+          if (fn) fn(res || {});
+        },
+        segurando: false
+      };
+      var jogo = MINIS[acao](api);
+      function dimensionar() {
+        var aw = area.clientWidth || 800;
+        var ah = Math.max(120, painel.parentNode.clientHeight - topo.offsetHeight - rodape.offsetHeight - 24);
+        var e = Math.min(aw / W, ah / H);
+        var k = Math.min(2, window.devicePixelRatio || 1);
+        cv.width = Math.round(W * e * k);
+        cv.height = Math.round(H * e * k);
+        cv.style.width = Math.round(W * e) + 'px';
+        cv.style.height = Math.round(H * e) + 'px';
+        api.escala = e * k;
+      }
+      function ponto(ev) {
+        var r = cv.getBoundingClientRect();
+        return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H];
+      }
+      cv.addEventListener('pointerdown', S.protegido('close:down', function (ev) {
+        try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* ignora */ }
+        api.segurando = true;
+        var p = ponto(ev);
+        if (jogo.down) jogo.down(p[0], p[1]);
+      }));
+      cv.addEventListener('pointermove', function (ev) {
+        var p = ponto(ev);
+        if (jogo.move) jogo.move(p[0], p[1], api.segurando);
+      });
+      function up(ev) {
+        api.segurando = false;
+        var p = ev && ev.clientX !== undefined ? ponto(ev) : [0, 0];
+        if (jogo.up) jogo.up(p[0], p[1]);
+      }
+      cv.addEventListener('pointerup', up);
+      cv.addEventListener('pointercancel', up);
+      var a = { painel: painel, raf: 0 };
+      a.teclaDown = function (e) {
+        if ((e.key === ' ' || e.key === 'Enter') && jogo.teclaSegurar && !e.repeat) { e.preventDefault(); jogo.teclaSegurar(true); }
+      };
+      a.teclaUp = function (e) {
+        if ((e.key === ' ' || e.key === 'Enter') && jogo.teclaSegurar) { e.preventDefault(); jogo.teclaSegurar(false); }
+      };
+      window.addEventListener('keydown', a.teclaDown, true);
+      window.addEventListener('keyup', a.teclaUp, true);
+      aberto = a;
+      F4.closeAtual = jogo; // para os testes
+      requestAnimationFrame(function () {
+        dimensionar();
+        var antes = performance.now();
+        (function laco(t) {
+          if (aberto !== a) return;
+          a.raf = requestAnimationFrame(laco);
+          var dt = Math.min(0.05, ((t || performance.now()) - antes) / 1000);
+          antes = t || performance.now();
+          // O rodapé cresce com mensagens e botões: refaz o tamanho do canvas.
+          if (area.clientWidth && (rodape.offsetHeight !== a.altRodape || painel.parentNode.clientHeight !== a.altTela)) {
+            a.altRodape = rodape.offsetHeight;
+            a.altTela = painel.parentNode.clientHeight;
+            dimensionar();
+          }
+          ctx.setTransform(api.escala, 0, 0, api.escala, 0, 0);
+          try { jogo.desenhar(ctx, dt); } catch (e) { registrarErro('close:' + acao, e); cancelAnimationFrame(a.raf); }
+        })();
+      });
+      a.redim = dimensionar;
+    };
+
+    var MINIS = {};
+
+    // ---- 1. Decapar ----------------------------------------------------
+    MINIS.decapar = function (api) {
+      var PX = 36; // px por cm
+      var LAMINA = 470;
+      var Y = 250, HC = 28;
+      var s = { fase: 'inserir', ponta: 395, voltas: 0, ang: 0, angAnt: null, puxe: 0, arrX: null, fioCortado: false };
+      api.instr('1) Arraste o cabo para dentro do decapador: passe uns 2 cm além da lâmina.');
+      function passou() { return (s.ponta - LAMINA) / PX; }
+      function botoesInserir() {
+        api.botoes([['Travar o decapador aqui ✔', function () {
+          var cm = passou();
+          if (cm < 1.95) return api.msg('Pouco cabo: passou só ' + fmtCm(Math.max(0, cm)) + '. Precisa de pelo menos 2 cm para dar para trabalhar os fios.', 'info');
+          if (cm > 3.2) return api.msg('Cabo demais (' + fmtCm(cm) + '): você só vai desperdiçar fio. Deixe uns 2 cm.', 'info');
+          s.fase = 'girar';
+          S.som('fio');
+          api.msg('Travado com ' + fmtCm(cm) + '.', 'ok');
+          api.instr('2) Gire o decapador em volta do cabo: arraste em círculo no anel. Umas 2 voltas cortam a capa.');
+          api.botoes([['Puxar a capa ▶', function () {
+            if (s.voltas < 1.5) return api.msg('A capa ainda não soltou: gire mais (' + s.voltas.toFixed(1).replace('.', ',') + ' voltas).', 'info');
+            s.fase = 'puxar';
+            api.instr('3) Arraste o decapador para a direita e puxe a capa para fora.');
+            api.botoes([]);
+          }]]);
+        }]]);
+      }
+      botoesInserir();
+      function recomecar() {
+        J.erros++;
+        s.fase = 'inserir';
+        s.voltas = 0;
+        s.ang = 0;
+        s.ponta = 395;
+        s.arrX = null;
+        s.angAnt = null;
+        s.bloq = true; // espera soltar o dedo antes de aceitar outro arraste
+        api.msg('✖ Girou demais: a lâmina cortou o isolamento dos fios de dentro! Essa ponta foi cortada fora; decape de novo, com cerca de 2 voltas.', 'erro');
+        api.instr('1) Arraste o cabo para dentro do decapador: passe uns 2 cm além da lâmina.');
+        botoesInserir();
+      }
+      return {
+        estado: s,
+        down: function (x, y) {
+          s.arrX = x;
+          s.angAnt = Math.atan2(y - Y, x - LAMINA);
+          if (s.fase === 'fio' && Math.abs(y - (Y - 3)) < 22 && x > LAMINA && x < s.ponta + 40) {
+            s.fioCortado = true;
+            S.som('corte');
+            s.fase = 'pronto';
+            api.msg('✔ Capa removida e fio de rasgamento cortado. Os 4 pares estão livres.', 'ok');
+            api.instr('Ponta decapada!');
+            api.botoes([['Concluir ✔', function () { api.concluir({}); }]]);
+          }
+        },
+        move: function (x, y, seg) {
+          if (!seg || s.bloq) return;
+          if (s.fase === 'inserir' && s.arrX !== null) {
+            s.ponta = Math.max(330, Math.min(640, s.ponta + (x - s.arrX)));
+            s.arrX = x;
+          } else if (s.fase === 'girar') {
+            var a = Math.atan2(y - Y, x - LAMINA);
+            if (s.angAnt !== null) {
+              var d = a - s.angAnt;
+              while (d > Math.PI) d -= Math.PI * 2;
+              while (d < -Math.PI) d += Math.PI * 2;
+              s.voltas += Math.abs(d) / (Math.PI * 2);
+              s.ang += d;
+              if (Math.floor(s.voltas * 4) !== Math.floor((s.voltas - Math.abs(d) / (Math.PI * 2)) * 4)) S.som('tecla');
+            }
+            s.angAnt = a;
+            if (s.voltas > 3.6) recomecar();
+          } else if (s.fase === 'puxar' && s.arrX !== null) {
+            s.puxe = Math.max(0, s.puxe + (x - s.arrX));
+            s.arrX = x;
+            if (s.puxe > 140) {
+              s.fase = 'fio';
+              S.som('decapar');
+              api.msg('A capa saiu!', 'ok');
+              api.instr('4) Corte o fio de rasgamento (a linha branca de náilon junto dos pares): toque nele.');
+            }
+          }
+        },
+        up: function () { s.arrX = null; s.angAnt = null; s.bloq = false; },
+        desenhar: function (ctx) {
+          fundoBancada(ctx);
+          var exposta = s.fase === 'fio' || s.fase === 'pronto';
+          var corteX = LAMINA;
+          if (exposta) {
+            // pares trançados expostos
+            var pares = [['bl', 'l'], ['bv', 'v'], ['ba', 'a'], ['bm', 'm']];
+            pares.forEach(function (p, i) {
+              parTrancado(ctx, corteX - 4, s.ponta, Y - 10.5 + i * 7, fio(p[0]), fio(p[1]), 3, i, 4);
+            });
+            if (!s.fioCortado) {
+              ctx.strokeStyle = '#FFFFFF';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath(); ctx.moveTo(corteX, Y - 3); ctx.lineTo(s.ponta + 30, Y - 8); ctx.stroke();
+              etiqueta(ctx, s.ponta - 20, Y + 48, '↑ fio de rasgamento (toque nele)', '#FFFFFF');
+            }
+            capa(ctx, -20, corteX, Y, HC);
+            // pedaço de capa caído
+            capa(ctx, 600, 600 + (s.ponta - corteX), 380, HC);
+          } else {
+            capa(ctx, -20, s.ponta, Y, HC);
+            if (s.fase === 'puxar') {
+              // o pedaço cortado acompanha o decapador
+              ctx.save();
+              ctx.globalAlpha = 0.9;
+              capa(ctx, corteX + s.puxe, s.ponta + s.puxe, Y, HC);
+              ctx.restore();
+              ctx.fillStyle = '#2D7FE0';
+              ctx.fillRect(corteX, Y - 1, s.puxe, 2);
+            }
+          }
+          // régua a partir da lâmina
+          regua(ctx, LAMINA, 60, PX, 4);
+          if (s.fase === 'inserir') etiqueta(ctx, Math.max(LAMINA + 30, s.ponta), 120, 'passou ' + fmtCm(Math.max(0, passou())));
+          // decapador (corpo amarelo em volta do cabo)
+          var dx = s.fase === 'puxar' ? s.puxe : exposta ? 160 : 0;
+          ctx.save();
+          ctx.translate(LAMINA + dx, Y);
+          ctx.rotate(s.fase === 'girar' ? s.ang : 0);
+          ctx.fillStyle = 'rgba(242,194,0,0.92)';
+          ctx.beginPath(); ctx.arc(0, 0, 54, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#7A5A00'; ctx.lineWidth = 3; ctx.stroke();
+          ctx.fillStyle = '#1D1F24';
+          rr(ctx, 30, -14, 110, 28, 8); ctx.fill();
+          ctx.fillStyle = '#C9D2DC';
+          ctx.fillRect(-3, -60, 6, 22); // lâmina
+          ctx.restore();
+          if (!exposta) {
+            // o cabo passa por cima do corpo (visto de cima)
+            ctx.save();
+            ctx.globalAlpha = 0.55;
+            capa(ctx, LAMINA + dx - 54, Math.min(s.ponta + dx * (s.fase === 'puxar' ? 1 : 0), LAMINA + dx + 54), Y, HC);
+            ctx.restore();
+          }
+          if (s.fase === 'girar') {
+            ctx.strokeStyle = 'rgba(255,211,107,0.85)';
+            ctx.lineWidth = 6;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath(); ctx.arc(LAMINA, Y, 92, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.strokeStyle = '#F7941D';
+            ctx.lineWidth = 8;
+            ctx.beginPath(); ctx.arc(LAMINA, Y, 92, -Math.PI / 2, -Math.PI / 2 + Math.min(1, s.voltas / 2) * Math.PI * 2); ctx.stroke();
+            etiqueta(ctx, LAMINA, Y + 125, 'voltas: ' + s.voltas.toFixed(1).replace('.', ',') + ' (ideal: 2)', s.voltas > 3 ? '#FF7676' : '#F7941D');
+          }
+        }
+      };
+    };
+
+    // ---- 2. Destrançar e organizar --------------------------------------
+    MINIS.organizar = function (api) {
+      var SAI = 230; // fim da capa
+      var pares = [['bl', 'l'], ['bv', 'v'], ['ba', 'a'], ['bm', 'm']].map(function (p, i) { return { fios: p, amp: 7, solto: false, t: 0, y: 130 + i * 62 }; });
+      var s = { fase: 'destrancar', ordem: null, arrasto: -1, yArr: 0, ref: false, alisar: 0 };
+      api.instr('1) Toque em cada um dos 4 pares para destrançá-los.');
+      api.botoes([]);
+      function yLinha(i) { return 86 + i * 37; }
+      function irOrdenar() {
+        s.fase = 'ordenar';
+        s.ordem = ['bl', 'l', 'bv', 'v', 'ba', 'a', 'bm', 'm'];
+        api.instr('2) Arraste os fios (pela ponta da direita) para cima ou para baixo até a ordem T-568B: do pino 1 (em cima) ao 8.');
+        api.botoes([
+          ['📄 Ver o padrão T-568B', function () {
+            if (!s.ref) J.dicas++;
+            s.ref = !s.ref;
+          }, 'secundario'],
+          ['Alinhar os fios ✔', function () {
+            s.fase = 'alisar';
+            S.som('fio');
+            api.msg('Fios alinhados e esticados, lado a lado.', 'ok');
+            api.instr('Fios organizados! Quem confere a ordem no final é o testador.');
+            api.botoes([['Concluir ✔', function () { api.concluir({ ordem: s.ordem.slice() }); }]]);
+          }]
+        ]);
+      }
+      return {
+        estado: s,
+        ordenar: function (ordem) { if (s.fase !== 'ordenar') { pares.forEach(function (p) { p.solto = true; p.amp = 0; }); irOrdenar(); } s.ordem = ordem.slice(); },
+        down: function (x, y) {
+          if (s.fase === 'destrancar') {
+            pares.forEach(function (p) {
+              if (!p.solto && Math.abs(y - p.y) < 26 && x > SAI) {
+                p.solto = true;
+                S.som('fio');
+              }
+            });
+          } else if (s.fase === 'ordenar' && x > 360) {
+            var i = Math.round((y - 86) / 37);
+            if (i >= 0 && i < 8) {
+              s.arrasto = i;
+              s.yArr = y;
+            }
+          }
+        },
+        move: function (x, y, seg) {
+          if (s.arrasto >= 0 && seg) s.yArr = Math.max(70, Math.min(370, y));
+        },
+        up: function () {
+          if (s.arrasto < 0) return;
+          var novo = Math.max(0, Math.min(7, Math.round((s.yArr - 86) / 37)));
+          if (novo !== s.arrasto) {
+            var id = s.ordem.splice(s.arrasto, 1)[0];
+            s.ordem.splice(novo, 0, id);
+            S.som('fio');
+          }
+          s.arrasto = -1;
+        },
+        desenhar: function (ctx, dt) {
+          fundoBancada(ctx);
+          if (s.fase === 'destrancar') {
+            var todos = true;
+            pares.forEach(function (p) {
+              if (p.solto) p.amp = Math.max(0, p.amp - dt * 14);
+              if (p.amp > 0 || !p.solto) todos = false;
+              var sep = p.solto ? (7 - p.amp) * 1.4 : 0;
+              if (p.amp > 0.01) parTrancado(ctx, SAI - 10, 640, p.y, fio(p.fios[0]), fio(p.fios[1]), p.amp, pares.indexOf(p), 7);
+              else {
+                fioH(ctx, SAI - 10, 640, p.y - sep, 7, fio(p.fios[0]));
+                fioH(ctx, SAI - 10, 640, p.y + sep, 7, fio(p.fios[1]));
+              }
+              if (!p.solto) etiqueta(ctx, 700, p.y, 'toque', '#FFFFFF');
+            });
+            capa(ctx, -20, SAI, 225, 34);
+            if (todos) irOrdenar();
+            return;
+          }
+          // fios em leque, da capa até as linhas dos pinos
+          var lin = s.fase === 'alisar' ? 1 : 0;
+          s.alisar = Math.min(1, s.alisar + (lin ? dt * 2 : 0));
+          s.ordem.forEach(function (id, i) {
+            var f = fio(id);
+            var y = i === s.arrasto ? s.yArr : yLinha(i);
+            var yb = 214 + i * 3.5;
+            var xm = 330 - 60 * s.alisar;
+            var yi = yb + (y - yb) * 0.15;
+            var yAl = 150 + i * 16;
+            var yFim = y + (yAl - y) * s.alisar;
+            fioCurva(ctx, [[SAI - 10, yb], [SAI + 40, yb + (yi - yb) * 0.4], [xm, yFim]], 9, f);
+            fioH(ctx, xm, 640 - 60 * s.alisar, yFim, 9, f);
+            if (!s.alisar) {
+              ctx.fillStyle = 'rgba(7,20,48,0.85)';
+              rr(ctx, 650, y - 11, 118, 22, 5);
+              ctx.fill();
+              ctx.fillStyle = '#FFFFFF';
+              ctx.font = 'bold 12px Arial';
+              ctx.fillText((i + 1) + '  ' + f.nome, 658, y + 4);
+            }
+          });
+          capa(ctx, -20, SAI, 225, 34);
+          if (!s.alisar) {
+            ctx.fillStyle = '#FFD36B';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('pino 1 ↑ (conector com a trava para baixo)', 330, 60);
+          }
+          if (s.ref) {
+            ctx.fillStyle = 'rgba(7,20,48,0.92)';
+            rr(ctx, 10, 10, 300, 92, 8);
+            ctx.fill();
+            ctx.fillStyle = '#F7941D';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('T-568B (pino 1 → 8)', 22, 30);
+            T568B.forEach(function (id, i) {
+              fioH(ctx, 22 + i * 35, 46 + i * 35, 62, 30, fio(id));
+              ctx.fillStyle = '#FFFFFF';
+              ctx.font = 'bold 11px Arial';
+              ctx.fillText(String(i + 1), 30 + i * 35, 92);
+            });
+          }
+        }
+      };
+    };
+
+    // ---- 3. Cortar ------------------------------------------------------
+    MINIS.cortar = function (api) {
+      var PX = 60, CAPA = 300;
+      var ordem = api.ordem || T568B;
+      var fins = ordem.map(function () { return CAPA + 2.0 * PX - 4 + Math.random() * 16; }); // decapado com ~2 cm
+      var s = { corte: 470, arr: null, cortado: false, queda: 0, pedacos: null };
+      api.instr('Arraste a lâmina do alicate até onde quer cortar: deixe uns 1,3 cm de fio para fora da capa. Depois corte.');
+      function comp() { return (s.corte - CAPA) / PX; }
+      function botaoCortar() {
+        api.botoes([['✂ Cortar aqui', function () {
+          var cm = comp();
+          var maxFim = Math.max.apply(null, fins);
+          if (s.corte >= maxFim) return api.msg('A lâmina está depois das pontas: não tem o que cortar.', 'info');
+          s.pedacos = fins.map(function (f) { return { x0: s.corte, x1: f }; });
+          s.queda = 0;
+          fins = fins.map(function (f) { return Math.min(f, s.corte); });
+          S.som('corte');
+          if (cm < 1.05) {
+            J.erros++;
+            api.msg('✖ Curto demais (' + fmtCm(cm) + '): os fios não alcançam os contatos do RJ45. Essa ponta foi perdida: decape de novo.', 'erro');
+            api.instr('Sem problema: corte essa ponta fora e recomece por ela.');
+            api.botoes([['Refazer a ponta', function () { api.concluir({ voltarPara: 'capa' }); }]]);
+          } else if (cm > 1.55) {
+            api.msg('Ainda comprido (' + fmtCm(cm) + '): a capa ficaria fora do conector e o cabo não prende. Corte de novo, mais perto da capa.', 'info');
+          } else {
+            s.cortado = true;
+            api.msg('✔ Corte reto com ' + fmtCm(cm) + ': os 8 fios do mesmo tamanho.', 'ok');
+            api.instr('Fios cortados no tamanho certo!');
+            api.botoes([['Concluir ✔', function () { api.concluir({}); }]]);
+          }
+        }]]);
+      }
+      botaoCortar();
+      return {
+        estado: s,
+        posicionar: function (cm) { s.corte = CAPA + cm * PX; },
+        down: function (x) { s.arr = x; if (!s.cortado) s.corte = Math.max(CAPA + 20, Math.min(560, x)); },
+        move: function (x, y, seg) { if (seg && s.arr !== null && !s.cortado) s.corte = Math.max(CAPA + 20, Math.min(560, x)); },
+        up: function () { s.arr = null; },
+        desenhar: function (ctx, dt) {
+          fundoBancada(ctx);
+          ordem.forEach(function (id, i) { fioH(ctx, CAPA - 6, fins[i], 150 + i * 18, 14, fio(id)); });
+          capa(ctx, -20, CAPA, 213, 150);
+          if (s.pedacos) {
+            s.queda += dt;
+            s.pedacos.forEach(function (p, i) {
+              if (p.x1 - p.x0 < 2) return;
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, 1 - s.queda);
+              fioH(ctx, p.x0 + 6, p.x1 + 6, 150 + i * 18 + s.queda * s.queda * 400, 14, fio(ordem[i]));
+              ctx.restore();
+            });
+          }
+          regua(ctx, CAPA, 320, PX, 3);
+          if (!s.cortado) {
+            // lâmina do alicate
+            ctx.fillStyle = 'rgba(201,210,220,0.95)';
+            ctx.fillRect(s.corte - 3, 110, 6, 200);
+            ctx.fillStyle = '#AEB6C0';
+            rr(ctx, s.corte - 26, 70, 52, 40, 6); ctx.fill();
+            rr(ctx, s.corte - 26, 310, 52, 34, 6); ctx.fill();
+            ctx.fillStyle = '#C9443D';
+            rr(ctx, s.corte - 12, 0, 24, 72, 6); ctx.fill();
+            etiqueta(ctx, s.corte, 380, fmtCm(comp()) + ' para fora da capa', comp() < 1.05 ? '#FF7676' : comp() > 1.55 ? '#FFD36B' : '#6BF08E');
+          }
+        }
+      };
+    };
+
+    // ---- 4. Encaixar o RJ45 ---------------------------------------------
+    // Conector visto de cima, com a ponta de encaixe (onde ficam os 8
+    // contatos dourados) para a direita: é por ali que ele entra na placa
+    // de rede. Do lado certo aparecem os contatos; do outro, a trava.
+    // Desenha o RJ45 visto de cima. lado: 'contatos' | 'trava'.
+    function desenharRJ45(ctx, x0, yc, comp, alt, lado, dentro) {
+      var x1 = x0 + comp;
+      ctx.save();
+      // corpo transparente, com a frente (direita) um pouco mais alta
+      ctx.fillStyle = 'rgba(225,238,255,0.38)';
+      ctx.beginPath();
+      ctx.moveTo(x0, yc - alt / 2 + 8);
+      ctx.lineTo(x1 - 46, yc - alt / 2);
+      ctx.lineTo(x1, yc - alt / 2);
+      ctx.lineTo(x1, yc + alt / 2);
+      ctx.lineTo(x1 - 46, yc + alt / 2);
+      ctx.lineTo(x0, yc + alt / 2 - 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#B8C8DC';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      if (dentro) dentro();
+      // canaletas dos 8 fios na frente
+      ctx.strokeStyle = 'rgba(184,200,220,0.7)';
+      ctx.lineWidth = 1;
+      for (var i = 0; i <= 8; i++) {
+        var yy = yc - 28 + i * 7;
+        ctx.beginPath(); ctx.moveTo(x1 - 64, yy); ctx.lineTo(x1 - 4, yy); ctx.stroke();
+      }
+      if (lado === 'contatos') {
+        // 8 lâminas douradas na ponta de encaixe, uma sobre cada fio
+        for (var k = 0; k < 8; k++) {
+          var yk = yc - 28 + k * 7 + 1;
+          ctx.fillStyle = '#E2B53C';
+          ctx.fillRect(x1 - 22, yk, 16, 5);
+          ctx.fillStyle = '#A97C10';
+          ctx.fillRect(x1 - 22, yk + 4, 16, 1);
+        }
+      } else {
+        // trava (lingueta) em cima: presa perto da frente, solta para trás
+        ctx.fillStyle = 'rgba(214,228,245,0.92)';
+        ctx.beginPath();
+        ctx.moveTo(x1 - 18, yc - 14);
+        ctx.lineTo(x1 - 18, yc + 14);
+        ctx.lineTo(x0 + 40, yc + 10);
+        ctx.lineTo(x0 + 40, yc - 10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#8FA3BC';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(143,163,188,0.9)';
+        ctx.fillRect(x0 + 40, yc - 10, 8, 20);
+      }
+      // trava de capa (strain relief) atrás
+      ctx.strokeStyle = 'rgba(184,200,220,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x0 + 18, yc - alt / 2 + 12); ctx.lineTo(x0 + 18, yc + alt / 2 - 12); ctx.stroke();
+      ctx.restore();
+    }
+
+    MINIS.conector = function (api) {
+      var ordem = api.ordem || T568B;
+      var PX = 60;
+      var CAPA0 = 230, PONTA0 = CAPA0 + 1.3 * PX;
+      var PLUG = { x0: 380, comp: 220, y: 215 };
+      PLUG.fundo = PLUG.x0 + PLUG.comp - 6; // os fios precisam chegar aqui
+      var s = { dx: 0, arr: null, contatosCima: Math.random() < 0.5, fase: 'virar', frente: 0 };
+      function instrucao() {
+        api.instr(s.contatosCima ? '2) Arraste o cabo para dentro do conector até as pontas dos fios chegarem embaixo dos contatos dourados.'
+          : '1) Vire o conector: os contatos dourados precisam ficar virados para você (a trava fica embaixo).');
+      }
+      instrucao();
+      function botoes() {
+        api.botoes(s.dx > 2 ? [] : [['↻ Virar o conector', function () {
+          s.contatosCima = !s.contatosCima;
+          S.som('fio');
+          instrucao();
+        }, 'secundario']]);
+      }
+      botoes();
+      return {
+        estado: s,
+        down: function (x) { if (s.fase !== 'pronto') s.arr = x; },
+        move: function (x, y, seg) {
+          if (!seg || s.arr === null || s.fase === 'pronto') return;
+          s.dx = Math.max(0, Math.min(PLUG.fundo - PONTA0, s.dx + (x - s.arr)));
+          s.arr = x;
+          botoes();
+        },
+        up: function () {
+          if (s.arr === null) return;
+          s.arr = null;
+          var ponta = PONTA0 + s.dx;
+          if (ponta > PLUG.x0 + 30 && !s.contatosCima) {
+            J.erros++;
+            s.dx = 0;
+            botoes();
+            api.msg('✖ O conector estava de cabeça para baixo: a ordem dos pinos ficaria invertida (o 8 no lugar do 1). Tire, vire e encaixe de novo.', 'erro');
+            return;
+          }
+          if (ponta >= PLUG.fundo - 1) {
+            s.fase = 'pronto';
+            S.som('plugue');
+            api.msg('✔ Os 8 fios chegaram na ponta, embaixo dos contatos dourados, e a capa azul entrou no conector.', 'ok');
+            api.instr('Conector encaixado! Confira a vista de frente.');
+            api.botoes([['Concluir ✔', function () { api.concluir({}); }]]);
+          } else if (ponta > PLUG.x0) {
+            api.msg('Empurre até o fim: as pontas dos fios precisam chegar embaixo dos contatos.', 'info');
+          }
+        },
+        desenhar: function (ctx, dt) {
+          fundoBancada(ctx);
+          var dx = s.dx;
+          var lado = s.contatosCima ? 'contatos' : 'trava';
+          // por baixo (trava em cima), os fios aparecem na ordem inversa
+          var fios = s.contatosCima ? ordem : ordem.slice().reverse();
+          desenharRJ45(ctx, PLUG.x0, PLUG.y, PLUG.comp, 92, lado, function () {
+            fios.forEach(function (id, i) { fioH(ctx, CAPA0 - 4 + dx, PONTA0 + dx, PLUG.y - 24.5 + i * 7, 6.5, fio(id)); });
+            capa(ctx, -20, CAPA0 + dx, PLUG.y, 62);
+          });
+          if (!s.contatosCima) {
+            // a trava cobre os fios: redesenha só o que fica fora do conector
+            ctx.save();
+            ctx.beginPath(); ctx.rect(0, 0, PLUG.x0, H); ctx.clip();
+            fios.forEach(function (id, i) { fioH(ctx, CAPA0 - 4 + dx, PONTA0 + dx, PLUG.y - 24.5 + i * 7, 6.5, fio(id)); });
+            capa(ctx, -20, CAPA0 + dx, PLUG.y, 62);
+            ctx.restore();
+          }
+          var xe = PLUG.x0 + PLUG.comp;
+          etiqueta(ctx, xe - 14, PLUG.y - 66, s.contatosCima ? 'contatos dourados ✔' : 'você está vendo a trava: vire!', s.contatosCima ? '#6BF08E' : '#FFD36B');
+          etiqueta(ctx, xe + 62, PLUG.y, 'encaixa na placa ➜', '#FFFFFF');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 11px Arial';
+          if (s.contatosCima) ctx.fillText('pino 1', xe - 64, PLUG.y - 34);
+          if (s.fase === 'pronto') {
+            s.frente = Math.min(1, s.frente + dt * 3);
+            ctx.save();
+            ctx.globalAlpha = s.frente;
+            ctx.fillStyle = 'rgba(7,20,48,0.92)';
+            rr(ctx, 590, 300, 196, 130, 8); ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 11px Arial';
+            ctx.fillText('vista de frente (ponta de encaixe)', 600, 318);
+            ctx.fillStyle = 'rgba(225,238,255,0.6)';
+            rr(ctx, 610, 330, 156, 72, 5); ctx.fill();
+            for (var k = 0; k < 8; k++) {
+              ctx.fillStyle = '#E2B53C';
+              ctx.fillRect(618 + k * 18, 334, 9, 14);
+              var f = fio(ordem[k]);
+              ctx.fillStyle = f.listrado ? '#F4F4F4' : f.cor;
+              ctx.beginPath(); ctx.arc(622.5 + k * 18, 366, 6, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#C87533';
+              ctx.beginPath(); ctx.arc(622.5 + k * 18, 366, 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.fillStyle = '#6BF08E';
+            ctx.fillText('cobre dos 8 fios no fim ✔', 618, 420);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = '#FFD36B';
+            ctx.font = 'bold 13px Arial';
+            ctx.fillText(s.contatosCima ? '⇢ arraste o cabo para a direita' : 'vire o conector antes de encaixar', 40, 380);
+          }
+        }
+      };
+    };
+
+    // ---- 5. Crimpar -----------------------------------------------------
+    // Alicate de crimpagem visto de frente, como os de bancada: cabeça preta
+    // com as matrizes 6P · 8P · 4P (a 8P, do RJ45, fica no meio), lâmina de
+    // corte e cabos emborrachados com catraca.
+    MINIS.crimpar = function (api) {
+      var CX = 300; // centro do alicate
+      var SLOTS = [
+        { n: '6P', x: CX - 70, w: 44, h: 40, dica: 'Essa é a 6P: para RJ11/RJ12 (telefone), menor que o RJ45.' },
+        { n: '8P', x: CX, w: 62, h: 46, certa: true },
+        { n: '4P', x: CX + 66, w: 32, h: 36, dica: 'Essa é a 4P: para o cabinho do fone do telefone (RJ9/RJ22).' }
+      ];
+      var YS = 96; // altura das matrizes
+      var s = { fase: 'slot', aperto: 0, segurando: false, cliques: 0 };
+      api.instr('1) Encaixe o RJ45 na matriz certa do alicate: toque nela.');
+      api.botoes([]);
+      function apertar(sim) {
+        if (s.fase !== 'apertar') return;
+        s.segurando = sim;
+        if (!sim && s.aperto > 0.02 && s.aperto < 1) {
+          api.msg('Soltou antes: a catraca do alicate só libera quando o aperto é completo. Segure até o fim.', 'info');
+        }
+      }
+      function cabo(ctx, lado, ab) {
+        // cabo emborrachado (verde, como nos alicates de bancada)
+        ctx.save();
+        ctx.translate(CX + lado * 24, 236);
+        // aberto: os cabos se afastam; fechado: quase paralelos
+        ctx.rotate(-lado * (0.05 + ab * 1.6));
+        ctx.fillStyle = '#1E1F22';
+        rr(ctx, -16, -20, 32, 70, 6); ctx.fill(); // haste de metal
+        ctx.fillStyle = '#2E9E4A';
+        ctx.beginPath();
+        ctx.moveTo(-20, 40);
+        ctx.lineTo(20, 40);
+        ctx.lineTo(16, 210);
+        ctx.quadraticCurveTo(0, 226, -16, 210);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#257F3B';
+        for (var i = 0; i < 9; i++) ctx.fillRect(-14, 120 + i * 9, 28, 3); // ranhuras
+        ctx.fillStyle = '#2E9E4A';
+        ctx.beginPath(); ctx.moveTo(-22, 40); ctx.lineTo(22, 40); ctx.lineTo(-lado * 28, 24); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      return {
+        estado: s,
+        teclaSegurar: apertar,
+        down: function (x, y) {
+          if (s.fase === 'slot') {
+            SLOTS.forEach(function (sl) {
+              if (Math.abs(x - sl.x) < sl.w / 2 + 10 && Math.abs(y - YS) < sl.h / 2 + 14) {
+                if (!sl.certa) {
+                  J.erros++;
+                  api.msg('✖ ' + sl.dica + ' O RJ45 vai na 8P, a do meio.', 'erro');
+                  return;
+                }
+                s.fase = 'apertar';
+                S.som('fio');
+                api.msg('RJ45 encaixado na matriz 8P.', 'ok');
+                api.instr('2) Aperte o alicate até o fim: toque e SEGURE nos cabos verdes (ou segure Espaço).');
+              }
+            });
+            return;
+          }
+          if (s.fase === 'apertar' && y > 200) apertar(true);
+        },
+        up: function () { apertar(false); },
+        desenhar: function (ctx, dt) {
+          fundoBancada(ctx);
+          if (s.fase === 'apertar') {
+            if (s.segurando) s.aperto = Math.min(1, s.aperto + dt / 1.3);
+            else if (s.aperto < 1) s.aperto = Math.max(0, s.aperto - dt * 1.5);
+            var c = Math.floor(s.aperto * 6);
+            if (c > s.cliques && s.segurando) S.som('tecla'); // catraca
+            s.cliques = c;
+            if (s.aperto >= 1) {
+              s.fase = 'pronto';
+              s.segurando = false;
+              S.som('crimpar');
+              api.msg('✔ Clique! Os 8 contatos desceram e furaram o isolamento dos fios, e a trava de trás prendeu a capa.', 'ok');
+              api.instr('Conector crimpado!');
+              api.botoes([['Concluir ✔', function () { api.concluir({}); }]]);
+            }
+          }
+          var a = s.fase === 'pronto' ? 1 : s.aperto;
+          var ab = (1 - a) * 0.22;
+          // cabos (atrás da cabeça)
+          cabo(ctx, -1, ab);
+          cabo(ctx, 1, ab);
+          // cabeça preta octogonal
+          ctx.fillStyle = '#1B1C1F';
+          ctx.beginPath();
+          ctx.moveTo(CX - 92, 30); ctx.lineTo(CX + 92, 30); ctx.lineTo(CX + 116, 60);
+          ctx.lineTo(CX + 116, 168); ctx.lineTo(CX + 70, 214); ctx.lineTo(CX - 70, 214);
+          ctx.lineTo(CX - 116, 168); ctx.lineTo(CX - 116, 60); ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#3A3C42'; ctx.lineWidth = 3; ctx.stroke();
+          // parafusos
+          [[-96, 46], [96, 46], [-100, 150], [100, 150], [0, 186]].forEach(function (p) {
+            ctx.fillStyle = '#4A4D55';
+            ctx.beginPath(); ctx.arc(CX + p[0], p[1], 7, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#2A2C31';
+            ctx.beginPath(); ctx.arc(CX + p[0], p[1], 3, 0, Math.PI * 2); ctx.fill();
+          });
+          // placa de aço com as matrizes
+          ctx.fillStyle = '#9EA6B0';
+          rr(ctx, CX - 104, YS - 34, 208, 68, 6); ctx.fill();
+          SLOTS.forEach(function (sl) {
+            var fecha = sl.certa ? a * 8 : 0;
+            ctx.fillStyle = '#16171A';
+            rr(ctx, sl.x - sl.w / 2, YS - sl.h / 2 + fecha, sl.w, sl.h - fecha, 3);
+            ctx.fill();
+            // dentes da matriz (os que empurram os contatos)
+            ctx.fillStyle = '#C9D2DC';
+            var n = parseInt(sl.n, 10);
+            for (var i = 0; i < n; i++) ctx.fillRect(sl.x - sl.w / 2 + 5 + i * ((sl.w - 10) / n), YS - sl.h / 2 + 2 + fecha, (sl.w - 10) / n - 2, 4);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(sl.n, sl.x, YS + sl.h / 2 + 14);
+            ctx.textAlign = 'left';
+          });
+          // lâmina de corte embaixo
+          ctx.fillStyle = '#C9D2DC';
+          ctx.fillRect(CX - 40, 196, 80, 6);
+          ctx.fillStyle = '#8A939E';
+          ctx.font = 'bold 9px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('CORTE', CX, 192);
+          ctx.textAlign = 'left';
+          if (s.fase === 'slot') {
+            etiqueta(ctx, CX, 14, 'toque na matriz certa para o RJ45');
+          } else {
+            // RJ45 dentro da 8P, com o cabo saindo para cima
+            capa(ctx, CX - 9, CX + 9, YS - 60, 18);
+            ctx.fillStyle = '#2D7FE0';
+            ctx.fillRect(CX - 9, YS - 58, 18, 34);
+            ctx.fillStyle = 'rgba(225,238,255,0.85)';
+            rr(ctx, CX - 26, YS - 20, 52, 34, 3); ctx.fill();
+            for (var k = 0; k < 8; k++) {
+              ctx.fillStyle = '#E2B53C';
+              ctx.fillRect(CX - 22 + k * 5.6, YS - 16 + a * 6, 3.5, 7);
+            }
+          }
+          // detalhe ampliado: os contatos descendo nos fios
+          var px = 520, py = 70;
+          ctx.fillStyle = 'rgba(7,20,48,0.9)';
+          rr(ctx, px, py, 250, 220, 10); ctx.fill();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 12px Arial';
+          ctx.fillText('dentro do conector (ampliado)', px + 14, py + 22);
+          for (var j = 0; j < 8; j++) {
+            var xj = px + 22 + j * 27;
+            var f = fio(T568B[j]);
+            ctx.fillStyle = f.listrado ? '#F4F4F4' : f.cor;
+            rr(ctx, xj, py + 120, 20, 20, 10); ctx.fill();
+            ctx.fillStyle = '#C87533';
+            ctx.beginPath(); ctx.arc(xj + 10, py + 130, 5, 0, Math.PI * 2); ctx.fill();
+            var desce = a * 34;
+            ctx.fillStyle = '#E2B53C';
+            ctx.beginPath();
+            ctx.moveTo(xj + 4, py + 60 + desce); ctx.lineTo(xj + 16, py + 60 + desce);
+            ctx.lineTo(xj + 16, py + 92 + desce); ctx.lineTo(xj + 10, py + 100 + desce); ctx.lineTo(xj + 4, py + 92 + desce);
+            ctx.closePath(); ctx.fill();
+          }
+          ctx.fillStyle = a >= 1 ? '#6BF08E' : '#C9D7EA';
+          ctx.font = 'bold 11px Arial';
+          ctx.fillText(a >= 1 ? 'contatos furaram o isolamento ✔' : 'contatos dourados ↓ fios', px + 14, py + 176);
+          // barra de aperto
+          if (s.fase === 'apertar') {
+            ctx.fillStyle = '#071430';
+            rr(ctx, px, 316, 250, 22, 8); ctx.fill();
+            ctx.fillStyle = '#F7941D';
+            rr(ctx, px + 2, 318, 246 * s.aperto, 18, 7); ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('aperto: ' + Math.round(s.aperto * 100) + '% (catraca)', px + 10, 360);
+            etiqueta(ctx, CX, 430, 'segure aqui nos cabos', '#FFD36B');
+          }
+        }
+      };
+    };
+
+    // ---- 6. Testar ------------------------------------------------------
+    // Para o pino i da ponta A, o LED que acende no remoto é a posição (na
+    // ponta B) do mesmo fio colorido.
+    F4.mapaTeste = function (a, b) {
+      return a.map(function (id) { var j = b.indexOf(id); return j < 0 ? null : j; });
+    };
+    MINIS.testar = function (api) {
+      var A = F4.pontas.A.ordem || T568B;
+      var B = F4.pontas.B.ordem || T568B;
+      var mapa = F4.mapaTeste(A, B);
+      var s = { a: false, b: false, ligado: false, t: 0, ciclos: 0, passo: -1, fim: false };
+      api.instr('Encaixe a ponta A no testador principal e a ponta B no remoto (toque nas entradas).');
+      api.botoes([]);
+      var M = { x: 70, y: 110, w: 280, h: 200 }, R = { x: 450, y: 110, w: 280, h: 200 };
+      function veredito() {
+        s.fim = true;
+        F4.testes++;
+        var reto = mapa.every(function (j, i) { return j === i; });
+        var padraoA = A.join() === T568B.join(), padraoB = B.join() === T568B.join();
+        if (reto && padraoA) {
+          api.msg('✔ Aprovado: 1-1, 2-2, 3-3… 8-8 nos dois lados. Cabo direto no padrão T-568B!', 'ok');
+          api.instr('Teste concluído.');
+          api.botoes([['Concluir ✔', function () { api.concluir({ aprovado: true }); }]]);
+          return;
+        }
+        J.erros++;
+        var refazer = [];
+        if (!padraoA) refazer.push('A');
+        if (!padraoB) refazer.push('B');
+        if (reto) {
+          api.msg('✖ Os LEDs batem (1-1 … 8-8), mas a ordem não é T-568B: os pares ficaram divididos (split pair). O cabo "passa no teste de continuidade", mas na rede dá interferência e perde velocidade.', 'erro');
+        } else {
+          var cruz = [];
+          mapa.forEach(function (j, i) { if (j !== i) cruz.push((i + 1) + '→' + (j === null ? '–' : j + 1)); });
+          api.msg('✖ Reprovado: LEDs fora de ordem (' + cruz.join(', ') + '). Algum fio está trocado.', 'erro');
+        }
+        api.instr('Corte fora o conector da ponta ' + refazer.join(' e ') + ' e refaça seguindo o T-568B.');
+        api.botoes([['Refazer a ponta ' + refazer.join(' e '), function () { api.concluir({ refazer: refazer }); }]]);
+      }
+      function unidade(ctx, u, nome, ledAceso) {
+        ctx.fillStyle = '#1D3F7A';
+        rr(ctx, u.x, u.y, u.w, u.h, 14); ctx.fill();
+        ctx.strokeStyle = '#071430'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 13px Arial';
+        ctx.fillText(nome, u.x + 16, u.y + 26);
+        for (var i = 0; i < 9; i++) {
+          var x = u.x + 24 + i * 28, y = u.y + 70;
+          var on = ledAceso === i;
+          ctx.fillStyle = on ? '#39FF6A' : '#22312A';
+          ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+          if (on) { ctx.fillStyle = 'rgba(57,255,106,0.35)'; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill(); }
+          ctx.fillStyle = '#C9D7EA';
+          ctx.font = 'bold 11px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(i < 8 ? String(i + 1) : 'G', x, y + 26);
+          ctx.textAlign = 'left';
+        }
+        // entrada RJ45
+        ctx.fillStyle = '#C9D2DC';
+        rr(ctx, u.x + u.w / 2 - 34, u.y + u.h - 70, 68, 52, 4); ctx.fill();
+        ctx.fillStyle = '#0A0C0F';
+        rr(ctx, u.x + u.w / 2 - 24, u.y + u.h - 62, 48, 32, 2); ctx.fill();
+        ctx.fillRect(u.x + u.w / 2 - 9, u.y + u.h - 32, 18, 8);
+      }
+      function dentro(u, x, y) { return x > u.x + u.w / 2 - 50 && x < u.x + u.w / 2 + 50 && y > u.y + u.h - 80 && y < u.y + u.h + 10; }
+      function talvezLigar() {
+        if (s.a && s.b) {
+          api.instr('Agora ligue o testador.');
+          api.botoes([['⏻ Ligar o testador', function () {
+            s.ligado = true;
+            S.som('ligar');
+            api.instr('Observe os LEDs: no principal e no remoto eles precisam acender juntos, no mesmo número.');
+            api.botoes([]);
+          }]]);
+        }
+      }
+      return {
+        estado: s,
+        encaixarTudo: function () { s.a = s.b = true; talvezLigar(); },
+        down: function (x, y) {
+          if (!s.a && dentro(M, x, y)) { s.a = true; S.som('plugue'); talvezLigar(); }
+          else if (!s.b && dentro(R, x, y)) { s.b = true; S.som('plugue'); talvezLigar(); }
+        },
+        desenhar: function (ctx, dt) {
+          fundoBancada(ctx);
+          var ledM = null, ledR = null;
+          if (s.ligado && !s.fim) {
+            s.t += dt;
+            var p = Math.floor(s.t / 0.42);
+            if (p !== s.passo) {
+              s.passo = p;
+              if (p % 9 < 8) S.som('bip');
+            }
+            var i = p % 9;
+            if (p >= 18) veredito();
+            ledM = i;
+            ledR = i === 8 ? 8 : mapa[i];
+          } else if (s.fim) {
+            var i2 = Math.floor((s.t += dt) / 0.42) % 9;
+            ledM = i2;
+            ledR = i2 === 8 ? 8 : mapa[i2];
+          }
+          unidade(ctx, M, 'TESTADOR PRINCIPAL', ledM);
+          unidade(ctx, R, 'REMOTO', ledR);
+          // cabo ligando as duas unidades
+          ctx.strokeStyle = '#2D7FE0';
+          ctx.lineWidth = 10;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(M.x + M.w / 2, s.a ? M.y + M.h - 20 : M.y + M.h + 80);
+          ctx.bezierCurveTo(M.x + M.w / 2, 440, R.x + R.w / 2, 440, R.x + R.w / 2, s.b ? R.y + R.h - 20 : R.y + R.h + 80);
+          ctx.stroke();
+          [[M, s.a, 'A'], [R, s.b, 'B']].forEach(function (u) {
+            if (!u[1]) etiqueta(ctx, u[0].x + u[0].w / 2, u[0].y + u[0].h + 24, 'encaixar a ponta ' + u[2]);
+          });
+        }
+      };
+    };
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4D-bancada-3d","F4E-closeups"];
   var painel = null;
   var timer = null;
   var gpu = null;
