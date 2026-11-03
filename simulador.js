@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.8.3',
+    versao: '3.9.1',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -4746,6 +4746,8 @@
         S.professorFalar(reacao, 3400);
         return;
       }
+      // Pergunta se o aluno precisa de ajuda e explica a missão / a UC.
+      if (S.ui.conversarProfessor) return S.ui.conversarProfessor();
       var nome = S.primeiroNome();
       S.professorFalar(J.missoesFeitas() === 0
         ? 'Boa sorte com a atividade, ' + nome + '!'
@@ -6495,7 +6497,7 @@
       var J = S.jogo;
       var tempo = Math.round(S.tempoDeJogo() * 10) / 10;
       var sessao = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      var t = S.ui.tela(30, '520px');
+      var t = S.ui.tela(30, '600px');
       S.som('vitoria');
       S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO ' + numFase + ' CONCLUÍDO', t.cartao);
       S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 14px' }, numFase === 3 ? 'Cabeamento completo! 🎉' : numFase === 2 ? 'Servidor no ar! 🎉' : 'A rede está funcionando! 🎉', t.cartao);
@@ -6516,6 +6518,9 @@
         'PC-01: ' + S.pcs['PC-01'].estado.ip + ' (' + S.pcs['PC-01'].estado.portaSwitch + ') · PC-02: ' +
         S.pcs['PC-02'].estado.ip + ' (' + S.pcs['PC-02'].estado.portaSwitch + ') · Uplink ' + J.portaUplink + ' → ' + J.portaRoteador +
         ' · Gateway 192.168.0.1 · Ping nos dois sentidos OK';
+
+      // Certificado de prática: a UC e o que esta fase desenvolveu.
+      if (S.ui.certificado) S.ui.certificado(t.cartao, faseDef.id);
 
       var status = S.el('div', { fontSize: '14px', fontWeight: '700', minHeight: '20px', marginBottom: '12px' }, 'Salvando no ranking…', t.cartao);
       var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
@@ -12823,7 +12828,7 @@
       S.ui.atualizarControlesToque();
       S.ui.mostrarHud(false);
       S.som('vitoria');
-      var t = S.ui.tela(30, '520px');
+      var t = S.ui.tela(30, '600px');
       S.el('div', { fontSize: '13px', fontWeight: '700', color: C.laranja, letterSpacing: '0.08em' }, 'LABORATÓRIO 4 CONCLUÍDO', t.cartao);
       S.el('div', { fontSize: '24px', fontWeight: '700', margin: '4px 0 12px' }, 'Cabo crimpado e testado! 🎉', t.cartao);
       var stats = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }, null, t.cartao);
@@ -12839,7 +12844,8 @@
       S.el('div', { fontSize: '13px', color: C.cinza, lineHeight: '1.5', marginBottom: '12px' },
         (F4.modo === 'foto' && m ? 'Bancada: sua mesa (' + m.texto + '). ' : 'Bancada virtual. ') +
         'Este laboratório é um treino e não entra no ranking.', t.cartao);
-      var linha = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
+      if (S.ui.certificado) S.ui.certificado(t.cartao, 'crimpagem');
+      var linha =S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, t.cartao);
       S.estilo(S.ui.botao('Escolher outro laboratório', 'primario', function () {
         t.fechar();
         S.ui.mostrarFases();
@@ -15594,10 +15600,480 @@
     };
   });
 
+  /* ================================================================== */
+  secao('P04-professor-explica', function () {
+    var C = S.CSS;
+    var J = S.jogo;
+
+    // ---- Curso e unidades curriculares (dados do plano de ensino) -------
+    // Turma e UCs como aparecem no sistema do Senac. No modelo pedagógico do
+    // Senac, cada UC é uma competência; o título da UC é o nome dela.
+    var CURSO = {
+      nome: 'Instalador e Reparador de Redes de Computadores',
+      turma: '2026.6.112',
+      unidade: 'CEP LSR · Senac Manacapuru'
+    };
+    var UC = {
+      1: { numero: 1, titulo: 'Planejar e executar a instalação de redes locais de computadores', horas: 96, periodo: '10/08/2026 a 11/09/2026', codigo: '360894', ptd: '319687' },
+      2: { numero: 2, titulo: 'Instalar, configurar e administrar Redes e Servidores', horas: 48, periodo: '16/09/2026 a 01/10/2026', codigo: '360895', ptd: '319688' },
+      3: { numero: 3, titulo: 'Realizar manutenção e reparação em Redes de Computadores', horas: 36, periodo: '06/10/2026 a 20/10/2026', codigo: '360899', ptd: '319691' }
+    };
+    S.SENAC = { curso: CURSO, ucs: UC };
+
+    // ---- O que cada laboratório desenvolve ------------------------------
+    // uc: a UC principal da prática; reforca: outras UCs que ela também treina.
+    // desenvolve: frase curta que o professor diz no começo do laboratório.
+    // conhecimentos / habilidades / atitudes: elementos de competência do PTD
+    // da UC que esta prática trabalha (seleção do que o laboratório pratica).
+    // sabe: o que o aluno fez na prática (vira "Na prática, você…").
+    var PRATICA = {
+      laboratorio: {
+        uc: 1,
+        desenvolve: 'cabeamento e crimpagem no padrão T-568B, endereçamento IP com máscara e gateway e o teste de conectividade com ping',
+        conhecimentos: [
+          'Cabeamento: cabos para redes locais, crimpagem de cabeamento e normas técnicas',
+          'Arquiteturas de redes: topologias de rede, protocolos de comunicação e máscaras de endereços IP',
+          'Configurações de redes locais: protocolos TCP/IP, teste de conectividade no terminal de comandos e diagnóstico de falhas de conectividade'
+        ],
+        habilidades: [
+          'Organizar materiais, ferramentas, instrumentos e local de trabalho',
+          'Administrar as etapas do processo de instalação e os recursos disponíveis',
+          'Interpretar textos técnicos'
+        ],
+        atitudes: [
+          'Zelo na realização das atividades profissionais',
+          'Proatividade na resolução de problemas',
+          'Responsabilidade no uso dos recursos organizacionais'
+        ],
+        sabe: [
+          'Crimpou cabos UTP no padrão T-568B',
+          'Ligou PCs ao switch e o switch ao roteador (uplink)',
+          'Configurou IP fixo, máscara e gateway na mesma rede',
+          'Testou a rede com ping nos dois sentidos'
+        ]
+      },
+      servidores: {
+        uc: 2,
+        reforca: [1],
+        desenvolve: 'a configuração de um servidor de rede com os serviços DHCP, DNS e HTTPS, além da instalação de tomadas keystone',
+        conhecimentos: [
+          'Sistema operacional de rede: hardware de servidores e configuração dos serviços DNS e DHCP',
+          'Sistema operacional: configuração de protocolos para conexão em redes locais, host e cliente',
+          'Dispositivos de redes: roteador e switch, funcionalidades e aplicações',
+          'Administração de redes: administração de serviços da rede local'
+        ],
+        habilidades: [
+          'Configurar e gerenciar os serviços de servidor da rede',
+          'Interpretar textos técnicos'
+        ],
+        atitudes: [
+          'Senso crítico nos processos de trabalho',
+          'Sigilo no tratamento de dados e informações',
+          'Proatividade no desenvolvimento do trabalho'
+        ],
+        sabe: [
+          'Deu IP fixo ao servidor',
+          'Instalou tomadas keystone com a punch down (T-568B)',
+          'Criou o escopo DHCP e o registro DNS do site',
+          'Publicou o site com HTTPS e abriu pelo nome num PC'
+        ]
+      },
+      cabeamento: {
+        uc: 1,
+        desenvolve: 'o planejamento e a execução de um cabeamento estruturado: trajeto dos cabos, canaleta, tomadas keystone e patch cords',
+        conhecimentos: [
+          'Planejamento de redes: projeto da topologia da rede LAN, equipamentos e mobiliários de redes',
+          'Cabeamento: tipos, cabos para redes locais e normas técnicas',
+          'Configurações de redes locais: TCP/IP e diagnóstico de falhas de conectividade e infraestrutura'
+        ],
+        habilidades: [
+          'Organizar materiais, ferramentas, instrumentos e local de trabalho',
+          'Administrar as etapas do processo de instalação e os recursos disponíveis',
+          'Analisar as etapas do processo de trabalho'
+        ],
+        atitudes: [
+          'Zelo na realização das atividades profissionais',
+          'Responsabilidade no uso dos recursos organizacionais',
+          'Proatividade na resolução de problemas'
+        ],
+        sabe: [
+          'Fixou presilhas e passou o feixe de 6 cabos até os pontos',
+          'Escondeu os cabos em canaleta',
+          'Montou 6 tomadas keystone e ligou os PCs com patch cords',
+          'Colocou 6 computadores na rede com IP automático'
+        ]
+      },
+      crimpagem: {
+        uc: 3,
+        reforca: [1],
+        desenvolve: 'a crimpagem e o teste de cabo UTP e a identificação de falhas no cabeamento, como na manutenção do dia a dia',
+        conhecimentos: [
+          'Cabeamento: reparação, crimpagem de cabo UTP e teste de cabeamento',
+          'Manutenção de cabeamento: procedimentos e equipamentos para teste do cabeamento'
+        ],
+        habilidades: [
+          'Identificar falhas em redes de computadores',
+          'Manipular elementos de redes',
+          'Interpretar especificações técnicas'
+        ],
+        atitudes: [
+          'Senso crítico frente ao processo de trabalho',
+          'Proatividade no desenvolvimento do trabalho'
+        ],
+        sabe: [
+          'Decapou, organizou e cortou os fios no T-568B',
+          'Crimpou o RJ45 nas duas pontas',
+          'Testou o cabo no testador e leu os LEDs'
+        ]
+      }
+    };
+
+    // ---- Como funciona cada missão (explicação detalhada do professor) ---
+    var EXPLICA = {
+      laboratorio: {
+        ligar: 'Antes de qualquer coisa, os equipamentos precisam estar ligados: sem energia, a placa de rede não funciona e não dá para configurar nada. Quando o PC liga, o LED verde do gabinete acende.',
+        crimpar1: 'O cabo de rede (UTP) tem 8 fios trançados em 4 pares. Crimpar é prender esses fios no conector RJ45 com o alicate. A ordem das cores importa: no padrão T-568B ela é branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom. Se um fio trocar de lugar, o cabo não funciona direito.',
+        conectar1: 'O switch é o "ponto de encontro" da rede local: cada computador liga um cabo nele, e ele entrega os dados só para quem precisa receber. Uma ponta do cabo vai na placa de rede do PC (entrada RJ45) e a outra numa porta Fast Ethernet do switch (Fa0/1 a Fa0/24).',
+        crimpar2: 'Mesmo processo do primeiro cabo. Repetir é o que faz a mão pegar o jeito: na vida real, um técnico crimpa dezenas de cabos numa instalação. Confira as cores no cartaz antes de apertar o alicate.',
+        conectar2: 'Agora o segundo PC entra na rede do mesmo jeito: placa de rede → porta Fast livre do switch. Com dois PCs no mesmo switch, eles já conseguem conversar, desde que estejam na mesma rede IP.',
+        crimpar3: 'Este cabo vai ligar o switch ao roteador. É um cabo direto: as duas pontas seguem o mesmo padrão (T-568B dos dois lados).',
+        uplink: 'O uplink é a ligação do switch com o roteador. Usamos uma porta Gigabit do switch, que é mais rápida, porque todo o tráfego que sai da rede passa por ela. No roteador, o cabo vai numa porta LAN (rede interna). A porta WAN é reservada para a internet que vem do provedor.',
+        roteador: 'O roteador liga a nossa rede a outras redes, como a internet. Ele também é o "gateway": o endereço para onde os PCs mandam tudo o que não é da rede local. Para isso, ele precisa estar ligado.',
+        ip1: 'Todo equipamento na rede precisa de um endereço IP, como o número de uma casa na rua. O IP do roteador (192.168.0.1) mostra qual é a rede: 192.168.0. O PC precisa estar nessa mesma rede, com um final diferente (.2 ou .3). A máscara 255.255.255.0 diz que os três primeiros números são a rede, e o gateway é o IP do roteador.',
+        ip2: 'O PC-02 segue a mesma regra: mesma rede, mesma máscara e mesmo gateway, mas um IP que ninguém está usando. Dois equipamentos com o mesmo IP geram conflito e a rede para de funcionar para os dois.',
+        ping1: 'O ping manda um pacote pequeno para outro computador e espera a resposta. Se a resposta volta, cabo, switch e configuração de IP estão funcionando. No Prompt de Comando, ipconfig mostra o IP do seu PC e ping seguido de um IP testa a ligação.',
+        ping2: 'Testamos o caminho de volta porque às vezes a rede funciona só num sentido (por exemplo, um IP digitado errado em um dos PCs). Um técnico só entrega a rede depois de testar os dois lados.'
+      },
+      servidores: {
+        srvLigar: 'O servidor é um computador que fica ligado o tempo todo oferecendo serviços para a rede. Ele fica numa sala separada, mais segura e com o rack. Primeiro passo: ligar o equipamento.',
+        srvIp: 'Servidor sempre usa IP fixo: se o IP dele mudasse, os PCs não saberiam mais onde encontrá-lo. Damos o 192.168.0.10, com a mesma máscara e o mesmo gateway (o roteador) da rede. No DNS colocamos 127.0.0.1, que significa "eu mesmo", porque o próprio servidor vai responder pelos nomes.',
+        kit: 'A keystone é a tomada de rede que fica na parede. A punch down é a ferramenta que empurra cada fio para dentro dos contatos da keystone e corta a sobra. Pegue as duas na bancada.',
+        tomadas: 'Os cabos já chegam pela canaleta até a parede. Em cada ponto, você encaixa os 8 fios na keystone seguindo a linha B da etiqueta (T-568B, o mesmo padrão dos cabos) e prende com a punch down. Assim o PC pode ligar na parede com um cabo curto.',
+        dhcp: 'O DHCP é o serviço que entrega IP automaticamente. Em vez de configurar cada PC na mão, você cria um escopo: uma faixa de endereços (por exemplo, .100 a .150) com máscara, gateway e DNS. Quando um PC pede, o servidor empresta um IP dessa faixa.',
+        dns: 'O DNS traduz nomes em IPs, como uma agenda de contatos. As pessoas lembram de "intranet", não de 192.168.0.10. O registro do tipo A liga um nome a um endereço IP: nome intranet → IP do servidor.',
+        https: 'O HTTPS publica o site com segurança: os dados vão criptografados entre o navegador e o servidor. Ele usa a porta 443, e o certificado precisa ter o mesmo nome do site. Se o nome não bater, o navegador avisa que a conexão não é segura.',
+        pcsLigar: 'Os três PCs precisam estar ligados para entrar na rede e pedir IP ao servidor.',
+        pcsDhcp: 'Agora cada PC pede IP sozinho: em "Obter endereço IP automaticamente" ele chama o DHCP e recebe IP, máscara, gateway e DNS. Se aparecer um IP 169.254.x.x, o PC não achou o DHCP: confira a tomada keystone e o escopo no servidor.',
+        site: 'Este é o teste final, que junta tudo: o PC tem IP pelo DHCP, pergunta ao DNS qual é o IP de "intranet" e abre o site pelo HTTPS. Se a página abrir digitando o nome, todos os serviços estão funcionando juntos.'
+      },
+      cabeamento: {
+        kitPres: 'Cabeamento estruturado é deixar a rede organizada, segura e fácil de manter. As presilhas seguram o feixe de cabos na parede, e o martelo prende cada presilha. Tudo isso fica na bancada.',
+        presilhas: 'Os X na parede marcam o trajeto planejado dos cabos. Em cada X você prega presilhas, na ordem A, B e C, saindo do rack. Martele com o marcador na faixa verde: fora dela, a presilha entorta e você precisa tentar de novo.',
+        cabos: 'Numa instalação de verdade, cada computador tem o próprio cabo até o rack. Aqui são 6 PCs, então são 6 cabos UTP, que andam juntos num feixe.',
+        switch: 'Os 6 cabos começam no switch do rack, cada um numa porta Fast. A porta Gigabit fica para o uplink, que leva ao servidor e ao roteador.',
+        feixe: 'Agora o feixe sai do switch e passa pelas presilhas na ordem do trajeto. Em cada ponto de rede fica um cabo. Não dá para pular presilha: é ela que segura o peso do feixe e mantém o caminho certinho.',
+        canaleta: 'A canaleta é o "trilho" de plástico que esconde e protege os cabos. Ela evita que alguém tropece ou arranque um fio, e deixa a sala com aparência profissional. Em cada trecho: fixe a base e feche a tampa.',
+        kitKs: 'Com os cabos no lugar, falta a tomada de cada ponto. Pegue as keystones e a punch down na bancada.',
+        keystones: 'Em cada ponto, o cabo termina numa keystone, a tomada de rede da parede. Siga a linha B da etiqueta (T-568B) e prenda os fios com a punch down. Assim o cabo da parede fica fixo e o PC liga nele com um cabo curto.',
+        patch: 'O patch cord é o cabo curto que liga a tomada da parede ao computador. Ele vai na porta RJ45 do PC, a maior, com 8 contatos. A RJ11, menor, é de telefone.',
+        ligar: 'Com tudo cabeado, ligue os 6 computadores para que eles entrem na rede.',
+        dhcp: 'O servidor DHCP da outra sala entrega IP automático para cada PC. Se todos receberem IP, o cabeamento inteiro está funcionando: switch, feixe, keystones e patch cords.'
+      },
+      crimpagem: {
+        botao: 'Aqui o treino é em primeira pessoa, mais perto da vida real. O botão laranja da parede abre a imersão: você fotografa uma mesa de verdade e as ferramentas aparecem em cima dela.',
+        pontas: 'A crimpagem tem uma sequência que não muda: decapar (tirar a capa sem cortar os fios), destrançar e organizar os fios no T-568B, cortar todos no mesmo tamanho, encaixar no RJ45 até o fim e apertar o alicate. Depois, repete na outra ponta.',
+        teste: 'O testador confere fio por fio. Encaixe uma ponta no testador principal e a outra no remoto: os LEDs de 1 a 8 precisam acender na mesma ordem nos dois lados. Se algum acender fora de ordem ou apagado, aquela ponta tem defeito e precisa ser cortada e refeita. É assim que se faz manutenção de cabo no dia a dia.'
+      }
+    };
+
+    // ---- Funções de apoio ------------------------------------------------
+    function idFase() { return S.faseAtual && S.faseAtual.id; }
+    function praticaDe(id) { return PRATICA[id || idFase()] || null; }
+    function textoMissao(m) { return typeof m.texto === 'function' ? m.texto() : m.texto; }
+    function ucNome(n) { return 'UC ' + n + ': ' + UC[n].titulo; }
+
+    // Falas do começo: a qual UC o laboratório se refere e o que ele desenvolve.
+    S.falaUc = function (id) {
+      var p = praticaDe(id);
+      if (!p) return '';
+      var u = UC[p.uc];
+      return 'Este laboratório é referente à UC ' + u.numero + ' do curso ' + CURSO.nome + ': ' + u.titulo + '.';
+    };
+    S.falaDesenvolve = function (id) {
+      var p = praticaDe(id);
+      return p ? 'Aqui você vai desenvolver ' + p.desenvolve + '.' : '';
+    };
+
+    function secaoTitulo(texto, pai, cor) {
+      return S.el('div', { fontSize: '12px', fontWeight: '700', color: cor || C.laranja, letterSpacing: '0.06em', margin: '12px 0 4px' }, texto, pai);
+    }
+    function paragrafo(texto, pai, estilo) {
+      var d = S.el('div', { margin: '0 0 6px' }, texto, pai);
+      if (estilo) S.estilo(d, estilo);
+      return d;
+    }
+    function lista(itens, pai, marca, cor) {
+      var ul = S.el('div', { margin: '2px 0 4px' }, null, pai);
+      itens.forEach(function (t) {
+        var li = S.el('div', { display: 'flex', gap: '8px', margin: '3px 0' }, null, ul);
+        S.el('span', { color: cor || C.verde, fontWeight: '700', flex: '0 0 auto' }, marca || '✔', li);
+        S.el('span', null, t, li);
+      });
+      return ul;
+    }
+    function cartaoUc(n, pai, principal) {
+      var u = UC[n];
+      var c = S.el('div', {
+        background: '#071733',
+        border: '2px solid ' + (principal ? C.laranja : C.borda),
+        borderRadius: '8px',
+        padding: '8px 12px',
+        margin: '6px 0'
+      }, null, pai);
+      S.el('div', { fontSize: '11px', fontWeight: '700', color: principal ? C.laranja : C.cinza }, (principal ? 'UNIDADE CURRICULAR · ' : 'TAMBÉM REFORÇA · ') + u.horas + 'h', c);
+      S.el('div', { fontWeight: '700', fontSize: '15px', margin: '2px 0' }, ucNome(n), c);
+      return c;
+    }
+    function ler(texto) {
+      if (S.cfg.lerVoz && S.voz && S.voz.ler) S.voz.ler('prof', texto);
+    }
+
+    // ---- Janela 1: "Não sei o que fazer" → explicação detalhada ----------
+    S.ui.professorExplica = function () {
+      var fase = idFase();
+      var m = J.missaoAtual();
+      var janela = S.ui.abrirModal('Prof. Herick explica', { largura: '600px' });
+      var corpo = janela.corpo;
+
+      if (!m) {
+        paragrafo('Você já concluiu todas as missões deste laboratório! ' +
+          (J.saidaLiberada ? 'Agora é só me seguir: saia pela porta.' : 'Daqui a pouco eu mostro tudo o que você aprendeu.'), corpo, { fontWeight: '700' });
+      } else {
+        var pos = J.indice + 1;
+        S.el('div', { fontSize: '12px', fontWeight: '700', color: C.cinza }, 'MISSÃO ' + pos + ' DE ' + J.MISSOES.length, corpo);
+        S.el('div', { fontSize: '17px', fontWeight: '700', margin: '2px 0 4px' }, textoMissao(m), corpo);
+
+        var porque = (EXPLICA[fase] || {})[m.id];
+        if (porque) {
+          secaoTitulo('💡 COMO FUNCIONA', corpo);
+          paragrafo(porque, corpo);
+        }
+        secaoTitulo('🧭 O QUE FAZER AGORA', corpo);
+        lista([m.dica1, m.dica2].filter(Boolean), corpo, '▸', C.laranja);
+        paragrafo('Eu liguei a seta laranja: ela aponta para onde você precisa ir.', corpo, { color: C.cinza, fontSize: '13px' });
+
+        // Explicar conta como dica (igual ao sistema de dicas do jogo) e liga a seta.
+        if (J.nivelDica < 2) {
+          J.nivelDica = 2;
+          J.dicas++;
+        }
+        S.ui.definirDica(m.dica2 || m.dica1);
+        var alvos = m.alvos ? m.alvos() : [];
+        var info = alvos.length ? S.mundo.objetos[alvos[0]] : null;
+        if (info) S.mundo.apontar(info);
+        ler(textoMissao(m) + '. ' + (porque || ''));
+      }
+
+      var p = praticaDe(fase);
+      if (p) {
+        S.el('div', {
+          marginTop: '12px',
+          paddingTop: '10px',
+          borderTop: '2px solid ' + C.borda,
+          fontSize: '13px',
+          color: C.cinza
+        }, '🎓 Esta prática faz parte da UC ' + p.uc + ' (' + UC[p.uc].titulo + ') do curso ' + CURSO.nome + '.', corpo);
+      }
+
+      var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }, null, corpo);
+      S.estilo(S.ui.botao('Entendi, vou tentar! 👍', 'primario', function () {
+        janela.fechar();
+        S.professorFalar('Isso! Qualquer coisa, me chama.', 2600, 'aceno');
+      }, botoes), { flex: '1 1 200px' });
+      if (p) S.ui.botao('🎓 Que prática é essa?', 'secundario', function () { S.ui.professorPratica(); }, botoes);
+    };
+
+    // ---- Janela 2: "Que prática é essa?" → UC e competências -------------
+    S.ui.professorPratica = function () {
+      var fase = idFase();
+      var p = praticaDe(fase);
+      if (!p) return;
+      var janela = S.ui.abrirModal('Prof. Herick · sobre esta prática', { largura: '600px' });
+      var corpo = janela.corpo;
+      var fala = S.falaUc(fase) + ' ' + S.falaDesenvolve(fase);
+      paragrafo(fala, corpo, { fontWeight: '700' });
+      ler(fala);
+
+      cartaoUc(p.uc, corpo, true);
+      (p.reforca || []).forEach(function (n) { cartaoUc(n, corpo, false); });
+
+      secaoTitulo('📘 CONHECIMENTOS', corpo);
+      lista(p.conhecimentos, corpo, '•', C.laranja);
+      secaoTitulo('🛠 HABILIDADES', corpo);
+      lista(p.habilidades, corpo, '•', C.laranja);
+      secaoTitulo('🤝 ATITUDES E VALORES', corpo);
+      lista(p.atitudes, corpo, '•', C.laranja);
+
+      secaoTitulo('🔁 AÇÃO → REFLEXÃO → AÇÃO', corpo, C.cinza);
+      paragrafo('Agora é a hora da ação: faça, teste e, se errar, tente de novo. No fim do laboratório, a gente reflete sobre o que você aprendeu, e no próximo você aplica tudo isso de novo, ainda melhor.', corpo, { fontSize: '13px', color: C.cinza });
+
+      S.el('div', { fontSize: '11px', color: C.cinza, marginTop: '8px' },
+        'Turma ' + CURSO.turma + ' · ' + CURSO.nome + ' · ' + CURSO.unidade, corpo);
+
+      var botoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }, null, corpo);
+      S.estilo(S.ui.botao('Bora praticar! 👍', 'primario', function () { janela.fechar(); }, botoes), { flex: '1 1 200px' });
+      if (J.missaoAtual()) S.ui.botao('🤔 Não sei o que fazer', 'secundario', function () { S.ui.professorExplica(); }, botoes);
+    };
+
+    // ---- Falar com o professor: pergunta se o aluno precisa de ajuda -----
+    S.ui.conversarProfessor = function () {
+      var nome = S.primeiroNome();
+      var m = J.missaoAtual();
+      S.professorFalar('Fala, ' + nome + '! Precisa de ajuda?', 2600, 'falar');
+      var janela = S.ui.abrirModal('Prof. Herick', { largura: '520px' });
+      var corpo = janela.corpo;
+      // Começo de toda conversa: a UC do laboratório e o que ele desenvolve.
+      var p = praticaDe();
+      if (p) {
+        var faixa = S.el('div', {
+          background: '#071733',
+          borderLeft: '4px solid ' + C.laranja,
+          borderRadius: '6px',
+          padding: '7px 10px',
+          margin: '0 0 10px',
+          fontSize: '13px'
+        }, null, corpo);
+        S.el('div', { fontWeight: '700', color: C.laranja, fontSize: '12px' }, '🎓 UC ' + p.uc + ' · ' + UC[p.uc].titulo, faixa);
+        S.el('div', { color: C.cinza, marginTop: '2px' }, S.falaDesenvolve(), faixa);
+      }
+      paragrafo(m
+        ? 'Missão atual: ' + textoMissao(m)
+        : 'Você já terminou as missões deste laboratório!', corpo, { fontWeight: '700' });
+      paragrafo('Sobre o que você quer conversar?', corpo, { color: C.cinza });
+      var botoes = S.el('div', { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }, null, corpo);
+      if (m) S.ui.botao('🤔 Não sei o que fazer, me explica', 'primario', function () { S.ui.professorExplica(); }, botoes);
+      if (praticaDe()) S.ui.botao('🎓 Que prática é essa? (UC e competências)', m ? 'secundario' : 'primario', function () { S.ui.professorPratica(); }, botoes);
+      S.ui.botao('👍 Tô de boa, valeu!', 'secundario', function () {
+        janela.fechar();
+        S.professorFalar(J.missoesFeitas() === 0 ? 'Boa sorte com a atividade, ' + nome + '!' : 'Você está indo bem, ' + nome + '!', 3000);
+      }, botoes);
+    };
+
+    // ---- Fim de fase: certificado de prática -----------------------------
+    // Um "certificadozinho" com a UC e os elementos de competência que o
+    // laboratório trabalhou. Não é o certificado oficial do curso.
+    S.ui.certificado = function (pai, id) {
+      var p = praticaDe(id);
+      var def = S.fases[id];
+      if (!p || !def) return null;
+      var u = UC[p.uc];
+      var tinta = '#10203A';
+      var suave = '#4A5B72';
+      var papel = S.el('div', {
+        background: '#FFFDF6',
+        color: tinta,
+        border: '3px solid ' + C.laranja,
+        outline: '2px solid ' + C.laranja,
+        outlineOffset: '-9px',
+        borderRadius: '6px',
+        padding: '20px 22px 16px',
+        marginBottom: '14px',
+        position: 'relative',
+        boxShadow: '0 6px 0 rgba(0,0,0,0.25)'
+      }, null, pai);
+      papel.setAttribute('role', 'group');
+      papel.setAttribute('aria-label', 'Certificado de prática');
+
+      var topo = S.el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }, null, papel);
+      var logo = S.ui.logo(topo, 26);
+      S.estilo(logo, { padding: '0', background: 'transparent' });
+      S.el('div', { fontSize: '11px', fontWeight: '700', color: suave, textAlign: 'right' }, CURSO.unidade, topo);
+
+      S.el('div', { textAlign: 'center', fontSize: '20px', fontWeight: '700', letterSpacing: '0.12em', color: '#B8650A', margin: '10px 0 0' }, 'CERTIFICADO DE PRÁTICA', papel);
+      S.el('div', { textAlign: 'center', fontSize: '11px', color: suave, letterSpacing: '0.08em', marginBottom: '10px' }, 'LABORATÓRIO VIRTUAL DE REDES', papel);
+
+      var texto = S.el('div', { fontSize: '14px', lineHeight: '1.5', textAlign: 'center', marginBottom: '10px' }, null, papel);
+      function trecho(t, forte) { S.el('span', forte ? { fontWeight: '700' } : null, t, texto); }
+      trecho('Certificamos que ');
+      trecho(S.aluno.nome || 'o(a) aluno(a)', true);
+      if (S.aluno.turma) trecho(', da turma ' + S.aluno.turma);
+      trecho(', concluiu o ');
+      trecho('Laboratório ' + def.numero + ' · ' + def.titulo, true);
+      trecho(', prática referente à ');
+      trecho('UC ' + u.numero + ': ' + u.titulo + ' (' + u.horas + 'h)', true);
+      trecho(' do curso ' + CURSO.nome + ', desenvolvendo:');
+
+      function grupo(titulo, itens) {
+        if (!itens || !itens.length) return;
+        S.el('div', { fontSize: '11px', fontWeight: '700', color: '#B8650A', letterSpacing: '0.06em', margin: '8px 0 2px' }, titulo, papel);
+        itens.forEach(function (t) {
+          var li = S.el('div', { display: 'flex', gap: '7px', fontSize: '13px', lineHeight: '1.4', margin: '2px 0' }, null, papel);
+          S.el('span', { color: '#1F8A4C', fontWeight: '700', flex: '0 0 auto' }, '✔', li);
+          S.el('span', null, t, li);
+        });
+      }
+      grupo('CONHECIMENTOS', p.conhecimentos);
+      grupo('HABILIDADES', p.habilidades);
+      grupo('ATITUDES E VALORES', p.atitudes);
+      grupo('NA PRÁTICA, VOCÊ', p.sabe);
+      if (p.reforca && p.reforca.length) {
+        S.el('div', { fontSize: '12px', color: suave, marginTop: '8px' }, 'Também reforça: ' + p.reforca.map(ucNome).join(' · '), papel);
+      }
+
+      var rodape = S.el('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '14px' }, null, papel);
+      S.el('div', { fontSize: '12px', color: suave }, 'Manacapuru, ' + new Date().toLocaleDateString('pt-BR'), rodape);
+      var ass = S.el('div', { textAlign: 'center', minWidth: '170px' }, null, rodape);
+      S.el('div', { fontFamily: '"Brush Script MT", "Segoe Script", cursive', fontSize: '22px', lineHeight: '1', color: '#0B4F9C' }, 'Herick', ass);
+      S.el('div', { borderTop: '1px solid ' + tinta, marginTop: '2px', paddingTop: '2px', fontSize: '11px', fontWeight: '700' }, 'Prof. Herick · Instrutor', ass);
+      return papel;
+    };
+
+    // ---- Falas das cenas: a UC no começo e o certificado no fim ----------
+    function falasInicioCena(id, tomada) {
+      return [
+        { quem: 'prof', tomada: tomada, gesto: 'explicar', texto: S.falaUc(id) },
+        { quem: 'prof', tomada: tomada, gesto: 'falar', texto: S.falaDesenvolve(id) }
+      ];
+    }
+    function falaFinalCena(id, tomada) {
+      var p = praticaDe(id);
+      return {
+        quem: 'prof', tomada: tomada, gesto: 'falar',
+        texto: 'Com isso você desenvolveu a UC ' + p.uc + ': ' + UC[p.uc].titulo + '. Preparei um certificado com tudo o que você desenvolveu!'
+      };
+    }
+
+    Object.keys(PRATICA).forEach(function (id) {
+      var def = S.fases[id];
+      if (!def) return;
+      if (def.abertura && def.abertura.falas) {
+        var abrir = def.abertura.falas;
+        def.abertura.falas = function () {
+          var f = abrir().slice();
+          // Logo depois do "bem-vindo(a)": a UC e o que o laboratório desenvolve.
+          var tomada = (f[0] && f[0].tomada) || 'dupla';
+          Array.prototype.splice.apply(f, [1, 0].concat(falasInicioCena(id, tomada)));
+          return f;
+        };
+      }
+      if (def.final && def.final.falas) {
+        var fechar = def.final.falas;
+        def.final.falas = function () {
+          var f = fechar().slice();
+          var tomada = (f[0] && f[0].tomada) || 'despedida';
+          // Fase 1 tem uma fala só ("Que bom…! Vamos…! Siga-me!"): divide no
+          // primeiro "!" para a UC entrar entre o parabéns e o "siga-me".
+          if (f.length === 1) {
+            var t = f[0].texto;
+            var corte = t.indexOf('! ');
+            if (corte > 0) {
+              f = [
+                { quem: 'prof', tomada: tomada, gesto: f[0].gesto, texto: t.slice(0, corte + 1) },
+                { quem: 'prof', tomada: tomada, gesto: 'falar', texto: t.slice(corte + 2) }
+              ];
+            }
+          }
+          f.splice(f.length > 1 ? 1 : 0, 0, falaFinalCena(id, tomada));
+          return f;
+        };
+      }
+    });
+  });
+
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4F-retomar-depois-da-camera","F4D-bancada-3d","F4E-closeups"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4F-retomar-depois-da-camera","F4D-bancada-3d","F4E-closeups","P04-professor-explica"];
   var painel = null;
   var timer = null;
   var gpu = null;
