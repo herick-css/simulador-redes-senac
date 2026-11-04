@@ -5,7 +5,7 @@
   var S = window.__SIM = {
     marcas: [],
     erros: [],
-    versao: '3.10.1',
+    versao: '3.11.0',
     fase: 'login', // login → comandos → carregando → jogo → fim
     pausado: true,
     teclas: {},
@@ -4414,7 +4414,7 @@
         feita: function () { return J.cabosCrimpados >= 1; },
         alvos: function () { return ['alicate']; },
         dica1: 'A bancada de ferramentas fica perto da porta, à esquerda. Use o alicate.',
-        dica2: 'Ordem T-568B: branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom.'
+        dica2: 'T-568B: branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom. Apare com 1,3 cm e empurre o RJ45 até a capa azul entrar.'
       },
       {
         id: 'conectar1',
@@ -4432,7 +4432,7 @@
         feita: function () { return J.cabosCrimpados >= 2; },
         alvos: function () { return ['alicate']; },
         dica1: 'Volte à bancada de ferramentas para crimpar outro cabo.',
-        dica2: 'O cartaz na bancada mostra as cores do T-568B, do pino 1 ao 8.'
+        dica2: 'O cartaz na bancada mostra as cores do T-568B. Cada ponta: encaixar o RJ45 (contatos virados para você) e crimpar na matriz 8P.'
       },
       {
         id: 'conectar2',
@@ -5520,131 +5520,164 @@
         desenhar();
       }
 
-      // ---- Etapa 3: conector RJ45 nas duas pontas e crimpar -------------
+      // ---- Etapa 3: aparar, encaixar o RJ45 e crimpar cada ponta ---------
+      // Usa os mesmos close-ups do Lab 4 (MINIS.cortar/conector/crimpar). O
+      // RJ45 vai até o fim: os fios chegam embaixo dos contatos dourados e a
+      // capa azul entra no conector, onde a trava de trás prende o cabo.
       function montarEtapa3() {
         var cp = S.ui.compacto();
-        S.el('div', { fontSize: '15px', marginBottom: '4px' }, '3) Coloque um conector RJ45 em cada ponta do cabo e crimpe.', corpo);
-        S.el('div', { fontSize: '12px', color: C.cinza, marginBottom: '8px' }, 'Toque no conector RJ45 na bandeja e depois em cada ponta do cabo (A e B).', corpo);
-        var linha = S.el('div', {
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0', background: '#0F1C30',
-          border: '3px solid #071430', borderRadius: '8px', padding: cp ? '10px 6px' : '16px 10px'
-        }, null, corpo);
-        var conectores = 2;
-        var naMao = false;
-        var pontas = {};
-        function ponta(id, esquerda) {
-          var b = S.el('button', {
-            position: 'relative', width: cp ? '76px' : '92px', height: cp ? '62px' : '74px', background: 'transparent',
-            border: '2px dashed #4A5D7A', borderRadius: '8px', cursor: 'pointer', padding: '0', flex: '0 0 auto', touchAction: 'manipulation'
-          }, null, linha);
-          b.type = 'button';
-          b.setAttribute('aria-label', 'Ponta ' + id);
-          b.setAttribute('data-som', 'nao');
-          // Fios em leque saindo do cabo (pino 1 em cima).
-          var leque = S.el('div', {
-            position: 'absolute', top: '46%', transform: 'translateY(-50%)', width: '80%', display: 'flex', flexDirection: 'column', gap: '1px'
-          }, null, b);
-          leque.style[esquerda ? 'right' : 'left'] = '0';
-          S.T568B.forEach(function (f) {
-            S.el('div', { height: cp ? '3px' : '4px', background: fundoFio(f, false), border: '1px solid #071430', borderRadius: esquerda ? '3px 0 0 3px' : '0 3px 3px 0' }, null, leque);
-          });
-          S.el('div', {
-            position: 'absolute', bottom: '-2px', left: '0', right: '0', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: C.cinza
-          }, 'Ponta ' + id, b);
-          var plug = desenharPlugue(b, esquerda, false, cp);
-          plug.style.opacity = '0';
-          plug.style.transform = 'translate(' + (esquerda ? '-30px' : '30px') + ', -50%)';
-          b.addEventListener('click', S.protegido('crimp:ponta', function () { colocar(id); }));
-          pontas[id] = { b: b, plug: plug, ok: false };
-        }
-        ponta('A', true);
-        S.el('div', { flex: '1 1 auto', maxWidth: '360px', height: cp ? '18px' : '22px', background: 'linear-gradient(#5BA2F0, #2D7FE0 45%, #1D5FB0)', borderTop: '3px solid #071430', borderBottom: '3px solid #071430' }, null, linha);
-        ponta('B', false);
-
-        var bandeja = S.el('div', { display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }, null, corpo);
-        var bConector = S.el('button', {
-          display: 'flex', alignItems: 'center', gap: '8px', background: '#071733', border: '3px solid ' + C.borda, borderRadius: '8px',
-          padding: '6px 12px', color: C.branco, fontWeight: '700', fontSize: '13px', cursor: 'pointer', touchAction: 'manipulation'
-        }, null, bandeja);
-        bConector.type = 'button';
-        bConector.setAttribute('aria-label', 'Conector RJ45');
-        var icone = S.el('div', { position: 'relative', width: '34px', height: '30px' }, null, bConector);
-        var ic = desenharPlugue(icone, false, true, false);
-        ic.style.left = '2px';
-        var rotConector = S.el('span', null, 'Conector RJ45 ×2', bConector);
-        bConector.addEventListener('click', function () {
-          if (!conectores) return msg('Os dois conectores já estão no cabo.', 'info');
-          naMao = !naMao;
-          bConector.style.borderColor = naMao ? C.laranja : C.borda;
-          bConector.style.background = naMao ? '#3A2A08' : '#071733';
-          msg(naMao ? 'Conector RJ45 na mão: toque numa ponta do cabo.' : '', 'info');
-        });
+        var est = { aparado: false, A: 'fios', B: 'fios' };
+        var ordemIds = S.T568B.map(function (f) { return f.id; });
+        var titulo = S.el('div', { fontSize: '15px', marginBottom: '2px' }, '', corpo);
+        var sub = S.el('div', { fontSize: '12px', color: C.cinza, marginBottom: cp ? '4px' : '8px' }, '', corpo);
+        var palco = S.el('div', null, null, corpo);
         var msg = MG.mensagem(corpo);
         var acoes = S.el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }, null, corpo);
 
-        function colocar(id) {
-          var p = pontas[id];
-          if (p.ok) return msg('A ponta ' + id + ' já tem conector.', 'info');
-          if (!naMao) return msg('Primeiro pegue o conector RJ45 na bandeja.', 'info');
-          p.ok = true;
-          conectores--;
-          S.som('plugue');
-          p.plug.style.opacity = '1';
-          p.plug.style.transform = 'translate(0, -50%)';
-          p.b.style.borderStyle = 'solid';
-          p.b.style.borderColor = '#1E8E3E';
-          rotConector.textContent = 'Conector RJ45 ×' + conectores;
-          if (!conectores) {
-            naMao = false;
-            bConector.disabled = true;
-            bConector.style.opacity = '0.45';
-            bConector.style.borderColor = C.borda;
-            bConector.style.background = '#071733';
-            msg('✔ Conectores nas duas pontas. Agora crimpe!', 'ok');
-            var bCrimp = S.ui.botao('Crimpar as duas pontas ✔', 'primario', function () {
-              bCrimp.remove();
-              S.som('crimpar');
-              setTimeout(function () { S.som('crimpar'); }, 450);
-              ['A', 'B'].forEach(function (k) { pontas[k].plug.style.filter = 'brightness(0.92)'; });
-              msg('Clique! As duas pontas crimpadas: cabo direto T-568B pronto.', 'ok');
-              var bPegar = S.ui.botao('Pegar o cabo ▶', 'primario', function () {
-                m.fechar(true);
-                aoConcluir();
-              }, acoes);
-              bPegar.focus({ preventScroll: true });
-            }, acoes);
-            bCrimp.focus({ preventScroll: true });
-          } else {
-            msg('Conector na ponta ' + id + '. Falta a ponta ' + (id === 'A' ? 'B' : 'A') + '.', 'ok');
+        function proximo() {
+          if (!est.aparado) {
+            return {
+              acao: 'cortar',
+              titulo: '3) Apare os 8 fios no mesmo tamanho: 1,3 cm para fora da capa.',
+              sub: 'Fio comprido deixa a capa azul de fora do conector e o cabo fica solto. O mesmo corte vale para as duas pontas.',
+              botao: 'Aparar os fios ▶'
+            };
           }
+          for (var i = 0; i < 2; i++) {
+            var k = i ? 'B' : 'A';
+            if (est[k] === 'fios') {
+              return {
+                acao: 'conector', ponta: k,
+                titulo: '4) Encaixe o RJ45 na ponta ' + k + '.',
+                sub: 'Contatos dourados virados para você. Empurre até os fios chegarem no fim, embaixo dos contatos, com a capa azul dentro do conector.',
+                botao: 'Encaixar o RJ45 na ponta ' + k + ' ▶'
+              };
+            }
+            if (est[k] === 'encaixado') {
+              return {
+                acao: 'crimpar', ponta: k,
+                titulo: '5) Crimpe a ponta ' + k + '.',
+                sub: 'O alicate empurra os 8 contatos para dentro dos fios e a trava de trás prende a capa azul.',
+                botao: 'Crimpar a ponta ' + k + ' ▶'
+              };
+            }
+          }
+          return { fim: true, titulo: 'Cabo pronto!', sub: 'As duas pontas com RJ45 crimpado no padrão T-568B: é um cabo direto.' };
         }
-      }
 
-      // Conector RJ45 macho: corpo transparente, contatos dourados e a trava.
-      // pequeno: ícone da bandeja; senão cobre a ponta dos fios (fica
-      // transparente, como o conector de verdade, e os fios aparecem dentro).
-      function desenharPlugue(pai, esquerda, pequeno, compacto) {
-        var w = pequeno ? 26 : compacto ? 40 : 48;
-        var h = pequeno ? 24 : compacto ? 40 : 50;
-        var p = S.el('div', {
-          position: 'absolute', top: '50%', width: w + 'px', height: h + 'px', transition: 'transform .35s ease, opacity .35s ease',
-          pointerEvents: 'none'
-        }, null, pai);
-        p.style[esquerda ? 'left' : 'right'] = '2px';
-        p.style.top = pequeno ? '50%' : '46%';
-        S.el('div', {
-          position: 'absolute', top: '0', bottom: '0', width: '86%', background: pequeno ? 'rgba(225,238,255,0.92)' : 'rgba(225,238,255,0.5)', border: '2px solid #8FA3BC',
-          borderRadius: esquerda ? '3px 1px 1px 3px' : '1px 3px 3px 1px', boxSizing: 'border-box'
-        }, null, p).style[esquerda ? 'left' : 'right'] = '0';
-        var cont = S.el('div', {
-          position: 'absolute', top: '3px', bottom: '3px', width: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
-        }, null, p);
-        cont.style[esquerda ? 'left' : 'right'] = '3px';
-        for (var i = 0; i < 8; i++) S.el('div', { height: '1.5px', background: '#D9A21B' }, null, cont);
-        // Trava (clip) do lado de cima.
-        var trava = S.el('div', { position: 'absolute', top: '-4px', width: '45%', height: '5px', background: 'rgba(225,238,255,0.92)', border: '2px solid #8FA3BC', borderBottom: 'none', boxSizing: 'border-box' }, null, p);
-        trava.style[esquerda ? 'left' : 'right'] = '20%';
-        return p;
+        function visao() {
+          palco.textContent = '';
+          acoes.textContent = '';
+          var cv = S.el('canvas', {
+            display: 'block', width: '100%', maxWidth: '800px', margin: '0 auto',
+            border: '3px solid #071430', borderRadius: '8px', boxSizing: 'border-box'
+          }, null, palco);
+          cv.setAttribute('aria-label', 'Cabo: ponta A ' + estadoTexto(est.A) + ', ponta B ' + estadoTexto(est.B));
+          requestAnimationFrame(function () { if (cv.isConnected) desenharVisao(cv); });
+          var p = proximo();
+          titulo.textContent = p.titulo;
+          sub.textContent = p.sub;
+          if (p.fim) {
+            S.som('crimpar');
+            msg('✔ Clique, clique! As duas pontas crimpadas: cabo direto T-568B pronto.', 'ok');
+            var bPegar = S.ui.botao('Pegar o cabo ▶', 'primario', function () {
+              m.fechar(true);
+              aoConcluir();
+            }, acoes);
+            bPegar.focus({ preventScroll: true });
+            return;
+          }
+          var b = S.ui.botao(p.botao, 'primario', function () { abrirMini(p); }, acoes);
+          b.focus({ preventScroll: true });
+        }
+
+        function abrirMini(p) {
+          palco.textContent = '';
+          acoes.textContent = '';
+          msg('', 'info');
+          titulo.textContent = p.titulo;
+          sub.textContent = p.ponta && !cp ? 'Ponta ' + p.ponta + ' do cabo.' : '';
+          MG.closeEm(palco, p.acao, {
+            ordem: ordemIds,
+            reservar: cp ? 205 : 270,
+            aoConcluir: function (res) {
+              if (p.acao === 'cortar') {
+                if (res.voltarPara) {
+                  msg('Ficou curto: corte esse pedaço fora, decape de novo e apare com cuidado (1,3 cm).', 'info');
+                  return abrirMini(p);
+                }
+                est.aparado = true;
+                msg('✔ Fios aparados com 1,3 cm nas duas pontas.', 'ok');
+              } else if (p.acao === 'conector') {
+                est[p.ponta] = 'encaixado';
+                msg('✔ RJ45 encaixado na ponta ' + p.ponta + ', com a capa azul dentro do conector.', 'ok');
+              } else {
+                est[p.ponta] = 'crimpado';
+                msg('✔ Ponta ' + p.ponta + ' crimpada.', 'ok');
+              }
+              visao();
+            }
+          });
+        }
+
+        function estadoTexto(st) {
+          return st === 'crimpado' ? 'crimpada' : st === 'encaixado' ? 'com RJ45 encaixado' : 'sem conector';
+        }
+
+        // Visão geral do cabo: ponta A à esquerda (espelhada), ponta B à direita.
+        // Cada ponta é desenhada na mesma escala do close-up do RJ45 (reduzida).
+        var WV = 800, HV = 200, YC = 92, ESC = 0.62;
+        function desenharVisao(cv) {
+          var k = Math.min(2, window.devicePixelRatio || 1);
+          var cw = cv.clientWidth || 700;
+          cv.width = Math.round(cw * k);
+          cv.height = Math.round(cw * HV / WV * k);
+          cv.style.height = Math.round(cw * HV / WV) + 'px';
+          var ctx = cv.getContext('2d');
+          var e = cv.width / WV;
+          ctx.setTransform(e, 0, 0, e, 0, 0);
+          var Dz = S.f4.desenho;
+          Dz.fundoBancada(ctx);
+          Dz.capa(ctx, 330, 470, YC, 62 * ESC);
+          desenharPonta(ctx, est.B, 420, false);
+          desenharPonta(ctx, est.A, 380, true);
+          ['A', 'B'].forEach(function (pk) {
+            var st = est[pk];
+            var x = pk === 'A' ? 120 : 680;
+            var txt = 'Ponta ' + pk + ': ' + (st === 'crimpado' ? 'crimpada ✔' : st === 'encaixado' ? 'RJ45 encaixado' : est.aparado ? 'fios aparados' : 'fios com 2 cm');
+            Dz.etiqueta(ctx, x, 172, txt, st === 'crimpado' ? '#6BF08E' : st === 'encaixado' ? '#FFD36B' : '#FFFFFF');
+          });
+        }
+        // st: 'fios' | 'encaixado' | 'crimpado'. Coordenadas locais iguais às
+        // do close-up do RJ45: capa centrada em y=215, conector de x=380 a 600.
+        function desenharPonta(ctx, st, ox, espelho) {
+          var Dz = S.f4.desenho;
+          ctx.save();
+          ctx.translate(ox, YC - 215 * ESC);
+          ctx.scale(espelho ? -ESC : ESC, ESC);
+          function fios(x0, x1) {
+            S.T568B.forEach(function (f, i) { Dz.fioH(ctx, x0, x1, 215 - 24.5 + i * 7, 6.5, f); });
+          }
+          if (st === 'fios') {
+            fios(226, est.aparado ? 308 : 350);
+            Dz.capa(ctx, -40, 230, 215, 62);
+          } else {
+            Dz.desenharRJ45(ctx, 380, 215, 220, 92, 'contatos', function () {
+              fios(512, 594);
+              Dz.capa(ctx, -40, 516, 215, 62);
+            });
+            if (st === 'crimpado') {
+              // contatos já descidos e a trava da capa apertada
+              ctx.fillStyle = 'rgba(169,124,16,0.55)';
+              ctx.fillRect(578, 215 - 28, 16, 56);
+              ctx.fillStyle = 'rgba(143,163,188,0.9)';
+              ctx.fillRect(394, 215 - 30, 8, 60);
+            }
+          }
+          ctx.restore();
+        }
+
+        visao();
       }
     };
   });
@@ -7907,9 +7940,12 @@
         mascara: null,
         gateway: null,
         dnsLocal: null,
-        dhcp: { ativo: false, inicio: null, fim: null, mascara: null, gateway: null, dns: null, concessoes: {} },
-        dns: { registros: [{ nome: 'srv01', ip: IP_SRV, fixo: true }] },
-        https: { ativo: false, porta: null, cert: null }
+        funcoes: { dhcp: false, dns: false, iis: false },
+        dhcp: { criado: false, ativo: false, nome: null, inicio: null, fim: null, mascara: null, gateway: null, dns: null, dominio: null, dias: '8', concessoes: {} },
+        // A zona senac.lan é criada no Gerenciador DNS (com o registro do próprio servidor).
+        dns: { zona: false, registros: [] },
+        certs: [],
+        https: { ativo: false, porta: null, cert: null, docPadrao: false, associacoes: [{ tipo: 'http', ip: '*', porta: 80, host: '' }] }
       };
     };
     F2.reiniciar();
@@ -7919,6 +7955,15 @@
     function contar(fn) { return nomesPcs().filter(function (n) { return fn(pc(n)); }).length; }
     F2.tomadasInstaladas = function () {
       return (F2.tomadas || []).filter(function (t) { return t.instalada; }).length;
+    };
+    F2.funcoesProntas = function () {
+      var f = F2.srv.funcoes;
+      return f.dhcp && f.dns && f.iis;
+    };
+    // Site publicado: associação HTTPS (443, certificado da intranet) e
+    // boasvindas.html como documento padrão (abre só com o nome do site).
+    F2.httpsPronto = function () {
+      return F2.srv.https.ativo && F2.srv.https.docPadrao;
     };
     F2.dnsPronto = function () {
       return F2.srv.dns.registros.some(function (r) { return r.nome === 'intranet' && r.ip === IP_SRV; });
@@ -7940,11 +7985,20 @@
       {
         id: 'srvIp',
         quadro: 'IP fixo no servidor (.10)',
-        texto: 'No console do servidor, dê a ele o IP fixo 192.168.0.10 (aba Rede).',
+        texto: 'No console do servidor, abra as propriedades do TCP/IPv4 da placa Ethernet e dê o IP fixo 192.168.0.10.',
         feita: function () { return F2.srv.configurado; },
         alvos: alvosServidor,
-        dica1: 'Servidores usam IP fixo: os PCs precisam saber sempre onde ele está.',
-        dica2: 'IP 192.168.0.10 · Máscara 255.255.255.0 · Gateway 192.168.0.1 (roteador) · DNS 127.0.0.1 (ele mesmo).'
+        dica1: 'No Gerenciador do Servidor, abra Servidor Local e clique no link da Ethernet. Depois: Ethernet → Protocolo IP Versão 4 (TCP/IPv4) → Propriedades.',
+        dica2: 'Marque "Usar o seguinte endereço IP": IP 192.168.0.10 · Máscara 255.255.255.0 · Gateway 192.168.0.1 · DNS preferencial 127.0.0.1 (ele mesmo).'
+      },
+      {
+        id: 'funcoes',
+        quadro: 'Instalar DHCP, DNS e IIS',
+        texto: 'No Gerenciador do Servidor, use Gerenciar → Adicionar Funções e Recursos e instale o Servidor DHCP, o Servidor DNS e o Servidor Web (IIS).',
+        feita: function () { return F2.funcoesProntas(); },
+        alvos: alvosServidor,
+        dica1: 'No console do servidor, abra o menu Gerenciar (no alto, à direita) → Adicionar Funções e Recursos.',
+        dica2: 'No assistente: instalação baseada em função → servidor SRV-01 → marque Servidor DHCP, Servidor DNS e Servidor Web (IIS), aceite "Adicionar Recursos" → Instalar.'
       },
       {
         id: 'kit',
@@ -7964,34 +8018,34 @@
           return (F2.tomadas || []).filter(function (t) { return !t.instalada; }).map(function (t) { return 'tomada:' + t.n; });
         },
         dica1: 'Os pontos de rede ficam na canaleta da parede do fundo, atrás de cada PC.',
-        dica2: 'Na keystone, siga a linha B da etiqueta (T-568B): branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom.'
+        dica2: 'Fios na linha B da etiqueta (T-568B), um golpe de punch down em cada fio com a lâmina para fora (do lado da sobra) e, no fim, a tampa traseira.'
       },
       {
         id: 'dhcp',
         quadro: 'Configurar o DHCP',
-        texto: 'No servidor, crie o escopo DHCP para entregar IPs automáticos aos PCs.',
+        texto: 'No console DHCP do servidor, crie e ative um escopo para entregar IPs automáticos aos PCs.',
         feita: function () { return F2.srv.dhcp.ativo; },
         alvos: alvosServidor,
-        dica1: 'Aba DHCP do Gerenciador: defina a faixa de IPs que os PCs vão receber.',
-        dica2: 'Ex.: de 192.168.0.100 a 192.168.0.150 · Máscara 255.255.255.0 · Gateway 192.168.0.1 · DNS 192.168.0.10.'
+        dica1: 'No servidor: Ferramentas → DHCP. Selecione IPv4 na árvore e, no painel Ações, clique em "Novo Escopo...".',
+        dica2: 'No assistente: nome LAB-SENAC · faixa 192.168.0.100 a .150 · máscara 255.255.255.0 · roteador 192.168.0.1 · domínio senac.lan e DNS 192.168.0.10 · ative o escopo no final.'
       },
       {
         id: 'dns',
         quadro: 'DNS: ' + SITE,
-        texto: 'No DNS do servidor, crie o nome ' + SITE + ' apontando para o servidor.',
+        texto: 'No Gerenciador DNS, crie a zona ' + DOMINIO + ' e o registro de host (A) intranet apontando para o servidor.',
         feita: function () { return F2.dnsPronto(); },
         alvos: alvosServidor,
-        dica1: 'Aba DNS: adicione um registro do tipo A na zona ' + DOMINIO + '.',
-        dica2: 'Nome do host: intranet · Endereço IP: 192.168.0.10 (o próprio servidor).'
+        dica1: 'No servidor: Ferramentas → DNS. Selecione "Zonas de Pesquisa Direta" e use Ações → "Nova Zona..." (zona primária ' + DOMINIO + ').',
+        dica2: 'Depois selecione a zona ' + DOMINIO + ' → Ações → "Novo Host (A ou AAAA)..." → Nome: intranet · IP: 192.168.0.10 → Adicionar Host.'
       },
       {
         id: 'https',
         quadro: 'Publicar o site com HTTPS',
-        texto: 'Publique o site do servidor com HTTPS (porta e certificado certos).',
-        feita: function () { return F2.srv.https.ativo; },
+        texto: 'No Gerenciador do IIS, crie o certificado do site, adicione a associação HTTPS (porta 443) e ponha ' + ARQUIVO + ' como documento padrão.',
+        feita: function () { return F2.httpsPronto(); },
         alvos: alvosServidor,
-        dica1: 'Aba HTTPS: escolha a porta do HTTPS e o certificado com o nome do site.',
-        dica2: 'HTTPS usa a porta 443 e o certificado precisa ser de ' + SITE + '.'
+        dica1: 'No servidor: Ferramentas → Gerenciador do IIS. Em SRV-01, abra "Certificados de Servidor" → "Criar Certificado de Domínio..." com o nome comum ' + SITE + '.',
+        dica2: 'Em Sites → Default Web Site: "Associações..." → Adicionar → https, porta 443, certificado da intranet. Depois "Documento Padrão" → Adicionar: ' + ARQUIVO + '.'
       },
       {
         id: 'pcsLigar',
@@ -8018,11 +8072,11 @@
       {
         id: 'site',
         quadro: 'Abrir o site pelo nome',
-        texto: 'Num dos PCs, abra o Navegador e acesse https://' + SITE + '/' + ARQUIVO,
+        texto: 'Num dos PCs, abra o Navegador e acesse o site pelo nome: ' + SITE + ' (não precisa digitar https:// nem o nome do arquivo).',
         feita: function () { return F2.siteAberto; },
         alvos: function () { return ['pc:PC-01']; },
-        dica1: 'Use um PC → Navegador e digite o endereço pelo nome (não pelo IP).',
-        dica2: 'Endereço: https://' + SITE + '/' + ARQUIVO
+        dica1: 'Use um PC → Navegador e digite o nome do site, não o IP. Pode ser resumido: ' + SITE,
+        dica2: 'O navegador completa sozinho: ' + SITE + ' vira https://' + SITE + '/ e o servidor entrega a página padrão (' + ARQUIVO + ').'
       }
     ];
   });
@@ -8132,170 +8186,23 @@
 
   /* ================================================================== */
   secao('F2D-keystone', function () {
-    var C = S.CSS;
     var MG = S.minigames;
-    var J = S.jogo;
 
-    // Keystone: a etiqueta tem duas linhas de cores (A e B). O aluno encaixa
-    // cada fio no contato certo seguindo a linha B (T-568B), bate com a
-    // punch down e encaixa no espelho.
-    // opcoes.semPatch: só monta a tomada (o patch cord vem depois, na fase 3).
+    // Tomada keystone (Labs 2 e 3), desenhada em canvas como uma keystone
+    // de verdade (MINIS.keystone, seção M05): fios na linha B da etiqueta,
+    // um golpe de punch down em cada fio, tampa traseira e espelho.
+    // opcoes.semPatch: só monta a tomada (o patch cord vem depois, no Lab 3).
     MG.keystone = function (t, aoConcluir, opcoes) {
       opcoes = opcoes || {};
-      var m = S.ui.abrirModal('Tomada keystone · ponto ' + t.n + ' (' + t.pc + ')', { largura: '760px' });
-      var ap = S.ui.compacto();
-      var erros = 0;
-      var selecionado = null;
-      var colocados = [];
-      S.el('div', { marginBottom: '8px' },
-        'Escolha um fio e toque no contato da keystone. Cada contato tem duas cores na etiqueta: siga a linha B (T-568B), o mesmo padrão dos cabos.', m.corpo);
-
-      var corpoK = S.el('div', {
-        background: '#0F1C30',
-        border: '3px solid #071430',
-        borderRadius: '10px',
-        padding: ap ? '8px' : '12px',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-        gap: ap ? '6px' : '10px'
-      }, null, m.corpo);
-      var msg = MG.mensagem(m.corpo);
-
-      function marca(f, rotulo, pai) {
-        var l = S.el('div', { display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: rotulo === 'B' ? '#FFFFFF' : '#8FA3BC' }, null, pai);
-        S.el('span', { width: '10px' }, rotulo, l);
-        // Faixa horizontal: listras verticais deixam o "branco-x" visível.
-        var faixa = S.el('div', {
-          width: (ap ? 30 : 40) + 'px',
-          height: S.cfg.daltonismo ? '14px' : '12px',
-          background: f.listrado ? 'repeating-linear-gradient(90deg, #F4F4F4 0px, #F4F4F4 5px, ' + f.cor + ' 5px, ' + f.cor + ' 9px)' : f.cor,
-          border: '2px solid #071430',
-          borderRadius: '3px',
-          boxSizing: 'border-box'
-        }, null, l);
-        MG.marcarFio(faixa, f, true);
-      }
-
-      var slots = [];
-      for (var i = 0; i < 8; i++) {
-        (function (i) {
-          var b = S.el('button', {
-            background: '#1B2B44',
-            border: '2px solid #4A5D7A',
-            borderRadius: '8px',
-            padding: ap ? '4px' : '6px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: '#FFFFFF',
-            cursor: 'pointer',
-            touchAction: 'manipulation'
-          }, null, corpoK);
-          b.type = 'button';
-          b.setAttribute('aria-label', 'Contato ' + (i + 1));
-          S.el('div', { fontSize: '11px', fontWeight: '700' }, 'Contato ' + (i + 1), b);
-          marca(S.T568A[i], 'A', b);
-          marca(S.T568B[i], 'B', b);
-          var vaga = S.el('div', { height: ap ? '14px' : '18px', width: '80%', border: '2px dashed #4A5D7A', borderRadius: '4px', boxSizing: 'border-box' }, null, b);
-          b.addEventListener('click', S.protegido('keystone:slot', function () { colocar(i); }));
-          slots.push({ botao: b, vaga: vaga, fio: null });
-        })(i);
-      }
-
-      var bandeja = S.el('div', { display: 'flex', flexWrap: 'wrap', gap: ap ? '6px' : '8px', marginTop: '10px' }, null, m.corpo);
-      var botoesFio = {};
-      S.embaralhar(S.T568B).forEach(function (f) {
-        var b = S.el('button', {
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: '#071733',
-          border: '2px solid ' + C.borda,
-          borderRadius: '8px',
-          padding: ap ? '4px 8px' : '6px 10px',
-          color: '#FFFFFF',
-          fontSize: '12px',
-          fontWeight: '700',
-          cursor: 'pointer',
-          touchAction: 'manipulation'
-        }, null, bandeja);
-        b.type = 'button';
-        b.setAttribute('aria-label', f.nome);
-        MG.desenharFio(f, 14, ap ? 22 : 26, b, true);
-        S.el('span', null, f.nome, b);
-        b.addEventListener('click', function () {
-          if (b.disabled) return;
-          selecionado = f;
-          Object.keys(botoesFio).forEach(function (k) { botoesFio[k].style.borderColor = C.borda; });
-          b.style.borderColor = C.laranja;
-          msg('Fio ' + f.nome + ' na mão: toque no contato certo.', 'info');
-        });
-        botoesFio[f.id] = b;
-      });
-
-      var acoes = S.el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }, null, m.corpo);
-      var bBater = S.ui.botao('Bater os fios com a punch down', 'primario', bater, acoes);
-      bBater.style.display = 'none';
-      var bEncaixar = S.ui.botao(opcoes.semPatch ? 'Encaixar a keystone no espelho ▶' : 'Encaixar no espelho e ligar o patch cord do ' + t.pc + ' ▶', 'primario', encaixar, acoes);
-      bEncaixar.style.display = 'none';
-
-      function colocar(i) {
-        var s = slots[i];
-        if (s.fio) return;
-        if (!selecionado) {
-          msg('Primeiro escolha um fio na bandeja abaixo.', 'info');
-          return;
-        }
-        var certo = S.T568B[i];
-        var f = selecionado;
-        if (f.id !== certo.id) {
-          J.erros++;
-          erros++;
-          var corA = S.T568A[i];
-          msg(f.id === corA.id
-            ? '✖ Essa é a cor da linha A (T-568A). Os cabos foram feitos em T-568B: siga a linha B da etiqueta.'
-            : '✖ O contato ' + (i + 1) + ' pede ' + certo.nome + ' (linha B).', 'erro');
-          if (erros === 2) MG.referencia(m.corpo, ap);
-          return;
-        }
-        s.fio = f;
-        S.som('fio');
-        S.estilo(s.vaga, MG.fio(f, 0, 0));
-        S.estilo(s.vaga, { width: '80%', height: ap ? '14px' : '18px', border: '2px solid #071430' });
-        MG.marcarFio(s.vaga, f, true);
-        s.botao.style.borderColor = '#1E8E3E';
-        botoesFio[f.id].disabled = true;
-        botoesFio[f.id].style.opacity = '0.35';
-        selecionado = null;
-        colocados.push(i);
-        if (colocados.length === 8) {
-          msg('Todos os fios no lugar! Agora bata com a punch down para prender e cortar as sobras.', 'ok');
-          bBater.style.display = '';
-        } else {
-          msg('Certo! ' + colocados.length + '/8 fios.', 'ok');
-        }
-      }
-
-      function bater() {
-        S.som('punch');
-        bBater.style.display = 'none';
-        slots.forEach(function (s) {
-          s.vaga.style.borderColor = '#F2C200';
-        });
-        msg('Tac! Fios presos e sobras cortadas. Agora encaixe a keystone no espelho da parede.', 'ok');
-        bEncaixar.style.display = '';
-      }
-
-      function encaixar() {
-        S.som('plugue');
-        bEncaixar.style.display = 'none';
-        msg(opcoes.semPatch ? '✔ Tomada ' + t.n + ' montada e encaixada no espelho!' : '✔ Keystone encaixada no espelho e ' + t.pc + ' ligado com patch cord!', 'ok');
-        setTimeout(function () {
+      var m = S.ui.abrirModal('Tomada keystone · ponto ' + t.n + ' (' + t.pc + ')', { largura: '820px' });
+      MG.closeEm(m.corpo, 'keystone', {
+        dados: { n: t.n, pc: t.pc, semPatch: !!opcoes.semPatch },
+        reservar: S.ui.compacto() ? 158 : 220,
+        aoConcluir: function () {
           m.fechar(true);
           aoConcluir();
-        }, 900);
-      }
+        }
+      });
     };
   });
 
@@ -8306,347 +8213,1375 @@
     var J = S.jogo;
     var F2 = S.f2;
 
-    function caixaInfo(texto, pai, tipo) {
-      return S.el('div', {
-        background: tipo === 'aviso' ? '#FFF4D6' : '#E3EEFB',
-        border: '2px solid ' + (tipo === 'aviso' ? '#D9A21B' : '#7FA7D9'),
-        borderRadius: '6px',
-        padding: '6px 8px',
-        marginBottom: '8px',
-        fontSize: '12px',
-        color: tipo === 'aviso' ? '#5A4300' : '#14365F'
-      }, texto, pai);
-    }
+    // Console do SRV-01 imitando o Windows Server: Gerenciador do Servidor,
+    // Conexões de Rede (TCP/IPv4), assistente "Adicionar Funções e Recursos"
+    // e os consoles DHCP, DNS e Gerenciador do IIS. Cada etapa que fecha uma
+    // missão tira o aluno da tela (como no Lab 1), para ele não se perder.
+    var WIN = {
+      fundo: '#F3F3F3', painel: '#FFFFFF', borda: '#C9CDD3', azul: '#0067C0', azulClaro: '#CCE4F7',
+      texto: '#1B1B1B', cinza: '#5F6B7A', fonte: '"Segoe UI", Tahoma, Arial, sans-serif'
+    };
+    var ROLES = [
+      { id: 'adcs', n: 'Active Directory Certificate Services', d: 'Emite certificados para uma empresa inteira. O laboratório já tem uma AC pronta (AC-LAB-SENAC): não precisa instalar.' },
+      { id: 'adds', n: 'Active Directory Domain Services', d: 'Cria um domínio com usuários e computadores centralizados. Não é o objetivo desta prática.' },
+      { id: 'arquivos', n: 'Serviços de Arquivo e Armazenamento (1 de 12 instalados)', fixo: true, d: 'Já vem instalado com o Windows Server.' },
+      { id: 'hyperv', n: 'Hyper-V', d: 'Cria máquinas virtuais. Não é preciso nesta prática.' },
+      { id: 'impressao', n: 'Serviços de Impressão e Documentos', d: 'Compartilha impressoras na rede. Não é preciso nesta prática.' },
+      { id: 'dhcp', n: 'Servidor DHCP', alvo: true, d: 'O DHCP entrega IP, máscara, gateway e DNS automaticamente para os computadores da rede.' },
+      { id: 'dns', n: 'Servidor DNS', alvo: true, d: 'O DNS traduz nomes (como intranet.senac.lan) em endereços IP.' },
+      { id: 'iis', n: 'Servidor Web (IIS)', alvo: true, d: 'O IIS é o servidor de sites: publica páginas em HTTP e HTTPS.' },
+      { id: 'wsus', n: 'Windows Server Update Services', d: 'Distribui atualizações do Windows. Não é preciso nesta prática.' }
+    ];
+    var NOMES_ROLE = { dhcp: 'Servidor DHCP', dns: 'Servidor DNS', iis: 'Servidor Web (IIS)' };
 
-    // Botões de escolha (melhor que <select> no celular).
-    function escolhas(pai, opcoes, valor, aoMudar) {
-      var linha = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }, null, pai);
-      var atual = valor;
-      var bs = opcoes.map(function (o) {
-        var b = S.el('button', {
-          padding: '6px 10px',
-          borderRadius: '6px',
-          border: '2px solid #8A96A6',
-          background: '#FFFFFF',
-          color: '#10203A',
-          fontWeight: '700',
-          fontSize: '12px',
-          cursor: 'pointer',
-          touchAction: 'manipulation'
-        }, o.rotulo, linha);
-        b.type = 'button';
-        b.addEventListener('click', function () {
-          atual = o.valor;
-          marcar();
-          if (aoMudar) aoMudar(atual);
-        });
-        return { b: b, v: o.valor };
-      });
-      function marcar() {
-        bs.forEach(function (x) {
-          var on = x.v === atual;
-          x.b.style.background = on ? '#0B4F9C' : '#FFFFFF';
-          x.b.style.color = on ? '#FFFFFF' : '#10203A';
-          x.b.style.borderColor = on ? '#071430' : '#8A96A6';
-        });
-      }
-      marcar();
-      return { valor: function () { return atual; } };
-    }
+    function ultimo(ip) { return Number(ip.split('.')[3]); }
 
-    MG.servidor = function (abaInicial) {
+    MG.servidor = function () {
       var srv = F2.srv;
-      var m = S.ui.abrirModal('SRV-01 · Gerenciador do Servidor', { largura: '760px' });
-      var chips = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }, null, m.corpo);
-      var abas = S.el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap' }, null, m.corpo);
-      var painel = S.el('div', {
-        background: '#F2F5F9',
-        color: '#10203A',
-        border: '3px solid #071430',
-        borderRadius: '0 8px 8px 8px',
-        padding: '12px 14px'
+      var ap = S.ui.compacto();
+      var m = S.ui.abrirModal('SRV-01 · Windows Server 2022 (console)', { largura: '940px' });
+      var chips = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }, null, m.corpo);
+      var tela = S.el('div', {
+        position: 'relative', background: '#DDE3EA', color: WIN.texto, fontFamily: WIN.fonte, fontSize: '13px',
+        lineHeight: '1.35', border: '3px solid #071430', borderRadius: '8px', overflow: 'hidden',
+        minHeight: ap ? '290px' : '430px', display: 'flex', flexDirection: 'column'
       }, null, m.corpo);
+      var appArea = S.el('div', { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: '0' }, null, tela);
+      var barra = S.el('div', {
+        display: 'flex', gap: '4px', alignItems: 'center', padding: '3px 6px', background: '#1F2A38', flexWrap: 'wrap'
+      }, null, tela);
       var msg = MG.mensagem(m.corpo);
-      var LISTA = [
-        { id: 'rede', nome: 'Rede (IP fixo)', ok: function () { return srv.configurado; }, montar: abaRede },
-        { id: 'dhcp', nome: 'DHCP', ok: function () { return srv.dhcp.ativo; }, montar: abaDhcp },
-        { id: 'dns', nome: 'DNS', ok: function () { return F2.dnsPronto(); }, montar: abaDns },
-        { id: 'https', nome: 'HTTPS (site)', ok: function () { return srv.https.ativo; }, montar: abaHttps }
-      ];
-      var botoesAba = {};
+      var abertos = ['gerenciador'];
+      var appAtual = null;
+      var travado = false; // depois de fechar uma missão a tela vai fechar
 
-      function desenharChips() {
-        chips.textContent = '';
-        LISTA.forEach(function (a) {
-          var ok = a.ok();
-          S.el('div', {
-            padding: '4px 10px',
-            borderRadius: '999px',
-            fontSize: '12px',
-            fontWeight: '700',
-            background: ok ? '#1F7A3E' : '#3A4556',
-            color: '#FFFFFF'
-          }, (ok ? '✔ ' : '○ ') + a.nome.split(' ')[0], chips);
-        });
+      // ---- Peças de interface no estilo Windows ---------------------------
+      function el(tag, est, txt, pai) { return S.el(tag, est, txt, pai); }
+      function btn(texto, fn, pai, primario, desabilitado) {
+        var b = el('button', {
+          padding: '5px 14px', minWidth: '78px', fontFamily: WIN.fonte, fontSize: '13px', borderRadius: '4px',
+          border: '1px solid ' + (primario ? '#005A9E' : '#8A8F98'), background: primario ? WIN.azul : '#FDFDFD',
+          color: primario ? '#FFFFFF' : WIN.texto, cursor: 'pointer', touchAction: 'manipulation'
+        }, texto, pai);
+        b.type = 'button';
+        if (desabilitado) {
+          b.disabled = true;
+          b.style.opacity = '0.45';
+          b.style.cursor = 'default';
+        }
+        b.addEventListener('click', S.protegido('srv:' + texto, function () { if (!b.disabled && !travado) fn(); }));
+        return b;
       }
-
-      LISTA.forEach(function (a) {
-        var b = S.ui.botao(a.nome, 'secundario', function () { abrir(a.id); }, abas);
-        S.estilo(b, { padding: '7px 12px', fontSize: '13px', borderRadius: '8px 8px 0 0', borderBottom: 'none' });
-        botoesAba[a.id] = b;
-      });
-
-      function abrir(id) {
-        msg('');
-        painel.textContent = '';
-        LISTA.forEach(function (a) {
-          var on = a.id === id;
-          botoesAba[a.id].style.background = on ? '#F2F5F9' : C.painel2;
-          botoesAba[a.id].style.color = on ? '#0B4F9C' : C.branco;
-        });
-        var a = LISTA.filter(function (x) { return x.id === id; })[0];
-        a.montar();
-        desenharChips();
+      function link(texto, fn, pai) {
+        var a = el('button', {
+          background: 'none', border: '0', padding: '0', color: WIN.azul, cursor: 'pointer', fontFamily: WIN.fonte,
+          fontSize: '13px', textAlign: 'left', textDecoration: 'underline'
+        }, texto, pai);
+        a.type = 'button';
+        a.addEventListener('click', S.protegido('srv:link', function () { if (!travado) fn(); }));
+        return a;
       }
-
+      function entrada(pai, valor, largura, placeholder) {
+        var i = el('input', {
+          width: largura || '14em', maxWidth: '100%', padding: '5px 6px', fontSize: '15px', fontFamily: WIN.fonte,
+          border: '1px solid #8A8F98', borderRadius: '3px', boxSizing: 'border-box', userSelect: 'text', webkitUserSelect: 'text'
+        }, null, pai);
+        i.type = 'text';
+        i.value = valor || '';
+        i.setAttribute('autocapitalize', 'none');
+        i.setAttribute('autocorrect', 'off');
+        i.spellcheck = false;
+        if (placeholder) i.placeholder = placeholder;
+        return i;
+      }
+      function radio(pai, grupo, rotulo, marcado, aoMudar, desabilitado) {
+        var l = el('label', { display: 'flex', alignItems: 'center', gap: '6px', cursor: desabilitado ? 'default' : 'pointer', margin: '3px 0', opacity: desabilitado ? '0.5' : '1' }, null, pai);
+        var r = el('input', { width: '16px', height: '16px', margin: '0', flex: '0 0 auto' }, null, l);
+        r.type = 'radio';
+        r.name = grupo;
+        r.checked = !!marcado;
+        r.disabled = !!desabilitado;
+        el('span', null, rotulo, l);
+        r.addEventListener('change', function () { if (r.checked && aoMudar) aoMudar(); });
+        return r;
+      }
+      function caixaMarca(pai, rotulo, marcado, aoMudar, desabilitado) {
+        var l = el('label', { display: 'flex', alignItems: 'center', gap: '6px', cursor: desabilitado ? 'default' : 'pointer', margin: '3px 0' }, null, pai);
+        var c = el('input', { width: '16px', height: '16px', margin: '0', flex: '0 0 auto' }, null, l);
+        c.type = 'checkbox';
+        c.checked = !!marcado;
+        c.disabled = !!desabilitado;
+        el('span', { opacity: desabilitado ? '0.6' : '1' }, rotulo, l);
+        c.addEventListener('change', function () { if (aoMudar) aoMudar(c.checked, c); });
+        return c;
+      }
+      function grade(pai) {
+        return el('div', { display: 'grid', gridTemplateColumns: 'minmax(110px, auto) minmax(0, 1fr)', gap: '6px 10px', alignItems: 'center' }, null, pai);
+      }
+      function rotulo(texto, pai) { return el('div', { fontWeight: '600' }, texto, pai); }
+      function aviso(texto, pai, tipo) {
+        return el('div', {
+          background: tipo === 'erro' ? '#FDE7E9' : tipo === 'ok' ? '#DFF6DD' : '#FFF4CE',
+          border: '1px solid ' + (tipo === 'erro' ? '#E8A2A8' : tipo === 'ok' ? '#9BD39B' : '#E5C76B'),
+          borderRadius: '4px', padding: '6px 8px', margin: '6px 0', fontSize: '12px'
+        }, texto, pai);
+      }
+      function tabela(pai, colunas, linhas) {
+        var t = el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', fontSize: '12px', overflowX: 'auto' }, null, pai);
+        var tpl = colunas.map(function () { return 'minmax(80px, 1fr)'; }).join(' ');
+        var cab = el('div', { display: 'grid', gridTemplateColumns: tpl, gap: '8px', padding: '4px 8px', background: '#F0F2F5', fontWeight: '600', borderBottom: '1px solid ' + WIN.borda }, null, t);
+        colunas.forEach(function (c) { el('div', null, c, cab); });
+        linhas.forEach(function (l) {
+          var lin = el('div', { display: 'grid', gridTemplateColumns: tpl, gap: '8px', padding: '4px 8px', borderBottom: '1px solid #EEF0F3' }, null, t);
+          l.forEach(function (c) { el('div', { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, c, lin); });
+        });
+        if (!linhas.length) el('div', { padding: '6px 8px', color: WIN.cinza }, 'Não há itens a serem mostrados nesta exibição.', t);
+        return t;
+      }
       function errou(texto, campo) {
         J.erros++;
         msg('✖ ' + texto, 'erro');
         if (campo && campo.marcarErro) {
           campo.marcarErro(true);
           campo.focar();
+        } else if (campo && campo.focus) {
+          campo.style.borderColor = '#D63A33';
+          campo.focus();
         }
+        return false;
       }
-
-      function concluiu(texto, proxima) {
-        msg('✔ ' + texto, 'ok');
-        F2.desenharRack();
-        desenharChips();
-        J.atualizarMissoes();
-        if (proxima) setTimeout(function () { if (m.fundo.isConnected) abrir(proxima); }, 900);
-      }
-
-      function exigeIp() {
-        if (srv.configurado) return false;
-        caixaInfo('Primeiro dê um IP fixo ao servidor (aba Rede). Um servidor de DHCP, DNS ou site não pode ter IP que muda.', painel, 'aviso');
-        S.ui.botao('Ir para a aba Rede', 'primario', function () { abrir('rede'); }, painel);
-        return true;
-      }
-
-      function grade(pai) {
-        return S.el('div', { display: 'grid', gridTemplateColumns: 'minmax(120px, auto) minmax(0, 1fr)', gap: '6px 10px', alignItems: 'center' }, null, pai);
-      }
-      function vazio(campos) {
+      function info(texto) { msg(texto, 'info'); }
+      function vazioIp(campos) {
         var v = campos.filter(function (f) { return !f.completo(); })[0];
         if (v) {
-          msg('Preencha as 4 partes de cada endereço.', 'info');
+          info('Preencha as 4 partes de cada endereço.');
           v.marcarErro(true);
           v.focar();
         }
         return !!v;
       }
-      function limpar(campos) {
-        campos.forEach(function (f) { f.marcarErro(false); });
-      }
-      function ultimo(ip) { return Number(ip.split('.')[3]); }
 
-      // ---- Aba Rede: IP fixo do servidor ----
-      function abaRede() {
-        S.el('div', { fontWeight: '700', color: '#0B4F9C', marginBottom: '6px' }, 'Adaptador Ethernet · IP fixo do servidor', painel);
-        caixaInfo('Missão: o servidor fica em 192.168.0.10. O gateway é o roteador (192.168.0.1) e o DNS do próprio servidor é ele mesmo.', painel);
-        var g = grade(painel);
-        var fIp = MG.campoIp(g, 'Endereço IP', srv.ip, salvar);
-        var fMasc = MG.campoIp(g, 'Máscara', srv.mascara, salvar);
-        var fGw = MG.campoIp(g, 'Gateway padrão', srv.gateway, salvar);
-        var fDns = MG.campoIp(g, 'DNS preferencial', srv.dnsLocal, salvar);
-        var acoes = S.el('div', { marginTop: '10px' }, null, painel);
-        S.ui.botao('Aplicar', 'primario', salvar, acoes);
-        function salvar() {
-          var cs = [fIp, fMasc, fGw, fDns];
-          limpar(cs);
-          if (vazio(cs)) return;
+      // ---- Janelas de diálogo (por cima do app) ---------------------------
+      var dialogos = [];
+      function dialogo(titulo, largura) {
+        var fundo = el('div', {
+          position: 'absolute', left: '0', top: '0', right: '0', bottom: '0', background: 'rgba(20,30,45,0.28)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', boxSizing: 'border-box', zIndex: String(10 + dialogos.length)
+        }, null, tela);
+        var cx = el('div', {
+          background: WIN.fundo, border: '1px solid #6C7480', boxShadow: '0 8px 24px rgba(0,0,0,0.35)', width: '100%',
+          maxWidth: largura || '460px', maxHeight: '100%', display: 'flex', flexDirection: 'column', borderRadius: '6px', overflow: 'hidden'
+        }, null, fundo);
+        var topo = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#FFFFFF', borderBottom: '1px solid ' + WIN.borda }, null, cx);
+        el('div', { fontWeight: '600', fontSize: '13px' }, titulo, topo);
+        var corpo = el('div', { padding: '10px 12px', overflowY: 'auto', flex: '1 1 auto' }, null, cx);
+        var rodape = el('div', { display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '8px 12px', borderTop: '1px solid ' + WIN.borda, flexWrap: 'wrap' }, null, cx);
+        var d = {
+          corpo: corpo, rodape: rodape,
+          fechar: function () {
+            fundo.remove();
+            var i = dialogos.indexOf(d);
+            if (i >= 0) dialogos.splice(i, 1);
+          }
+        };
+        var x = el('button', { background: 'none', border: '0', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }, '✕', topo);
+        x.type = 'button';
+        x.setAttribute('aria-label', 'Fechar');
+        x.addEventListener('click', function () { d.fechar(); });
+        dialogos.push(d);
+        return d;
+      }
+      function fecharDialogos() { while (dialogos.length) dialogos[dialogos.length - 1].fechar(); }
+      function alerta(titulo, texto, aoOk) {
+        var d = dialogo(titulo, '380px');
+        el('div', { display: 'flex', gap: '10px', alignItems: 'flex-start' }, null, d.corpo).appendChild(el('div', { fontSize: '13px' }, texto));
+        btn('OK', function () { d.fechar(); if (aoOk) aoOk(); }, d.rodape, true);
+      }
+
+      // ---- Assistente (várias páginas com Anterior / Próximo) -------------
+      function assistente(titulo, paginas, aoConcluir, largura) {
+        var d = dialogo(titulo, largura || '620px');
+        var i = 0;
+        var lateral = null;
+        var conteudo = null;
+        var linha = el('div', { display: 'flex', gap: '12px', alignItems: 'stretch', flexWrap: 'wrap' }, null, d.corpo);
+        lateral = el('div', { flex: '0 0 150px', borderRight: '1px solid ' + WIN.borda, paddingRight: '8px', fontSize: '12px', display: ap ? 'none' : 'block' }, null, linha);
+        conteudo = el('div', { flex: '1 1 260px', minWidth: '0' }, null, linha);
+        function mostrar() {
+          msg('');
+          lateral.textContent = '';
+          paginas.forEach(function (p, k) {
+            el('div', { padding: '3px 6px', borderLeft: '3px solid ' + (k === i ? WIN.azul : 'transparent'), fontWeight: k === i ? '600' : '400', color: k < i ? WIN.cinza : WIN.texto }, p.nome, lateral);
+          });
+          conteudo.textContent = '';
+          var p = paginas[i];
+          el('div', { fontSize: '16px', fontWeight: '600', color: '#123A6B', marginBottom: '6px' }, p.titulo || p.nome, conteudo);
+          p.montar(conteudo);
+          d.rodape.textContent = '';
+          btn('< Anterior', function () { i--; mostrar(); }, d.rodape, false, i === 0 || p.semVolta);
+          if (p.botaoFinal) {
+            btn(p.botaoFinal, function () { if (p.validar && p.validar() === false) return; aoConcluir(d, p); }, d.rodape, true);
+          } else if (i < paginas.length - 1) {
+            btn('Próximo >', function () {
+              if (p.validar && p.validar() === false) return;
+              i++;
+              mostrar();
+            }, d.rodape, true);
+          }
+          btn('Cancelar', function () { d.fechar(); msg(''); }, d.rodape);
+        }
+        mostrar();
+        return { dialogo: d, ir: function (k) { i = k; mostrar(); } };
+      }
+
+      // ---- Console de 3 painéis (árvore | conteúdo | Ações), como no MMC ---
+      function consoleMmc(corpo, def) {
+        var sel = def.inicial;
+        var caixa = el('div', { display: 'flex', flex: '1 1 auto', minHeight: '0', flexWrap: 'wrap', background: '#FFFFFF' }, null, corpo);
+        var arvore = el('div', { flex: '0 0 ' + (ap ? '140px' : '190px'), borderRight: '1px solid ' + WIN.borda, padding: '6px 0', overflowY: 'auto', background: '#FFFFFF' }, null, caixa);
+        var meio = el('div', { flex: '1 1 260px', minWidth: '0', padding: '10px 12px', overflowY: 'auto' }, null, caixa);
+        var acoes = el('div', { flex: '0 0 ' + (ap ? '100%' : '170px'), borderLeft: ap ? '0' : '1px solid ' + WIN.borda, borderTop: ap ? '1px solid ' + WIN.borda : '0', background: '#F7F8FA', padding: '6px 0' }, null, caixa);
+        function render() {
+          arvore.textContent = '';
+          def.nos().forEach(function (n) {
+            var b = el('button', {
+              display: 'block', width: '100%', textAlign: 'left', border: '0', padding: '4px 8px 4px ' + (8 + n.nivel * 14) + 'px',
+              background: n.id === sel ? WIN.azulClaro : 'transparent', fontFamily: WIN.fonte, fontSize: '12px', cursor: 'pointer',
+              color: WIN.texto, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+            }, (n.icone || '▸') + ' ' + n.nome, arvore);
+            b.type = 'button';
+            b.addEventListener('click', function () { if (travado) return; sel = n.id; msg(''); render(); });
+          });
+          meio.textContent = '';
+          def.conteudo(sel, meio, api);
+          acoes.textContent = '';
+          el('div', { fontWeight: '700', padding: '2px 10px 6px', fontSize: '12px', borderBottom: '1px solid ' + WIN.borda, marginBottom: '4px' }, 'Ações', acoes);
+          var nome = (def.nos().filter(function (n) { return n.id === sel; })[0] || {}).nome || '';
+          el('div', { fontWeight: '600', padding: '2px 10px', fontSize: '12px', color: '#123A6B' }, nome, acoes);
+          var lista = def.acoes(sel, api) || [];
+          if (!lista.length) el('div', { padding: '2px 10px', fontSize: '12px', color: WIN.cinza }, 'Nenhuma ação aqui.', acoes);
+          lista.forEach(function (a) {
+            var b = el('button', {
+              display: ap ? 'inline-block' : 'block', width: ap ? 'auto' : '100%', textAlign: 'left', border: '0', background: 'transparent',
+              padding: '4px 10px 4px 18px', fontFamily: WIN.fonte, fontSize: '12px', color: WIN.azul, cursor: 'pointer'
+            }, a[0], acoes);
+            b.type = 'button';
+            b.addEventListener('click', S.protegido('mmc:' + a[0], function () { if (!travado) a[1](); }));
+          });
+        }
+        var api = { render: render, selecionar: function (id) { sel = id; render(); }, sel: function () { return sel; } };
+        render();
+        return api;
+      }
+
+      // ---- Janela de app + barra de tarefas -------------------------------
+      var APPS = {
+        gerenciador: { nome: 'Gerenciador do Servidor', abrir: function () { abrirGerenciador(); } },
+        rede: { nome: 'Conexões de Rede', abrir: function () { abrirConexoes(); } },
+        dhcp: { nome: 'DHCP', abrir: function () { abrirDhcp(); } },
+        dns: { nome: 'Gerenciador DNS', abrir: function () { abrirDns(); } },
+        iis: { nome: 'Gerenciador do IIS', abrir: function () { abrirIis(); } }
+      };
+      function janelaApp(id, titulo) {
+        fecharDialogos();
+        appAtual = id;
+        if (abertos.indexOf(id) < 0) abertos.push(id);
+        appArea.textContent = '';
+        var topo = el('div', { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px', background: '#FFFFFF', borderBottom: '1px solid ' + WIN.borda }, null, appArea);
+        el('div', { fontWeight: '600', fontSize: '13px', flex: '1 1 auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, titulo, topo);
+        var menu = el('div', { display: 'flex', gap: '2px', alignItems: 'center', position: 'relative' }, null, topo);
+        var corpo = el('div', { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: '0', background: WIN.fundo }, null, appArea);
+        desenharBarra();
+        return { corpo: corpo, menu: menu };
+      }
+      function desenharBarra() {
+        barra.textContent = '';
+        el('div', { color: '#FFFFFF', fontWeight: '700', padding: '0 6px', fontSize: '14px' }, '⊞', barra);
+        abertos.forEach(function (id) {
+          var on = id === appAtual;
+          var b = el('button', {
+            padding: '3px 10px', border: '0', borderBottom: '2px solid ' + (on ? '#60CDFF' : 'transparent'), background: on ? '#34465C' : 'transparent',
+            color: '#FFFFFF', fontFamily: WIN.fonte, fontSize: '12px', cursor: 'pointer'
+          }, APPS[id].nome, barra);
+          b.type = 'button';
+          b.addEventListener('click', function () { if (!travado) APPS[id].abrir(); });
+        });
+      }
+      function menuSuspenso(pai, rotuloMenu, itens) {
+        var b = el('button', {
+          padding: '3px 8px', border: '0', background: 'transparent', fontFamily: WIN.fonte, fontSize: '13px', cursor: 'pointer', color: WIN.texto
+        }, rotuloMenu + ' ▾', pai);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          if (travado) return;
+          var antigo = tela.querySelector('[data-menu]');
+          if (antigo) { antigo.remove(); if (antigo.getAttribute('data-menu') === rotuloMenu) return; }
+          var r = b.getBoundingClientRect();
+          var rt = tela.getBoundingClientRect();
+          var lista = el('div', {
+            position: 'absolute', top: (r.bottom - rt.top) + 'px', right: Math.max(4, rt.right - r.right) + 'px', background: '#FFFFFF',
+            border: '1px solid #8A8F98', boxShadow: '0 6px 16px rgba(0,0,0,0.25)', zIndex: '30', minWidth: '230px', padding: '4px 0'
+          }, null, tela);
+          lista.setAttribute('data-menu', rotuloMenu);
+          itens().forEach(function (it) {
+            var x = el('button', {
+              display: 'block', width: '100%', textAlign: 'left', border: '0', background: 'transparent', padding: '6px 14px',
+              fontFamily: WIN.fonte, fontSize: '13px', cursor: it.fn ? 'pointer' : 'default', color: it.fn ? WIN.texto : '#9AA0A8'
+            }, it.n, lista);
+            x.type = 'button';
+            x.addEventListener('click', function () {
+              lista.remove();
+              if (it.fn && !travado) it.fn();
+            });
+          });
+        });
+      }
+
+      // ---- Fechar a tela quando uma missão do servidor termina ------------
+      function concluirMissao(texto) {
+        var antes = J.indice;
+        msg('✔ ' + texto, 'ok');
+        F2.desenharRack();
+        desenharChips();
+        J.atualizarMissoes();
+        travado = true;
+        setTimeout(function () {
+          if (!m.fundo.isConnected) return;
+          m.fechar(true);
+          if (J.indice === antes) S.aviso('✔ ' + texto, 'ok', 3000);
+        }, 1500);
+      }
+
+      function desenharChips() {
+        chips.textContent = '';
+        [
+          ['IP fixo', srv.configurado], ['Funções', F2.funcoesProntas()], ['DHCP', srv.dhcp.ativo],
+          ['DNS', F2.dnsPronto()], ['HTTPS', F2.httpsPronto()]
+        ].forEach(function (c) {
+          el('div', {
+            padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '700',
+            background: c[1] ? '#1F7A3E' : '#3A4556', color: '#FFFFFF'
+          }, (c[1] ? '✔ ' : '○ ') + c[0], chips);
+        });
+      }
+
+      // ================================================================
+      // Gerenciador do Servidor
+      // ================================================================
+      function abrirGerenciador(secaoInicial) {
+        var j = janelaApp('gerenciador', 'Gerenciador do Servidor');
+        menuSuspenso(j.menu, 'Gerenciar', function () {
+          return [
+            { n: 'Adicionar Funções e Recursos', fn: assistenteFuncoes },
+            { n: 'Remover Funções e Recursos', fn: function () { info('Nada para remover nesta prática.'); } },
+            { n: 'Propriedades do Gerenciador do Servidor', fn: function () { info('Não é preciso mexer nisso nesta prática.'); } }
+          ];
+        });
+        menuSuspenso(j.menu, 'Ferramentas', function () {
+          var f = srv.funcoes;
+          var lista = [];
+          if (f.dhcp) lista.push({ n: 'DHCP', fn: abrirDhcp });
+          if (f.dns) lista.push({ n: 'DNS', fn: abrirDns });
+          if (f.iis) lista.push({ n: 'Gerenciador dos Serviços de Informações da Internet (IIS)', fn: abrirIis });
+          if (!lista.length) lista.push({ n: '(DHCP, DNS e IIS aparecem aqui depois de instalados)' });
+          ['Gerenciamento do Computador', 'Visualizador de Eventos', 'Windows PowerShell'].forEach(function (n) {
+            lista.push({ n: n, fn: function () { info('Não é preciso usar "' + n + '" nesta prática.'); } });
+          });
+          return lista;
+        });
+        var linha = el('div', { display: 'flex', flex: '1 1 auto', minHeight: '0', flexWrap: 'wrap' }, null, j.corpo);
+        var nav = el('div', { flex: '0 0 ' + (ap ? '100%' : '170px'), background: '#FFFFFF', borderRight: ap ? '0' : '1px solid ' + WIN.borda, padding: '6px 0', display: ap ? 'flex' : 'block', flexWrap: 'wrap' }, null, linha);
+        var area = el('div', { flex: '1 1 300px', minWidth: '0', padding: '10px 14px', overflowY: 'auto' }, null, linha);
+        var secoes = [['painel', 'Painel'], ['local', 'Servidor Local'], ['todos', 'Todos os Servidores']];
+        if (srv.funcoes.dhcp) secoes.push(['rdhcp', 'DHCP']);
+        if (srv.funcoes.dns) secoes.push(['rdns', 'DNS']);
+        if (srv.funcoes.iis) secoes.push(['riis', 'IIS']);
+        var atual = secaoInicial || 'painel';
+        function mostrar() {
+          nav.textContent = '';
+          secoes.forEach(function (sx) {
+            var on = sx[0] === atual;
+            var b = el('button', {
+              display: 'block', width: ap ? 'auto' : '100%', textAlign: 'left', border: '0', padding: '6px 12px',
+              borderLeft: '3px solid ' + (on ? WIN.azul : 'transparent'), background: on ? WIN.azulClaro : 'transparent',
+              fontFamily: WIN.fonte, fontSize: '13px', cursor: 'pointer', color: WIN.texto
+            }, sx[1], nav);
+            b.type = 'button';
+            b.addEventListener('click', function () { if (travado) return; atual = sx[0]; msg(''); mostrar(); });
+          });
+          area.textContent = '';
+          if (atual === 'painel') secaoPainel(area);
+          else if (atual === 'local') secaoLocal(area);
+          else if (atual === 'todos') secaoTodos(area);
+          else secaoRole(area, atual.slice(1));
+        }
+        mostrar();
+      }
+      function secaoPainel(area) {
+        el('div', { fontSize: '18px', fontWeight: '300', color: '#123A6B', marginBottom: '8px' }, 'BEM-VINDO AO GERENCIADOR DO SERVIDOR', area);
+        var box = el('div', { background: '#FFFFFF', border: '1px solid ' + WIN.borda, padding: '10px 12px', marginBottom: '10px' }, null, area);
+        el('div', { fontWeight: '700', color: WIN.azul, marginBottom: '6px', fontSize: '12px' }, 'INÍCIO RÁPIDO', box);
+        [
+          ['1', 'Configurar este servidor local', function () { abrirGerenciador('local'); }],
+          ['2', 'Adicionar funções e recursos', assistenteFuncoes],
+          ['3', 'Adicionar outros servidores para gerenciar', function () { info('Neste laboratório só existe o SRV-01.'); }],
+          ['4', 'Criar um grupo de servidores', function () { info('Não é preciso nesta prática.'); }]
+        ].forEach(function (it) {
+          var l = el('div', { display: 'flex', alignItems: 'center', gap: '10px', margin: '6px 0' }, null, box);
+          el('div', { width: '22px', height: '22px', borderRadius: '50%', background: WIN.azul, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '12px', flex: '0 0 auto' }, it[0], l);
+          link(it[1], it[2], l);
+        });
+        el('div', { fontWeight: '700', color: WIN.cinza, margin: '6px 0 4px', fontSize: '12px' }, 'FUNÇÕES E GRUPOS DE SERVIDORES', area);
+        var tiles = el('div', { display: 'flex', gap: '8px', flexWrap: 'wrap' }, null, area);
+        var lista = [['Servidor Local', true]];
+        if (srv.funcoes.dhcp) lista.push(['DHCP', true]);
+        if (srv.funcoes.dns) lista.push(['DNS', true]);
+        if (srv.funcoes.iis) lista.push(['IIS', true]);
+        lista.forEach(function (t) {
+          var c = el('div', { background: '#FFFFFF', borderTop: '4px solid ' + WIN.azul, border: '1px solid ' + WIN.borda, padding: '6px 10px', minWidth: '120px' }, null, tiles);
+          el('div', { fontWeight: '700' }, t[0] + '  1', c);
+          el('div', { fontSize: '12px', color: '#1F7A3E' }, '✔ Gerenciabilidade', c);
+        });
+      }
+      function secaoLocal(area) {
+        el('div', { fontWeight: '700', color: WIN.cinza, marginBottom: '6px', fontSize: '12px' }, 'PROPRIEDADES · Para SRV-01', area);
+        var g = el('div', { display: 'grid', gridTemplateColumns: 'minmax(150px, auto) minmax(0, 1fr)', gap: '6px 14px', background: '#FFFFFF', border: '1px solid ' + WIN.borda, padding: '10px 12px' }, null, area);
+        function prop(n, v, fn) {
+          el('div', { color: WIN.cinza }, n, g);
+          if (fn) link(v, fn, g);
+          else el('div', null, v, g);
+        }
+        prop('Nome do computador', 'SRV-01');
+        prop('Grupo de trabalho', 'WORKGROUP');
+        prop('Firewall do Windows Defender', 'Particular: Ativado');
+        prop('Gerenciamento remoto', 'Habilitado');
+        prop('Ethernet', srv.configurado ? srv.ip + ', IPv6 habilitado' : 'Endereço IPv4 atribuído pelo DHCP, IPv6 habilitado', abrirConexoes);
+        prop('Sistema operacional', 'Microsoft Windows Server 2022 Standard');
+        prop('Processadores', 'Intel(R) Xeon(R) E-2224 3.40 GHz');
+        prop('Memória instalada (RAM)', '16 GB');
+        if (!srv.configurado) aviso('Clique no link da Ethernet para dar um IP fixo ao servidor.', area);
+      }
+      function secaoTodos(area) {
+        el('div', { fontWeight: '700', color: WIN.cinza, marginBottom: '6px', fontSize: '12px' }, 'SERVIDORES · Todos os servidores | 1 no total', area);
+        tabela(area, ['Nome do Servidor', 'Endereço IPv4', 'Gerenciabilidade'], [['SRV-01', srv.configurado ? srv.ip : '169.254.18.40', 'Online']]);
+      }
+      function secaoRole(area, id) {
+        var nomes = { dhcp: 'DHCP', dns: 'DNS', iis: 'IIS' };
+        el('div', { fontWeight: '700', color: WIN.cinza, marginBottom: '6px', fontSize: '12px' }, 'SERVIDORES · ' + nomes[id], area);
+        tabela(area, ['Nome do Servidor', 'Endereço IPv4', 'Gerenciabilidade'], [['SRV-01', srv.ip, 'Online']]);
+        var l = el('div', { marginTop: '10px' }, null, area);
+        link('Abrir o console ' + (id === 'iis' ? 'Gerenciador do IIS' : nomes[id]) + ' (também em Ferramentas)', APPS[id === 'iis' ? 'iis' : id].abrir, l);
+      }
+
+      // ================================================================
+      // Conexões de Rede → Propriedades → TCP/IPv4
+      // ================================================================
+      function abrirConexoes() {
+        var j = janelaApp('rede', 'Painel de Controle › Rede e Internet › Conexões de Rede');
+        var area = el('div', { padding: '12px' }, null, j.corpo);
+        el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '8px' }, 'Organizar ▾    Desativar este dispositivo de rede    Diagnosticar esta conexão', area);
+        var tile = el('button', {
+          display: 'flex', alignItems: 'center', gap: '10px', background: '#FFFFFF', border: '1px solid ' + WIN.borda, padding: '8px 12px',
+          cursor: 'pointer', fontFamily: WIN.fonte, textAlign: 'left', borderRadius: '4px'
+        }, null, area);
+        tile.type = 'button';
+        el('div', { fontSize: '28px' }, '🖧', tile);
+        var tx = el('div', null, null, tile);
+        el('div', { fontWeight: '600' }, 'Ethernet', tx);
+        el('div', { fontSize: '12px', color: WIN.cinza }, srv.configurado ? 'Rede' : 'Rede não identificada', tx);
+        el('div', { fontSize: '12px', color: WIN.cinza }, 'Intel(R) 82574L Gigabit Network Connection', tx);
+        tile.addEventListener('click', function () { if (!travado) propriedadesEthernet(); });
+        el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '10px' }, 'Clique na placa Ethernet para abrir as propriedades.', area);
+      }
+      function propriedadesEthernet() {
+        var d = dialogo('Propriedades de Ethernet', '440px');
+        el('div', { fontSize: '12px', marginBottom: '4px' }, 'Conectar-se usando:', d.corpo);
+        el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', padding: '4px 8px', marginBottom: '8px' }, '🖧 Intel(R) 82574L Gigabit Network Connection', d.corpo);
+        el('div', { fontSize: '12px', marginBottom: '4px' }, 'Esta conexão utiliza os seguintes itens:', d.corpo);
+        var lista = el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', maxHeight: '170px', overflowY: 'auto' }, null, d.corpo);
+        var ITENS = [
+          ['cliente', 'Cliente para Redes Microsoft'], ['arquivos', 'Compartilhamento de Arquivos e Impressoras para Redes Microsoft'],
+          ['qos', 'Agendador de Pacotes QoS'], ['ipv4', 'Protocolo IP Versão 4 (TCP/IPv4)'], ['lldp', 'Driver de Protocolo LLDP da Microsoft'],
+          ['ipv6', 'Protocolo IP Versão 6 (TCP/IPv6)']
+        ];
+        var escolhido = null;
+        var linhas = {};
+        var desc = el('div', { fontSize: '12px', color: WIN.cinza, minHeight: '32px', marginTop: '6px' }, 'Selecione um item e clique em Propriedades.', d.corpo);
+        ITENS.forEach(function (it) {
+          var l = el('div', { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', cursor: 'pointer' }, null, lista);
+          var c = el('input', { width: '14px', height: '14px', margin: '0' }, null, l);
+          c.type = 'checkbox';
+          c.checked = true;
+          c.addEventListener('click', function (ev) { ev.preventDefault(); });
+          el('span', { fontSize: '12px' }, it[1], l);
+          l.addEventListener('click', function () {
+            escolhido = it[0];
+            Object.keys(linhas).forEach(function (k) { linhas[k].style.background = k === escolhido ? WIN.azulClaro : 'transparent'; });
+            desc.textContent = it[0] === 'ipv4'
+              ? 'Protocolo TCP/IP: o protocolo de rede padrão, que permite a comunicação entre redes interconectadas.'
+              : it[0] === 'ipv6' ? 'Versão mais nova do protocolo IP. Esta rede usa IPv4 (192.168.0.x).' : 'Item da placa de rede. Não tem configuração de endereço IP.';
+          });
+          linhas[it[0]] = l;
+        });
+        var bs = el('div', { display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '6px' }, null, d.corpo);
+        btn('Instalar...', function () { info('Não é preciso instalar nada na placa.'); }, bs);
+        btn('Propriedades', function () {
+          if (!escolhido) return info('Primeiro selecione um item da lista.');
+          if (escolhido === 'ipv6') return info('Esta rede usa IPv4 (192.168.0.x). Selecione o "Protocolo IP Versão 4 (TCP/IPv4)".');
+          if (escolhido !== 'ipv4') return info('Esse item não tem configuração de IP. O endereço fica no "Protocolo IP Versão 4 (TCP/IPv4)".');
+          propriedadesIpv4();
+        }, bs);
+        btn('OK', function () { d.fechar(); }, d.rodape, true);
+        btn('Cancelar', function () { d.fechar(); }, d.rodape);
+      }
+      function propriedadesIpv4() {
+        var d = dialogo('Propriedades de Protocolo IP Versão 4 (TCP/IPv4)', '470px');
+        el('div', { fontSize: '12px', marginBottom: '8px', color: WIN.cinza },
+          'As configurações IP podem ser atribuídas automaticamente se a rede oferecer suporte a esse recurso. Caso contrário, você precisa solicitar ao administrador de rede as configurações IP adequadas.', d.corpo);
+        var manual = !!srv.configurado;
+        var gIp, gDns;
+        radio(d.corpo, 'ip4', 'Obter um endereço IP automaticamente', !manual, function () { manual = false; atualizar(); });
+        radio(d.corpo, 'ip4', 'Usar o seguinte endereço IP:', manual, function () { manual = true; atualizar(); });
+        var blocoIp = el('div', { border: '1px solid ' + WIN.borda, padding: '8px', margin: '4px 0 8px', background: '#FFFFFF' }, null, d.corpo);
+        gIp = grade(blocoIp);
+        var fIp = MG.campoIp(gIp, 'Endereço IP:', srv.ip, ok);
+        var fMasc = MG.campoIp(gIp, 'Máscara de sub-rede:', srv.mascara, ok);
+        var fGw = MG.campoIp(gIp, 'Gateway padrão:', srv.gateway, ok);
+        var rDnsAuto = radio(d.corpo, 'dns4', 'Obter o endereço dos servidores DNS automaticamente', !manual, null, manual);
+        radio(d.corpo, 'dns4', 'Usar os seguintes endereços de servidor DNS:', manual);
+        var blocoDns = el('div', { border: '1px solid ' + WIN.borda, padding: '8px', marginTop: '4px', background: '#FFFFFF' }, null, d.corpo);
+        gDns = grade(blocoDns);
+        var fDns = MG.campoIp(gDns, 'Servidor DNS preferencial:', srv.dnsLocal, ok);
+        var fDns2 = MG.campoIp(gDns, 'Servidor DNS alternativo:', '', ok);
+        // Máscara padrão aparece sozinha quando o IP está completo (como no Windows).
+        fIp.focar && blocoIp.addEventListener('focusout', function () {
+          if (fIp.completo() && !fMasc.completo()) {
+            var ins = blocoIp.querySelectorAll('input');
+            var v = ['255', '255', '255', '0'];
+            for (var q = 4; q < 8 && ins[q]; q++) ins[q].value = v[q - 4];
+          }
+        });
+        function atualizar() {
+          [blocoIp, blocoDns].forEach(function (b) {
+            b.style.opacity = manual ? '1' : '0.45';
+            b.style.pointerEvents = manual ? 'auto' : 'none';
+          });
+          // Com IP manual o Windows exige DNS manual também.
+          rDnsAuto.disabled = manual;
+          rDnsAuto.parentNode.style.opacity = manual ? '0.5' : '1';
+          if (manual) rDnsAuto.checked = false;
+        }
+        atualizar();
+        function ok() {
+          [fIp, fMasc, fGw, fDns].forEach(function (f) { f.marcarErro(false); });
+          if (!manual) return errou('Um servidor precisa de IP fixo: se o IP mudasse, os PCs não o encontrariam. Marque "Usar o seguinte endereço IP".');
+          if (vazioIp([fIp, fMasc, fGw, fDns])) return;
           var ip = fIp.valor();
           if (!MG.ipValido(ip)) return errou('IP inválido: cada parte vai de 0 a 255.', fIp);
           if (ip === S.REDE.gateway) return errou('O .1 é o roteador. Dois aparelhos com o mesmo IP geram conflito.', fIp);
           if (ip !== F2.IP_SRV) return errou('A missão pede o IP 192.168.0.10 para o servidor.', fIp);
           if (fMasc.valor() !== S.REDE.mascara) return errou('A máscara desta rede é 255.255.255.0.', fMasc);
-          if (fGw.valor() !== S.REDE.gateway) return errou('O gateway é o roteador: 192.168.0.1.', fGw);
+          if (fGw.valor() !== S.REDE.gateway) return errou('O gateway padrão é o roteador: 192.168.0.1.', fGw);
           var dns = fDns.valor();
-          if (dns !== '127.0.0.1' && dns !== F2.IP_SRV) return errou('O servidor DNS da rede é este próprio servidor: use 127.0.0.1 ou 192.168.0.10.', fDns);
+          if (dns !== '127.0.0.1' && dns !== F2.IP_SRV) return errou('O DNS desta rede vai ser este próprio servidor: use 127.0.0.1 (ele mesmo) ou 192.168.0.10.', fDns);
           srv.ip = ip;
           srv.mascara = fMasc.valor();
           srv.gateway = fGw.valor();
           srv.dnsLocal = dns;
+          var jaTinha = srv.configurado;
           srv.configurado = true;
-          concluiu('Servidor agora é 192.168.0.10 (IP fixo).', 'dhcp');
+          fecharDialogos();
+          if (jaTinha) return msg('✔ Configuração mantida: 192.168.0.10.', 'ok');
+          concluirMissao('Servidor agora é 192.168.0.10 (IP fixo).');
         }
+        btn('OK', ok, d.rodape, true);
+        btn('Cancelar', function () { d.fechar(); }, d.rodape);
       }
 
-      // ---- Aba DHCP ----
-      function abaDhcp() {
-        S.el('div', { fontWeight: '700', color: '#0B4F9C', marginBottom: '6px' }, 'Servidor DHCP · Escopo IPv4', painel);
-        if (exigeIp()) return;
+      // ================================================================
+      // Adicionar Funções e Recursos
+      // ================================================================
+      function assistenteFuncoes() {
+        var marcadas = { dhcp: srv.funcoes.dhcp, dns: srv.funcoes.dns, iis: srv.funcoes.iis };
+        var tipo = 'funcao';
+        var paginas = [
+          {
+            nome: 'Antes de Começar',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Este assistente ajuda a instalar funções e recursos. Antes de continuar, confira:', c);
+              ['A conta de Administrador tem uma senha forte', 'As configurações de rede, como endereços IP estáticos, estão configuradas', 'As atualizações de segurança mais recentes estão instaladas'].forEach(function (t) {
+                el('div', { margin: '2px 0 2px 10px' }, '• ' + t, c);
+              });
+              if (!srv.configurado) aviso('Atenção: o servidor ainda está com IP automático. DHCP e DNS precisam de IP fixo.', c, 'erro');
+            },
+            validar: function () {
+              if (!srv.configurado) {
+                info('Primeiro dê o IP fixo 192.168.0.10 ao servidor (Servidor Local → Ethernet).');
+                return false;
+              }
+            }
+          },
+          {
+            nome: 'Tipo de Instalação',
+            titulo: 'Selecionar tipo de instalação',
+            montar: function (c) {
+              radio(c, 'tipoInst', 'Instalação baseada em função ou recurso', tipo === 'funcao', function () { tipo = 'funcao'; });
+              el('div', { fontSize: '12px', color: WIN.cinza, margin: '0 0 8px 22px' }, 'Configure um único servidor adicionando funções, serviços de função e recursos.', c);
+              radio(c, 'tipoInst', 'Instalação de Serviços de Área de Trabalho Remota', tipo === 'rds', function () { tipo = 'rds'; });
+              el('div', { fontSize: '12px', color: WIN.cinza, margin: '0 0 8px 22px' }, 'Instale os serviços de função para uma infraestrutura de área de trabalho virtual.', c);
+            },
+            validar: function () { if (tipo !== 'funcao') { info('DHCP, DNS e IIS são funções: escolha "Instalação baseada em função ou recurso".'); return false; } }
+          },
+          {
+            nome: 'Seleção de Servidor',
+            titulo: 'Selecionar servidor de destino',
+            montar: function (c) {
+              radio(c, 'destino', 'Selecionar um servidor do pool de servidores', true);
+              radio(c, 'destino', 'Selecionar um disco rígido virtual', false, null, true);
+              tabela(c, ['Nome', 'Endereço IP', 'Sistema Operacional'], [['SRV-01 ✔', srv.ip || '', 'Microsoft Windows Server 2022 Standard']]);
+            }
+          },
+          {
+            nome: 'Funções de Servidor',
+            titulo: 'Selecionar funções de servidor',
+            montar: function (c) {
+              var linha = el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, c);
+              var lista = el('div', { flex: '1 1 240px', border: '1px solid ' + WIN.borda, background: '#FFFFFF', padding: '4px 8px', maxHeight: '220px', overflowY: 'auto' }, null, linha);
+              var desc = el('div', { flex: '1 1 160px', fontSize: '12px', color: WIN.cinza }, 'Toque numa função para ver a descrição.', linha);
+              ROLES.forEach(function (r) {
+                var instalada = r.alvo && srv.funcoes[r.id];
+                var cx = caixaMarca(lista, r.n + (instalada ? ' (Instalado)' : ''), r.fixo || instalada || (r.alvo ? marcadas[r.id] : marcadas[r.id]), function (on, input) {
+                  desc.textContent = r.d;
+                  if (!r.alvo) { marcadas[r.id] = on; return; }
+                  if (!on) { marcadas[r.id] = false; return; }
+                  // Igual ao Windows: pergunta se adiciona os recursos necessários.
+                  input.checked = false;
+                  var dd = dialogo('Assistente de Adição de Funções e Recursos', '400px');
+                  el('div', { fontWeight: '600', marginBottom: '6px' }, 'Adicionar recursos necessários para ' + r.n + '?', dd.corpo);
+                  el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'As ferramentas a seguir são necessárias para gerenciar este recurso:', dd.corpo);
+                  el('div', { fontSize: '12px', border: '1px solid ' + WIN.borda, background: '#FFFFFF', padding: '6px 8px' }, 'Ferramentas de Administração de Servidor Remoto › Ferramentas de Administração de Funções › ' + (r.id === 'iis' ? 'Console de Gerenciamento do IIS' : 'Ferramentas do ' + r.n), dd.corpo);
+                  caixaMarca(dd.corpo, 'Incluir ferramentas de gerenciamento (se aplicável)', true);
+                  btn('Adicionar Recursos', function () { marcadas[r.id] = true; input.checked = true; dd.fechar(); }, dd.rodape, true);
+                  btn('Cancelar', function () { dd.fechar(); }, dd.rodape);
+                }, r.fixo || instalada);
+                cx.parentNode.addEventListener('mouseenter', function () { desc.textContent = r.d; });
+              });
+            },
+            validar: function () {
+              var extras = ROLES.filter(function (r) { return !r.alvo && !r.fixo && marcadas[r.id]; });
+              if (extras.length) {
+                errou('Instale só o que a rede precisa: ' + extras.map(function (r) { return r.n; }).join(', ') + ' não faz parte desta prática. Função a mais é mais coisa para atualizar e proteger.');
+                return false;
+              }
+              var faltam = ['dhcp', 'dns', 'iis'].filter(function (id) { return !marcadas[id]; });
+              if (faltam.length) {
+                info('Faltam funções: ' + faltam.map(function (id) { return NOMES_ROLE[id]; }).join(', ') + '. A rede precisa de DHCP, DNS e do servidor de sites (IIS).');
+                return false;
+              }
+            }
+          },
+          {
+            nome: 'Recursos',
+            titulo: 'Selecionar recursos',
+            montar: function (c) {
+              el('div', { fontSize: '12px', marginBottom: '6px' }, 'Os recursos necessários já foram adicionados. Não é preciso marcar mais nada.', c);
+              ['.NET Framework 4.8 Features (Instalado)', 'Ferramentas de Administração de Servidor Remoto (adicionado)', 'Windows Defender Antivírus (Instalado)'].forEach(function (t) {
+                caixaMarca(c, t, true, null, true);
+              });
+            }
+          },
+          {
+            nome: 'Função Web (IIS)',
+            titulo: 'Selecionar serviços de função · Servidor Web (IIS)',
+            montar: function (c) {
+              el('div', { fontSize: '12px', marginBottom: '6px' }, 'Os serviços padrão do servidor de sites já vêm marcados:', c);
+              ['Recursos HTTP Comuns › Documento Padrão', 'Recursos HTTP Comuns › Conteúdo Estático', 'Recursos HTTP Comuns › Erros HTTP', 'Segurança › Filtragem de Solicitações', 'Ferramentas de Gerenciamento › Console de Gerenciamento do IIS'].forEach(function (t) {
+                caixaMarca(c, t, true, null, true);
+              });
+            }
+          },
+          {
+            nome: 'Confirmação',
+            titulo: 'Confirmar seleções de instalação',
+            botaoFinal: 'Instalar',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Para instalar as funções a seguir no SRV-01, clique em Instalar.', c);
+              caixaMarca(c, 'Reiniciar cada servidor de destino automaticamente, se necessário', false);
+              var b = el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', padding: '6px 10px', marginTop: '6px' }, null, c);
+              ['dhcp', 'dns', 'iis'].forEach(function (id) { el('div', null, (srv.funcoes[id] ? '(já instalado) ' : '') + NOMES_ROLE[id], b); });
+              el('div', { color: WIN.cinza, fontSize: '12px', marginTop: '4px' }, 'Ferramentas de Administração de Servidor Remoto', b);
+            }
+          }
+        ];
+        assistente('Assistente de Adição de Funções e Recursos', paginas, function (d) {
+          // Resultados: barra de progresso da instalação.
+          d.corpo.textContent = '';
+          d.rodape.textContent = '';
+          el('div', { fontSize: '16px', fontWeight: '600', color: '#123A6B', marginBottom: '6px' }, 'Resultados da instalação', d.corpo);
+          var st = el('div', { marginBottom: '6px' }, 'Instalação iniciada em SRV-01', d.corpo);
+          var trilho = el('div', { height: '10px', background: '#E1E5EA', borderRadius: '5px', overflow: 'hidden' }, null, d.corpo);
+          var barraP = el('div', { height: '100%', width: '0%', background: '#06B025', transition: 'width 0.25s linear' }, null, trilho);
+          var lista = el('div', { marginTop: '8px', fontSize: '12px' }, null, d.corpo);
+          var p = 0;
+          var timer = setInterval(function () {
+            if (!d.corpo.isConnected) return clearInterval(timer);
+            p += 8;
+            barraP.style.width = Math.min(100, p) + '%';
+            if (p < 100) return;
+            clearInterval(timer);
+            st.textContent = 'Instalação bem-sucedida em SRV-01.';
+            ['dhcp', 'dns', 'iis'].forEach(function (id) { el('div', null, '✔ ' + NOMES_ROLE[id], lista); });
+            srv.funcoes.dhcp = srv.funcoes.dns = srv.funcoes.iis = true;
+            S.som('missao');
+            btn('Fechar', function () { d.fechar(); }, d.rodape, true);
+            concluirMissao('Funções instaladas: DHCP, DNS e Servidor Web (IIS). Abra cada uma em Ferramentas.');
+          }, 140);
+        }, '660px');
+      }
+
+      // ================================================================
+      // Console DHCP
+      // ================================================================
+      function abrirDhcp() {
+        if (!srv.funcoes.dhcp) return info('Instale a função Servidor DHCP primeiro (Gerenciar → Adicionar Funções e Recursos).');
+        var j = janelaApp('dhcp', 'DHCP');
         var d = srv.dhcp;
-        if (d.ativo) caixaInfo('Escopo ativo: ' + d.inicio + ' a ' + d.fim + '. Você pode ajustar e aplicar de novo.', painel);
-        else caixaInfo('O DHCP entrega IP, máscara, gateway e DNS para os PCs automaticamente. Escolha uma faixa que não inclua o roteador (.1) nem o servidor (.10). Sugestão: .100 a .150.', painel);
-        var g = grade(painel);
-        var fIni = MG.campoIp(g, 'IP inicial', d.inicio || '192.168.0.', salvar);
-        var fFim = MG.campoIp(g, 'IP final', d.fim || '192.168.0.', salvar);
-        var fMasc = MG.campoIp(g, 'Máscara', d.mascara, salvar);
-        var fGw = MG.campoIp(g, 'Roteador (gateway)', d.gateway, salvar);
-        var fDns = MG.campoIp(g, 'Servidor DNS', d.dns, salvar);
-        var acoes = S.el('div', { marginTop: '10px' }, null, painel);
-        S.ui.botao(d.ativo ? 'Aplicar alterações' : 'Ativar escopo', 'primario', salvar, acoes);
-        function salvar() {
-          var cs = [fIni, fFim, fMasc, fGw, fDns];
-          limpar(cs);
-          if (vazio(cs)) return;
-          var ini = fIni.valor();
-          var fim = fFim.valor();
-          var R = S.REDE;
-          if (!MG.ipValido(ini)) return errou('IP inicial inválido.', fIni);
-          if (!MG.ipValido(fim)) return errou('IP final inválido.', fFim);
-          if (ini.indexOf(R.prefixo) !== 0 || fim.indexOf(R.prefixo) !== 0) return errou('A faixa precisa estar na rede 192.168.0.x.', ini.indexOf(R.prefixo) !== 0 ? fIni : fFim);
-          var a = ultimo(ini);
-          var b = ultimo(fim);
-          if (a === 0 || b === 255) return errou('O .0 é o endereço da rede e o .255 é o broadcast: não entram na faixa.', a === 0 ? fIni : fFim);
-          if (a > b) return errou('O IP inicial precisa ser menor que o final.', fIni);
-          if (b - a + 1 < 3) return errou('A faixa precisa ter pelo menos 3 IPs (um para cada PC).', fFim);
-          if (a <= 1 && b >= 1) return errou('A faixa inclui o .1, que é o roteador: daria conflito de IP.', fIni);
-          if (a <= 10 && b >= 10) return errou('A faixa inclui o .10, que é o próprio servidor: daria conflito de IP.', fIni);
-          if (fMasc.valor() !== R.mascara) return errou('A máscara é 255.255.255.0.', fMasc);
-          if (fGw.valor() !== R.gateway) return errou('O gateway que os PCs recebem é o roteador: 192.168.0.1.', fGw);
-          if (fDns.valor() !== F2.IP_SRV) return errou('O DNS que os PCs devem usar é este servidor: 192.168.0.10.', fDns);
-          d.inicio = ini;
-          d.fim = fim;
-          d.mascara = fMasc.valor();
-          d.gateway = fGw.valor();
-          d.dns = fDns.valor();
-          d.ativo = true;
+        var mmc = consoleMmc(j.corpo, {
+          inicial: d.criado ? 'escopo' : 'ipv4',
+          nos: function () {
+            var n = [{ id: 'raiz', nome: 'DHCP', nivel: 0, icone: '▣' }, { id: 'srv', nome: 'srv-01', nivel: 1, icone: '🖥' }, { id: 'ipv4', nome: 'IPv4', nivel: 2, icone: '▸' }];
+            if (d.criado) {
+              n.push({ id: 'escopo', nome: 'Escopo [192.168.0.0] ' + d.nome + (d.ativo ? '' : ' (inativo)'), nivel: 3, icone: d.ativo ? '📁' : '⛔' });
+              n.push({ id: 'concessoes', nome: 'Concessões de Endereço', nivel: 4, icone: '▫' });
+              n.push({ id: 'opcoes', nome: 'Opções de Escopo', nivel: 4, icone: '▫' });
+            }
+            n.push({ id: 'ipv6', nome: 'IPv6', nivel: 2, icone: '▸' });
+            return n;
+          },
+          conteudo: function (id, c) {
+            if (id === 'ipv4') {
+              if (!d.criado) {
+                el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '6px' }, 'Adicionar um Escopo', c);
+                el('div', null, 'Um escopo é um intervalo de endereços IP atribuídos aos computadores que solicitam um endereço IP dinâmico. Você deve criar e configurar um escopo para que endereços IP dinâmicos possam ser atribuídos.', c);
+                el('div', { marginTop: '6px' }, 'Para adicionar um novo escopo, clique em Novo Escopo, no painel Ações.', c);
+              } else {
+                tabela(c, ['Conteúdo do Servidor DHCP', 'Status'], [['Escopo [192.168.0.0] ' + d.nome, d.ativo ? '** Ativo **' : '** Inativo **']]);
+              }
+            } else if (id === 'escopo') {
+              tabela(c, ['Conteúdo do Escopo', 'Detalhes'], [
+                ['Pool de Endereços', d.inicio + ' a ' + d.fim], ['Concessões de Endereço', Object.keys(d.concessoes).length + ' PC(s)'],
+                ['Duração da concessão', d.dias + ' dias'], ['Status', d.ativo ? 'Ativo' : 'Inativo']
+              ]);
+              if (!d.ativo) aviso('Escopo inativo: os PCs ainda não recebem IP. Use "Ativar" no painel Ações.', c, 'erro');
+            } else if (id === 'concessoes') {
+              tabela(c, ['Endereço IP do Cliente', 'Nome', 'Expiração'], Object.keys(d.concessoes).map(function (k) { return [d.concessoes[k], k.toLowerCase(), d.dias + ' dias']; }));
+            } else if (id === 'opcoes') {
+              tabela(c, ['Nome da Opção', 'Valor'], [['003 Roteador', d.gateway], ['006 Servidores DNS', d.dns], ['015 Nome de Domínio DNS', d.dominio || '']]);
+            } else if (id === 'ipv6') {
+              el('div', null, 'Esta rede usa IPv4. Não é preciso configurar nada no IPv6.', c);
+            } else {
+              el('div', null, 'Selecione IPv4 na árvore para ver os escopos.', c);
+            }
+          },
+          acoes: function (id) {
+            if (id === 'ipv4') return [['Novo Escopo...', function () { novoEscopo(mmc); }], ['Atualizar', function () { mmc.render(); }]];
+            if (id === 'escopo') {
+              return d.ativo ? [['Desativar', function () { info('Não desative: os PCs ficariam sem IP.'); }], ['Propriedades', function () { info('Escopo ' + d.nome + ': ' + d.inicio + ' a ' + d.fim + '.'); }]]
+                : [['Ativar', function () {
+                  d.ativo = true;
+                  mmc.render();
+                  concluirMissao('Escopo DHCP ativo: ' + d.inicio + ' a ' + d.fim + '.');
+                }]];
+            }
+            return [];
+          }
+        });
+      }
+      function novoEscopo(mmc) {
+        var d = srv.dhcp;
+        if (d.criado) return info('O escopo ' + d.nome + ' já existe. Selecione-o na árvore.');
+        var v = { nome: '', inicio: '192.168.0.', fim: '192.168.0.', mascara: '', dias: '8', opcoes: true, gateway: [], dns: [], dominio: F2.DOMINIO, ativar: true };
+        var campos = {};
+        var paginas = [
+          { nome: 'Bem-vindo', titulo: 'Bem-vindo ao Assistente para Novos Escopos', montar: function (c) { el('div', null, 'Este assistente ajuda a configurar um escopo para distribuir endereços IP aos computadores da rede.', c); } },
+          {
+            nome: 'Nome do Escopo',
+            montar: function (c) {
+              var g = grade(c);
+              rotulo('Nome:', g);
+              campos.nome = entrada(g, v.nome, '14em', 'ex.: LAB-SENAC');
+              rotulo('Descrição:', g);
+              campos.desc = entrada(g, '', '14em', '(opcional)');
+            },
+            validar: function () {
+              v.nome = campos.nome.value.trim();
+              if (!v.nome) { info('Dê um nome ao escopo (ex.: LAB-SENAC). Ele ajuda a identificar a rede no console.'); campos.nome.focus(); return false; }
+            }
+          },
+          {
+            nome: 'Intervalo de Endereços IP',
+            montar: function (c) {
+              el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'Defina o intervalo de endereços que o escopo distribui. Deixe de fora o roteador (.1) e o servidor (.10).', c);
+              var g = grade(c);
+              campos.ini = MG.campoIp(g, 'Endereço IP inicial:', v.inicio);
+              campos.fim = MG.campoIp(g, 'Endereço IP final:', v.fim);
+              campos.masc = MG.campoIp(g, 'Máscara de sub-rede:', v.mascara || '255.255.255.0');
+              el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '4px' }, 'Comprimento: 24', c);
+            },
+            validar: function () {
+              var cs = [campos.ini, campos.fim, campos.masc];
+              cs.forEach(function (f) { f.marcarErro(false); });
+              if (vazioIp(cs)) return false;
+              var ini = campos.ini.valor(), fim = campos.fim.valor(), R = S.REDE;
+              if (!MG.ipValido(ini)) return errou('IP inicial inválido.', campos.ini);
+              if (!MG.ipValido(fim)) return errou('IP final inválido.', campos.fim);
+              if (ini.indexOf(R.prefixo) !== 0 || fim.indexOf(R.prefixo) !== 0) return errou('A faixa precisa estar na rede 192.168.0.x.', ini.indexOf(R.prefixo) !== 0 ? campos.ini : campos.fim);
+              var a = ultimo(ini), b = ultimo(fim);
+              if (a === 0 || b === 255) return errou('O .0 é o endereço da rede e o .255 é o broadcast: não entram na faixa.', a === 0 ? campos.ini : campos.fim);
+              if (a > b) return errou('O IP inicial precisa ser menor que o final.', campos.ini);
+              if (b - a + 1 < 3) return errou('A faixa precisa ter pelo menos 3 IPs (um para cada PC).', campos.fim);
+              if (a <= 1 && b >= 1) return errou('A faixa inclui o .1, que é o roteador: daria conflito de IP.', campos.ini);
+              if (a <= 10 && b >= 10) return errou('A faixa inclui o .10, que é o próprio servidor: daria conflito de IP.', campos.ini);
+              if (campos.masc.valor() !== R.mascara) return errou('A máscara é 255.255.255.0 (comprimento 24).', campos.masc);
+              v.inicio = ini;
+              v.fim = fim;
+              v.mascara = campos.masc.valor();
+            }
+          },
+          {
+            nome: 'Exclusões e Atraso',
+            titulo: 'Adicionar Exclusões e Atraso',
+            montar: function (c) {
+              el('div', null, 'Exclusões são endereços dentro da faixa que o servidor não entrega.', c);
+              aviso('Sua faixa (' + v.inicio + ' a ' + v.fim + ') já deixa de fora o roteador e o servidor: não precisa de exclusão. Clique em Próximo.', c, 'ok');
+            }
+          },
+          {
+            nome: 'Duração da Concessão',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Por quanto tempo um PC pode usar o IP antes de renovar com o servidor.', c);
+              var g = grade(c);
+              rotulo('Dias:', g);
+              campos.dias = entrada(g, v.dias, '5em');
+              el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '4px' }, 'Padrão: 8 dias. Redes com muita gente entrando e saindo usam tempos menores.', c);
+            },
+            validar: function () {
+              var n = Number(campos.dias.value);
+              if (!(n >= 1 && n <= 999)) { info('Digite quantos dias dura a concessão (ex.: 8).'); campos.dias.focus(); return false; }
+              v.dias = String(Math.round(n));
+            }
+          },
+          {
+            nome: 'Configurar Opções DHCP',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Os PCs precisam receber, além do IP, o gateway (roteador) e o servidor DNS.', c);
+              radio(c, 'opc', 'Sim, desejo configurar essas opções agora', v.opcoes, function () { v.opcoes = true; });
+              radio(c, 'opc', 'Não, configurarei essas opções mais tarde', !v.opcoes, function () { v.opcoes = false; });
+            },
+            validar: function () {
+              if (!v.opcoes) return errou('Sem essas opções o PC recebe IP, mas não sabe qual é o gateway nem o DNS: ele não acharia o site pelo nome. Escolha "Sim".');
+            }
+          },
+          {
+            nome: 'Roteador (Gateway Padrão)',
+            montar: function (c) {
+              el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'Digite o endereço IP do roteador usado pelos PCs e clique em Adicionar.', c);
+              var g = grade(c);
+              campos.gw = MG.campoIp(g, 'Endereço IP:', '');
+              var l = el('div', { margin: '6px 0' }, null, c);
+              var lista = el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', minHeight: '26px', padding: '4px 8px', fontFamily: C.mono }, v.gateway.join('\n'), c);
+              btn('Adicionar', function () {
+                campos.gw.marcarErro(false);
+                if (!campos.gw.completo()) { campos.gw.marcarErro(true); return info('Digite o IP do roteador.'); }
+                var ip = campos.gw.valor();
+                if (ip !== S.REDE.gateway) return errou(ip === F2.IP_SRV ? 'Esse é o servidor. O gateway é o roteador: 192.168.0.1.' : 'O gateway que os PCs recebem é o roteador: 192.168.0.1.', campos.gw);
+                if (v.gateway.indexOf(ip) < 0) v.gateway.push(ip);
+                lista.textContent = v.gateway.join('\n');
+                msg('Roteador adicionado.', 'ok');
+              }, l);
+            },
+            validar: function () { if (!v.gateway.length) { info('Adicione o IP do roteador (192.168.0.1) e clique em Adicionar.'); return false; } }
+          },
+          {
+            nome: 'Nome de Domínio e DNS',
+            titulo: 'Nome de Domínio e Servidores DNS',
+            montar: function (c) {
+              var g = grade(c);
+              rotulo('Domínio pai:', g);
+              campos.dominio = entrada(g, v.dominio, '12em');
+              campos.dns = MG.campoIp(g, 'Endereço IP do servidor DNS:', '');
+              var l = el('div', { margin: '6px 0' }, null, c);
+              var lista = el('div', { border: '1px solid ' + WIN.borda, background: '#FFFFFF', minHeight: '26px', padding: '4px 8px', fontFamily: C.mono }, v.dns.join('\n'), c);
+              btn('Adicionar', function () {
+                campos.dns.marcarErro(false);
+                if (!campos.dns.completo()) { campos.dns.marcarErro(true); return info('Digite o IP do servidor DNS.'); }
+                var ip = campos.dns.valor();
+                if (ip !== F2.IP_SRV) return errou(ip === S.REDE.gateway ? 'O roteador não tem o nome intranet.senac.lan. O DNS da rede é este servidor: 192.168.0.10.' : 'O DNS que os PCs devem usar é este servidor: 192.168.0.10.', campos.dns);
+                if (v.dns.indexOf(ip) < 0) v.dns.push(ip);
+                lista.textContent = v.dns.join('\n');
+                msg('Servidor DNS adicionado. (O Windows confere o endereço: válido.)', 'ok');
+              }, l);
+            },
+            validar: function () {
+              var dom = campos.dominio.value.trim().toLowerCase();
+              if (dom !== F2.DOMINIO) return errou('O domínio da rede é ' + F2.DOMINIO + ' (é com ele que o PC completa nomes curtos).', campos.dominio);
+              v.dominio = dom;
+              if (!v.dns.length) { info('Adicione o IP do servidor DNS (192.168.0.10) e clique em Adicionar.'); return false; }
+            }
+          },
+          { nome: 'Servidores WINS', montar: function (c) { el('div', null, 'WINS é um serviço antigo de nomes. Esta rede não usa: clique em Próximo.', c); } },
+          {
+            nome: 'Ativar Escopo',
+            botaoFinal: 'Concluir',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Os PCs só recebem endereços depois que o escopo é ativado.', c);
+              radio(c, 'ativ', 'Sim, desejo ativar este escopo agora', v.ativar, function () { v.ativar = true; });
+              radio(c, 'ativ', 'Não, ativarei este escopo mais tarde', !v.ativar, function () { v.ativar = false; });
+            }
+          }
+        ];
+        assistente('Assistente para Novos Escopos', paginas, function (dlg) {
+          d.criado = true;
+          d.nome = v.nome;
+          d.inicio = v.inicio;
+          d.fim = v.fim;
+          d.mascara = v.mascara;
+          d.gateway = v.gateway[0];
+          d.dns = v.dns[0];
+          d.dominio = v.dominio;
+          d.dias = v.dias;
           d.concessoes = {};
-          concluiu('Escopo DHCP ativo: ' + ini + ' a ' + fim + '.', 'dns');
-        }
+          d.ativo = v.ativar;
+          dlg.fechar();
+          mmc.selecionar('escopo');
+          if (d.ativo) concluirMissao('Escopo DHCP ' + d.nome + ' ativo: ' + d.inicio + ' a ' + d.fim + '.');
+          else msg('Escopo criado, mas inativo: os PCs ainda não recebem IP. Selecione o escopo e clique em "Ativar".', 'info');
+        }, '640px');
       }
 
-      // ---- Aba DNS ----
-      function abaDns() {
-        S.el('div', { fontWeight: '700', color: '#0B4F9C', marginBottom: '6px' }, 'Servidor DNS · Zona ' + F2.DOMINIO, painel);
-        if (exigeIp()) return;
-        caixaInfo('O DNS traduz nomes em IPs. Crie um registro tipo A para o site: os PCs vão digitar ' + F2.SITE + ' e o DNS responde com o IP do servidor.', painel);
-        var tabela = S.el('div', { border: '2px solid #C5CFDB', borderRadius: '6px', marginBottom: '10px', fontSize: '13px', overflow: 'hidden' }, null, painel);
-        function linha(c, cab) {
-          var l = S.el('div', {
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0,1.4fr) 50px minmax(0,1fr)',
-            gap: '6px',
-            padding: '5px 8px',
-            background: cab ? '#DCE5F0' : '#FFFFFF',
-            fontWeight: cab ? '700' : '400',
-            fontFamily: cab ? C.fonte : C.mono,
-            fontSize: cab ? '12px' : '13px'
-          }, null, tabela);
-          c.forEach(function (x) { S.el('div', { overflow: 'hidden', textOverflow: 'ellipsis' }, x, l); });
-        }
-        linha(['Nome', 'Tipo', 'Endereço'], true);
-        srv.dns.registros.forEach(function (r) { linha([r.nome + '.' + F2.DOMINIO, 'A', r.ip]); });
-        S.el('div', { fontWeight: '700', fontSize: '13px', marginBottom: '6px' }, 'Novo registro (tipo A)', painel);
-        var g = grade(painel);
-        S.el('div', { fontSize: '13px', fontWeight: '700' }, 'Nome do host', g);
-        var linhaNome = S.el('div', { display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }, null, g);
-        var inpNome = S.el('input', {
-          width: '9em',
-          padding: '7px 6px',
-          fontSize: '16px',
-          fontFamily: C.mono,
-          border: '2px solid #8A96A6',
-          borderRadius: '4px',
-          userSelect: 'text',
-          webkitUserSelect: 'text'
-        }, null, linhaNome);
-        inpNome.type = 'text';
-        inpNome.setAttribute('autocapitalize', 'none');
-        inpNome.setAttribute('autocorrect', 'off');
-        inpNome.spellcheck = false;
-        inpNome.placeholder = 'nome';
-        inpNome.setAttribute('aria-label', 'Nome do host');
-        S.el('span', { fontFamily: C.mono, fontWeight: '700' }, '.' + F2.DOMINIO, linhaNome);
-        var fIp = MG.campoIp(g, 'Endereço IP', '', salvar);
-        var acoes = S.el('div', { marginTop: '10px' }, null, painel);
-        S.ui.botao('Adicionar registro', 'primario', salvar, acoes);
-        inpNome.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); salvar(); } });
-        function salvar() {
+      // ================================================================
+      // Gerenciador DNS
+      // ================================================================
+      function abrirDns() {
+        if (!srv.funcoes.dns) return info('Instale a função Servidor DNS primeiro (Gerenciar → Adicionar Funções e Recursos).');
+        var j = janelaApp('dns', 'Gerenciador DNS');
+        var z = srv.dns;
+        var mmc = consoleMmc(j.corpo, {
+          inicial: z.zona ? 'zona' : 'diretas',
+          nos: function () {
+            var n = [{ id: 'raiz', nome: 'DNS', nivel: 0, icone: '▣' }, { id: 'srv', nome: 'SRV-01', nivel: 1, icone: '🖥' }, { id: 'diretas', nome: 'Zonas de Pesquisa Direta', nivel: 2, icone: '📁' }];
+            if (z.zona) n.push({ id: 'zona', nome: F2.DOMINIO, nivel: 3, icone: '📄' });
+            n.push({ id: 'reversas', nome: 'Zonas de Pesquisa Reversa', nivel: 2, icone: '📁' });
+            n.push({ id: 'encam', nome: 'Encaminhadores Condicionais', nivel: 2, icone: '📁' });
+            return n;
+          },
+          conteudo: function (id, c) {
+            if (id === 'diretas') {
+              if (!z.zona) {
+                el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '6px' }, 'Adicionar uma Nova Zona', c);
+                el('div', null, 'O DNS permite dividir os nomes em zonas. Cada zona guarda os registros de um domínio, como ' + F2.DOMINIO + '.', c);
+                el('div', { marginTop: '6px' }, 'Para adicionar uma nova zona, clique em Nova Zona, no painel Ações.', c);
+              } else {
+                tabela(c, ['Nome', 'Tipo', 'Status'], [[F2.DOMINIO, 'Primária Padrão', 'Em Execução']]);
+              }
+            } else if (id === 'zona') {
+              var linhas = [
+                ['(igual à pasta pai)', 'Início de Autoridade (SOA)', '[1], srv-01., hostmaster.'],
+                ['(igual à pasta pai)', 'Servidor de Nomes (NS)', 'srv-01.']
+              ];
+              z.registros.forEach(function (r) { linhas.push([r.nome, 'Host (A)', r.ip]); });
+              tabela(c, ['Nome', 'Tipo', 'Dados'], linhas);
+            } else if (id === 'reversas') {
+              el('div', null, 'Zonas reversas traduzem IP em nome. Esta prática não precisa delas.', c);
+            } else {
+              el('div', null, 'Selecione "Zonas de Pesquisa Direta" na árvore.', c);
+            }
+          },
+          acoes: function (id) {
+            if (id === 'diretas') return [['Nova Zona...', function () { novaZona(mmc); }]];
+            if (id === 'zona') {
+              return [
+                ['Novo Host (A ou AAAA)...', function () { novoHost(mmc); }],
+                ['Novo Alias (CNAME)...', function () { info('Alias é um apelido para outro nome. Aqui o site precisa de um Host (A), que liga o nome a um IP.'); }],
+                ['Novo Servidor de Email (MX)...', function () { info('MX é para e-mail. Crie um Host (A).'); }]
+              ];
+            }
+            return [];
+          }
+        });
+      }
+      function novaZona(mmc) {
+        var z = srv.dns;
+        if (z.zona) return info('A zona ' + F2.DOMINIO + ' já existe.');
+        var v = { tipo: 'primaria', nome: '', arquivo: '', dinamica: 'nao' };
+        var campos = {};
+        var paginas = [
+          { nome: 'Bem-vindo', titulo: 'Bem-vindo ao Assistente de Nova Zona', montar: function (c) { el('div', null, 'Uma zona guarda os registros de nomes de um domínio. Este servidor vai responder pelos nomes de ' + F2.DOMINIO + '.', c); } },
+          {
+            nome: 'Tipo de Zona',
+            montar: function (c) {
+              radio(c, 'tz', 'Zona primária', v.tipo === 'primaria', function () { v.tipo = 'primaria'; });
+              el('div', { fontSize: '12px', color: WIN.cinza, margin: '0 0 6px 22px' }, 'Cria uma cópia da zona que pode ser atualizada diretamente neste servidor.', c);
+              radio(c, 'tz', 'Zona secundária', v.tipo === 'secundaria', function () { v.tipo = 'secundaria'; });
+              el('div', { fontSize: '12px', color: WIN.cinza, margin: '0 0 6px 22px' }, 'Cópia de uma zona que existe em outro servidor.', c);
+              radio(c, 'tz', 'Zona de stub', v.tipo === 'stub', function () { v.tipo = 'stub'; });
+            },
+            validar: function () {
+              if (v.tipo !== 'primaria') return errou('Este é o único servidor DNS da rede: a zona precisa ser primária (secundária e stub copiam de outro servidor).');
+            }
+          },
+          {
+            nome: 'Nome da Zona',
+            montar: function (c) {
+              el('div', { marginBottom: '6px' }, 'Qual é o nome da zona? (o domínio da rede)', c);
+              campos.nome = entrada(c, v.nome, '14em', 'ex.: empresa.lan');
+            },
+            validar: function () {
+              var n = campos.nome.value.trim().toLowerCase().replace(/\.$/, '');
+              if (!n) { info('Digite o nome da zona.'); campos.nome.focus(); return false; }
+              if (n === F2.SITE) return errou('A zona é o domínio (' + F2.DOMINIO + '); "intranet" vai ser um registro dentro dela.', campos.nome);
+              if (n !== F2.DOMINIO) return errou('O domínio desta rede é ' + F2.DOMINIO + ': o site vai ser intranet.' + F2.DOMINIO + '.', campos.nome);
+              v.nome = n;
+              v.arquivo = n + '.dns';
+            }
+          },
+          {
+            nome: 'Arquivo de Zona',
+            montar: function (c) {
+              radio(c, 'arq', 'Criar um novo arquivo com este nome:', true);
+              entrada(c, v.arquivo, '14em').readOnly = true;
+              radio(c, 'arq', 'Usar este arquivo existente:', false, null, true);
+            }
+          },
+          {
+            nome: 'Atualização Dinâmica',
+            montar: function (c) {
+              radio(c, 'din', 'Permitir somente atualizações dinâmicas seguras (exige Active Directory)', false, null, true);
+              radio(c, 'din', 'Permitir atualizações dinâmicas seguras e não seguras', v.dinamica === 'sim', function () { v.dinamica = 'sim'; });
+              radio(c, 'din', 'Não permitir atualizações dinâmicas', v.dinamica === 'nao', function () { v.dinamica = 'nao'; });
+              el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '6px' }, 'Sem atualização dinâmica, só o administrador cria e muda registros: mais seguro numa rede pequena.', c);
+            }
+          },
+          {
+            nome: 'Concluindo',
+            titulo: 'Concluindo o Assistente de Nova Zona',
+            botaoFinal: 'Concluir',
+            montar: function (c) {
+              tabela(c, ['Configuração', 'Valor'], [['Nome', v.nome], ['Tipo', 'Zona primária padrão'], ['Arquivo', v.arquivo], ['Atualização dinâmica', v.dinamica === 'sim' ? 'Seguras e não seguras' : 'Não permitir']]);
+            }
+          }
+        ];
+        assistente('Assistente de Nova Zona', paginas, function (dlg) {
+          z.zona = true;
+          z.registros = [{ nome: 'srv01', ip: F2.IP_SRV, fixo: true }];
+          dlg.fechar();
+          mmc.selecionar('zona');
+          msg('✔ Zona ' + F2.DOMINIO + ' criada. Agora selecione-a e crie o registro "Novo Host (A ou AAAA)...".', 'ok');
+        }, '600px');
+      }
+      function novoHost(mmc) {
+        var d = dialogo('Novo Host', '420px');
+        el('div', { fontSize: '12px', marginBottom: '3px' }, 'Nome (usa o nome do domínio pai se deixado em branco):', d.corpo);
+        var inp = entrada(d.corpo, '', '100%');
+        el('div', { fontSize: '12px', margin: '8px 0 3px' }, 'Nome de domínio totalmente qualificado (FQDN):', d.corpo);
+        var fqdn = el('div', { border: '1px solid ' + WIN.borda, background: '#F0F2F5', padding: '5px 6px', fontFamily: C.mono, fontSize: '13px' }, F2.DOMINIO + '.', d.corpo);
+        inp.addEventListener('input', function () {
+          var n = inp.value.trim().toLowerCase();
+          fqdn.textContent = (n ? n + '.' : '') + F2.DOMINIO + '.';
+        });
+        var g = grade(el('div', { marginTop: '8px' }, null, d.corpo));
+        var fIp = MG.campoIp(g, 'Endereço IP:', '', adicionar);
+        var ptr = caixaMarca(d.corpo, 'Criar registro de ponteiro (PTR) associado', false);
+        function adicionar() {
           fIp.marcarErro(false);
-          inpNome.style.borderColor = '#8A96A6';
-          var nome = inpNome.value.trim().toLowerCase().replace(/\.$/, '');
+          inp.style.borderColor = '#8A8F98';
+          var nome = inp.value.trim().toLowerCase().replace(/\.$/, '');
           if (nome.slice(-(F2.DOMINIO.length + 1)) === '.' + F2.DOMINIO) nome = nome.slice(0, -(F2.DOMINIO.length + 1));
-          if (!nome) {
-            msg('Digite o nome do host.', 'info');
-            inpNome.focus();
-            return;
-          }
-          if (!fIp.completo()) {
-            msg('Preencha o IP do registro.', 'info');
-            fIp.marcarErro(true);
-            fIp.focar();
-            return;
-          }
-          if (!/^[a-z0-9-]+$/.test(nome)) {
-            inpNome.style.borderColor = '#D63A33';
-            return errou('Nomes de host usam só letras, números e hífen (sem espaço nem acento).');
-          }
-          if (nome !== 'intranet') {
-            inpNome.style.borderColor = '#D63A33';
-            return errou('O site precisa responder em ' + F2.SITE + ': o nome do host é "intranet".');
-          }
+          if (!nome) { info('Digite o nome do host (a parte antes de .' + F2.DOMINIO + ').'); inp.focus(); return; }
+          if (!fIp.completo()) { fIp.marcarErro(true); fIp.focar(); info('Preencha o IP do registro.'); return; }
+          if (!/^[a-z0-9-]+$/.test(nome)) return errou('Nomes de host usam só letras, números e hífen (sem espaço nem acento).', inp);
+          if (nome !== 'intranet') return errou('O site precisa responder em ' + F2.SITE + ': o nome do host é "intranet".', inp);
           var ip = fIp.valor();
           if (ip !== F2.IP_SRV) return errou('O site está neste servidor: o registro precisa apontar para 192.168.0.10.', fIp);
-          if (F2.dnsPronto()) {
-            msg('Esse registro já existe.', 'info');
-            return;
-          }
+          if (F2.dnsPronto()) return info('Esse registro já existe.');
           srv.dns.registros.push({ nome: nome, ip: ip });
-          concluiu('Registro criado: ' + F2.SITE + ' → ' + ip + '.', 'https');
+          mmc.render();
+          var texto = 'O registro de host ' + F2.SITE + ' foi criado com êxito.' + (ptr.checked ? ' (Aviso: não há zona reversa, então o PTR não foi criado. Tudo bem para esta prática.)' : '');
+          alerta('DNS', texto, function () {
+            fecharDialogos();
+            concluirMissao('Registro criado: ' + F2.SITE + ' → ' + ip + '.');
+          });
         }
+        btn('Adicionar Host', adicionar, d.rodape, true);
+        btn('Concluído', function () { d.fechar(); }, d.rodape);
+        if (!S.toque) setTimeout(function () { inp.focus(); }, 30);
       }
 
-      // ---- Aba HTTPS ----
-      function abaHttps() {
-        S.el('div', { fontWeight: '700', color: '#0B4F9C', marginBottom: '6px' }, 'Servidor Web · Site "Intranet Senac"', painel);
-        if (exigeIp()) return;
+      // ================================================================
+      // Gerenciador do IIS
+      // ================================================================
+      function abrirIis(noInicial) {
+        if (!srv.funcoes.iis) return info('Instale a função Servidor Web (IIS) primeiro (Gerenciar → Adicionar Funções e Recursos).');
+        var j = janelaApp('iis', 'Gerenciador dos Serviços de Informações da Internet (IIS)');
         var h = srv.https;
-        S.el('div', { fontSize: '13px', marginBottom: '8px' }, '📄 Arquivos do site: ' + F2.ARQUIVO + ' (já está no servidor)', painel);
-        S.el('div', { fontWeight: '700', fontSize: '13px', marginBottom: '4px' }, 'Protocolo e porta', painel);
-        var porta = escolhas(painel, [
-          { rotulo: 'HTTP · porta 80', valor: 80 },
-          { rotulo: 'HTTPS · porta 443', valor: 443 },
-          { rotulo: 'porta 8080', valor: 8080 }
-        ], h.porta);
-        S.el('div', { fontWeight: '700', fontSize: '13px', marginBottom: '4px' }, 'Certificado digital', painel);
-        var cert = escolhas(painel, [
-          { rotulo: 'Sem certificado', valor: 'nenhum' },
-          { rotulo: '🔒 srv01.' + F2.DOMINIO, valor: 'srv01' },
-          { rotulo: '🔒 ' + F2.SITE, valor: 'intranet' }
-        ], h.cert);
-        var acoes = S.el('div', { marginTop: '6px' }, null, painel);
-        S.ui.botao(h.ativo ? 'Site no ar ✔ (aplicar de novo)' : 'Iniciar o site', 'primario', salvar, acoes);
-        function salvar() {
-          var p = porta.valor();
-          var c = cert.valor();
-          if (!p) return msg('Escolha a porta do site.', 'info');
-          if (!c) return msg('Escolha o certificado.', 'info');
-          if (p === 80) return errou('Porta 80 é HTTP, sem criptografia. O site seguro (HTTPS) usa a porta 443.');
-          if (p === 8080) return errou('8080 não é a porta padrão do HTTPS: o navegador procuraria o site na 443.');
-          if (c === 'nenhum') return errou('Sem certificado não existe HTTPS: é ele que permite a conexão criptografada.');
-          if (c !== 'intranet') return errou('O certificado precisa ter o mesmo nome que os PCs vão digitar (' + F2.SITE + '), senão o navegador mostra alerta de segurança.');
-          h.porta = p;
-          h.cert = c;
-          h.ativo = true;
-          concluiu('Site publicado em https://' + F2.SITE + ' (porta 443).');
+        var recurso = null; // página de recurso aberta (certificados, documento padrão)
+        var mmc = consoleMmc(j.corpo, {
+          inicial: noInicial || 'srv',
+          nos: function () {
+            return [
+              { id: 'inicio', nome: 'Página Inicial', nivel: 0, icone: '⌂' },
+              { id: 'srv', nome: 'SRV-01 (SRV-01\\Administrador)', nivel: 1, icone: '🖥' },
+              { id: 'pools', nome: 'Pools de Aplicativos', nivel: 2, icone: '▫' },
+              { id: 'sites', nome: 'Sites', nivel: 2, icone: '📁' },
+              { id: 'site', nome: 'Default Web Site', nivel: 3, icone: '🌐' }
+            ];
+          },
+          conteudo: function (id, c) {
+            if (recurso && recurso.no !== id) recurso = null;
+            if (recurso) return recurso.montar(c);
+            if (id === 'srv' || id === 'site') {
+              el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '8px' }, 'Página inicial de ' + (id === 'srv' ? 'SRV-01' : 'Default Web Site'), c);
+              var icones = id === 'srv'
+                ? [['Autenticação', null], ['Certificados de Servidor', paginaCertificados], ['Compactação', null], ['Documento Padrão', paginaDocumento], ['Páginas de Erro', null], ['Tipos MIME', null], ['Registro em Log', null]]
+                : [['Autenticação', null], ['Documento Padrão', paginaDocumento], ['Pesquisa no Diretório', null], ['Páginas de Erro', null], ['Tipos MIME', null], ['Registro em Log', null]];
+              var gradeI = el('div', { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: '8px' }, null, c);
+              icones.forEach(function (ic) {
+                var b = el('button', {
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '8px 4px', border: '1px solid transparent',
+                  background: '#FFFFFF', borderRadius: '4px', cursor: 'pointer', fontFamily: WIN.fonte, fontSize: '12px', textAlign: 'center'
+                }, null, gradeI);
+                b.type = 'button';
+                el('div', { fontSize: '24px' }, ic[0] === 'Certificados de Servidor' ? '📜' : ic[0] === 'Documento Padrão' ? '📄' : '⚙', b);
+                el('div', null, ic[0], b);
+                b.addEventListener('click', function () {
+                  if (travado) return;
+                  if (!ic[1]) return info('Não é preciso mexer em "' + ic[0] + '" nesta prática.');
+                  recurso = { no: id, montar: ic[1], nome: ic[0] };
+                  msg('');
+                  mmc.render();
+                });
+              });
+            } else if (id === 'sites') {
+              tabela(c, ['Nome', 'ID', 'Status', 'Associação', 'Caminho'], [['Default Web Site', '1', 'Iniciado', h.associacoes.map(textoAssoc).join(', '), '%SystemDrive%\\inetpub\\wwwroot']]);
+            } else if (id === 'pools') {
+              tabela(c, ['Nome', 'Status', 'Versão do .NET CLR'], [['DefaultAppPool', 'Iniciado', 'v4.0']]);
+            } else {
+              el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '6px' }, 'Gerenciador do IIS', c);
+              el('div', null, 'Selecione o servidor SRV-01 ou o site Default Web Site na árvore.', c);
+            }
+          },
+          acoes: function (id) {
+            if (recurso && recurso.nome === 'Certificados de Servidor') {
+              return [
+                ['Importar...', function () { info('Não há arquivo de certificado para importar. Use "Criar Certificado de Domínio...".'); }],
+                ['Criar Solicitação de Certificado...', function () { info('Esse caminho gera um pedido para uma empresa externa. Aqui, a AC do laboratório emite na hora: use "Criar Certificado de Domínio...".'); }],
+                ['Criar Certificado de Domínio...', function () { certificadoDominio(mmc); }],
+                ['Criar Certificado Autoassinado...', function () { certificadoAutoassinado(mmc); }],
+                ['Voltar', function () { recurso = null; mmc.render(); }]
+              ];
+            }
+            if (recurso && recurso.nome === 'Documento Padrão') {
+              return [
+                ['Adicionar...', function () { adicionarDocumento(mmc); }],
+                ['Remover', function () { info('Não precisa remover nada: o servidor usa o primeiro arquivo da lista que existir no site.'); }],
+                ['Voltar', function () { recurso = null; mmc.render(); }]
+              ];
+            }
+            if (id === 'site') {
+              return [
+                ['Explorar', function () { explorar(); }],
+                ['Editar Permissões...', function () { info('As permissões padrão já servem para esta prática.'); }],
+                ['Associações...', function () { associacoes(mmc); }],
+                ['Configurações Básicas...', function () { info('O site usa a pasta C:\\inetpub\\wwwroot. Não precisa mudar.'); }],
+                ['Reiniciar', function () { msg('Site reiniciado.', 'ok'); }],
+                ['Procurar *:80 (http)', function () { info('Teste o site num dos PCs, pelo Navegador.'); }]
+              ];
+            }
+            if (id === 'srv') return [['Reiniciar', function () { msg('IIS reiniciado.', 'ok'); }], ['Parar', function () { info('Não pare o servidor: o site sairia do ar.'); }]];
+            return [];
+          }
+        });
+        function paginaCertificados(c) {
+          el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '4px' }, 'Certificados de Servidor', c);
+          el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'Use este recurso para solicitar e gerenciar certificados que o servidor Web pode usar com sites configurados para SSL (HTTPS).', c);
+          tabela(c, ['Nome', 'Emitido para', 'Emitido por'], srv.certs.map(function (x) { return [x.amigavel, x.cn, x.emissor]; }));
         }
+        function paginaDocumento(c) {
+          el('div', { fontSize: '15px', fontWeight: '600', marginBottom: '4px' }, 'Documento Padrão', c);
+          el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'Arquivo que o site entrega quando o endereço não diz o nome do arquivo (ex.: só intranet.senac.lan). O servidor usa o primeiro da lista que existir.', c);
+          var linhas = [];
+          if (h.docPadrao) linhas.push([F2.ARQUIVO, 'Local']);
+          ['Default.htm', 'Default.asp', 'index.htm', 'index.html', 'iisstart.htm'].forEach(function (n) { linhas.push([n, 'Herdado']); });
+          tabela(c, ['Nome', 'Tipo de Entrada'], linhas);
+        }
+        function explorar() {
+          var d = dialogo('C:\\inetpub\\wwwroot', '380px');
+          tabela(d.corpo, ['Nome', 'Tipo'], [[F2.ARQUIVO, 'Documento HTML'], ['iisstart.htm', 'Documento HTML'], ['iisstart.png', 'Imagem PNG']]);
+          el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '6px' }, 'O arquivo da Intranet é ' + F2.ARQUIVO + '. O iisstart.htm é a página de boas-vindas que vem com o IIS.', d.corpo);
+          btn('Fechar', function () { d.fechar(); }, d.rodape, true);
+        }
+        function adicionarDocumento(mmc2) {
+          var d = dialogo('Adicionar Documento Padrão', '380px');
+          el('div', { fontSize: '12px', marginBottom: '3px' }, 'Nome:', d.corpo);
+          var inp = entrada(d.corpo, '', '100%', 'nome do arquivo');
+          function ok() {
+            var n = inp.value.trim().toLowerCase();
+            if (!n) { info('Digite o nome do arquivo.'); inp.focus(); return; }
+            if (['default.htm', 'default.asp', 'index.htm', 'index.html', 'iisstart.htm'].indexOf(n) >= 0) return errou('Esse nome já está na lista. O arquivo da Intranet é ' + F2.ARQUIVO + ' (veja em Explorar).', inp);
+            if (n !== F2.ARQUIVO) return errou('Não existe esse arquivo no site. O arquivo da Intranet é ' + F2.ARQUIVO + ' (veja em Default Web Site → Explorar).', inp);
+            h.docPadrao = true;
+            d.fechar();
+            mmc2.render();
+            if (F2.httpsPronto()) return concluirMissao('Site publicado: https://' + F2.SITE + ' abre direto a página ' + F2.ARQUIVO + '.');
+            msg('✔ ' + F2.ARQUIVO + ' agora é o documento padrão (primeiro da lista).' + (temHttps() ? '' : ' Falta a associação HTTPS do site.'), 'ok');
+            desenharChips();
+          }
+          inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ok(); } });
+          btn('OK', ok, d.rodape, true);
+          btn('Cancelar', function () { d.fechar(); }, d.rodape);
+          if (!S.toque) setTimeout(function () { inp.focus(); }, 30);
+        }
+        function certificadoDominio(mmc2) {
+          var v = { cn: '', org: 'Senac', ou: 'Laboratório de Redes', cidade: 'Manacapuru', estado: 'AM', pais: 'BR', amigavel: '' };
+          var campos = {};
+          var paginas = [
+            {
+              nome: 'Nome Distinto',
+              titulo: 'Propriedades do Nome Distinto',
+              montar: function (c) {
+                el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'O nome comum precisa ser exatamente o endereço que as pessoas vão digitar no navegador.', c);
+                var g = grade(c);
+                rotulo('Nome comum:', g); campos.cn = entrada(g, v.cn, '16em', 'nome do site');
+                rotulo('Organização:', g); campos.org = entrada(g, v.org, '16em');
+                rotulo('Unidade organizacional:', g); campos.ou = entrada(g, v.ou, '16em');
+                rotulo('Cidade/localidade:', g); campos.cidade = entrada(g, v.cidade, '16em');
+                rotulo('Estado/província:', g); campos.estado = entrada(g, v.estado, '6em');
+                rotulo('País/região:', g); campos.pais = entrada(g, v.pais, '6em');
+              },
+              validar: function () {
+                var cn = campos.cn.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+                if (!cn) { info('Preencha o nome comum (o nome do site).'); campos.cn.focus(); return false; }
+                if (cn === 'intranet') return errou('Use o nome completo que vai no navegador: intranet.' + F2.DOMINIO + '.', campos.cn);
+                if (cn === 'srv01.' + F2.DOMINIO || cn === 'srv-01') return errou('Esse é o nome do servidor, não do site. Os PCs vão digitar ' + F2.SITE + '.', campos.cn);
+                if (cn !== F2.SITE) return errou('O certificado precisa ter o nome do site: ' + F2.SITE + '. Se o nome não bater, o navegador avisa que a conexão não é segura.', campos.cn);
+                v.cn = cn;
+              }
+            },
+            {
+              nome: 'Autoridade Online',
+              titulo: 'Autoridade de Certificação Online',
+              botaoFinal: 'Concluir',
+              montar: function (c) {
+                el('div', { fontSize: '12px', color: WIN.cinza, marginBottom: '6px' }, 'Os PCs do laboratório confiam na AC do laboratório: certificados emitidos por ela não dão alerta.', c);
+                var g = grade(c);
+                rotulo('Especificar AC online:', g);
+                entrada(g, 'AC-LAB-SENAC\\ca.senac.lan', '16em').readOnly = true;
+                rotulo('Nome amigável:', g);
+                campos.amigavel = entrada(g, v.amigavel, '16em', 'ex.: Intranet Senac');
+              },
+              validar: function () {
+                v.amigavel = campos.amigavel.value.trim();
+                if (!v.amigavel) { info('Dê um nome amigável ao certificado (ex.: Intranet Senac). É ele que aparece na lista do IIS.'); campos.amigavel.focus(); return false; }
+              }
+            }
+          ];
+          assistente('Criar Certificado', paginas, function (dlg) {
+            srv.certs.push({ cn: v.cn, amigavel: v.amigavel, emissor: 'AC-LAB-SENAC', confiavel: true });
+            dlg.fechar();
+            mmc2.render();
+            msg('✔ Certificado "' + v.amigavel + '" (' + v.cn + ') criado. Agora vá em Sites → Default Web Site → Associações...', 'ok');
+          }, '560px');
+        }
+        function certificadoAutoassinado(mmc2) {
+          var d = dialogo('Criar Certificado Autoassinado', '400px');
+          el('div', { fontSize: '12px', marginBottom: '3px' }, 'Especifique um nome amigável para o certificado:', d.corpo);
+          var inp = entrada(d.corpo, '', '100%');
+          el('div', { fontSize: '12px', color: WIN.cinza, marginTop: '6px' }, 'Atenção: o IIS emite o autoassinado com o nome do servidor (SRV-01), e os PCs não confiam nele.', d.corpo);
+          btn('OK', function () {
+            var n = inp.value.trim() || 'SRV-01';
+            srv.certs.push({ cn: 'SRV-01', amigavel: n, emissor: 'SRV-01', confiavel: false });
+            d.fechar();
+            mmc2.render();
+            msg('Certificado autoassinado criado (emitido para SRV-01). Ele não serve para ' + F2.SITE + ': prefira "Criar Certificado de Domínio...".', 'info');
+          }, d.rodape, true);
+          btn('Cancelar', function () { d.fechar(); }, d.rodape);
+        }
+        function textoAssoc(a) { return a.ip + ':' + a.porta + (a.host ? ':' + a.host : '') + ' (' + a.tipo + ')'; }
+        function associacoes(mmc2) {
+          var d = dialogo('Associações de Site', '540px');
+          var area = el('div', null, null, d.corpo);
+          function lista() {
+            area.textContent = '';
+            tabela(area, ['Tipo', 'Nome do Host', 'Porta', 'Endereço IP'], h.associacoes.map(function (a) { return [a.tipo, a.host || '', String(a.porta), a.ip]; }));
+          }
+          lista();
+          var bs = el('div', { display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }, null, d.corpo);
+          btn('Adicionar...', function () { adicionarAssociacao(function () { lista(); mmc2.render(); }, d); }, bs);
+          btn('Editar...', function () { info('Para o HTTPS, use Adicionar... (a associação http na porta 80 pode ficar).'); }, bs);
+          btn('Remover', function () { info('Não precisa remover a associação http.'); }, bs);
+          btn('Fechar', function () { d.fechar(); }, d.rodape, true);
+        }
+        function adicionarAssociacao(depois) {
+          var d = dialogo('Adicionar Associação de Site', '460px');
+          var v = { tipo: 'http', ip: 'Todos Não Atribuídos', cert: null };
+          var g = grade(d.corpo);
+          rotulo('Tipo:', g);
+          var linhaTipo = el('div', { display: 'flex', gap: '10px' }, null, g);
+          rotulo('Endereço IP:', g);
+          var linhaIp = el('div', { display: 'flex', gap: '10px', flexWrap: 'wrap' }, null, g);
+          rotulo('Porta:', g);
+          var porta = entrada(g, '80', '5em');
+          rotulo('Nome do host:', g);
+          var host = entrada(g, '', '16em', '(opcional)');
+          var blocoCert = el('div', { marginTop: '8px', display: 'none' }, null, d.corpo);
+          caixaMarca(blocoCert, 'Exigir Indicação de Nome de Servidor', false);
+          el('div', { fontWeight: '600', margin: '6px 0 3px' }, 'Certificado SSL:', blocoCert);
+          var listaCert = el('div', { display: 'flex', flexDirection: 'column', gap: '2px' }, null, blocoCert);
+          radio(linhaTipo, 'tipoAssoc', 'http', true, function () { v.tipo = 'http'; porta.value = '80'; blocoCert.style.display = 'none'; });
+          radio(linhaTipo, 'tipoAssoc', 'https', false, function () { v.tipo = 'https'; porta.value = '443'; blocoCert.style.display = 'block'; });
+          radio(linhaIp, 'ipAssoc', 'Todos Não Atribuídos', true, function () { v.ip = 'Todos Não Atribuídos'; });
+          radio(linhaIp, 'ipAssoc', F2.IP_SRV, false, function () { v.ip = F2.IP_SRV; });
+          radio(listaCert, 'certAssoc', 'Não selecionado', true, function () { v.cert = null; });
+          srv.certs.forEach(function (x) { radio(listaCert, 'certAssoc', x.amigavel + ' (emitido para ' + x.cn + ')', false, function () { v.cert = x; }); });
+          if (!srv.certs.length) el('div', { fontSize: '12px', color: '#A4262C' }, 'Nenhum certificado no servidor. Crie um em SRV-01 → Certificados de Servidor.', blocoCert);
+          function ok() {
+            var p = Number(porta.value.trim());
+            var hn = host.value.trim().toLowerCase();
+            porta.style.borderColor = host.style.borderColor = '#8A8F98';
+            if (v.tipo === 'http') return info('A associação http (porta 80) já existe. O site seguro precisa de uma associação do tipo https.');
+            if (p !== 443) return errou(p === 80 ? 'A porta 80 é do HTTP, sem criptografia. O HTTPS usa a porta 443.' : 'O navegador procura o HTTPS na porta 443. Com outra porta, o aluno teria que digitar :' + p + ' no endereço.', porta);
+            if (hn && hn !== F2.SITE) return errou('O nome do host, se preenchido, precisa ser o do site: ' + F2.SITE + '.', host);
+            if (!srv.certs.length) return info('Primeiro crie o certificado: SRV-01 → Certificados de Servidor → Criar Certificado de Domínio...');
+            if (!v.cert) return info('Escolha o certificado SSL do site.');
+            if (!v.cert.confiavel) return errou('Esse certificado é autoassinado e foi emitido para SRV-01: os PCs mostrariam alerta de segurança. Use o certificado de ' + F2.SITE + '.');
+            if (temHttps()) return info('Já existe uma associação https na porta 443.');
+            h.associacoes.push({ tipo: 'https', ip: v.ip === F2.IP_SRV ? F2.IP_SRV : '*', porta: 443, host: hn, cert: v.cert.cn });
+            h.ativo = true;
+            h.porta = 443;
+            h.cert = 'intranet';
+            d.fechar();
+            depois();
+            if (F2.httpsPronto()) {
+              fecharDialogos();
+              return concluirMissao('Site publicado: https://' + F2.SITE + ' (porta 443, certificado da intranet).');
+            }
+            msg('✔ Associação https na porta 443 criada. Falta pôr ' + F2.ARQUIVO + ' como Documento Padrão do site.', 'ok');
+            desenharChips();
+          }
+          btn('OK', ok, d.rodape, true);
+          btn('Cancelar', function () { d.fechar(); }, d.rodape);
+        }
+        function temHttps() { return h.associacoes.some(function (a) { return a.tipo === 'https'; }); }
       }
 
-      var primeira = abaInicial || (LISTA.filter(function (a) { return !a.ok(); })[0] || LISTA[0]).id;
-      abrir(primeira);
+      // ---- Primeira tela: o que falta fazer --------------------------------
+      desenharChips();
+      if (!srv.configurado) abrirGerenciador('local');
+      else if (!F2.funcoesProntas()) abrirGerenciador('painel');
+      else if (!srv.dhcp.ativo) abrirDhcp();
+      else if (!F2.dnsPronto()) abrirDns();
+      else if (!F2.httpsPronto()) abrirIis();
+      else abrirGerenciador('painel');
     };
   });
 
@@ -8700,6 +9635,7 @@
       e.mascara = d.mascara;
       e.gateway = d.gateway;
       e.dns = d.dns;
+      e.dominio = d.dominio; // opção 015: o PC completa nomes curtos com ele
       e.dhcp = true;
       e.apipa = false;
       e.configurado = true;
@@ -8771,7 +9707,8 @@
           ].join('\n');
           ctx.msg('✔ ' + pc.nome + ' recebeu o IP ' + e.ip + ' do servidor DHCP!', 'ok');
           bSalvar.textContent = 'Renovar concessão';
-          J.atualizarMissoes();
+          // Etapa concluída: sai da tela do PC, como no Lab 1.
+          setTimeout(function () { if (janela.isConnected) ctx.m.fechar(true); J.atualizarMissoes(); }, 1500);
         }, 900);
       }
     }
@@ -8784,6 +9721,9 @@
       var srv = F2.srv;
       if (!srv.ligado || !srv.configurado) return { erro: 'semdns' };
       var h = host.toLowerCase().replace(/\.$/, '');
+      // Nome curto (sem ponto): o PC completa com o domínio que veio do DHCP.
+      if (h.indexOf('.') < 0 && e.dominio) h = h + '.' + e.dominio;
+      if (!srv.funcoes.dns || !srv.dns.zona) return { erro: 'nx' };
       var reg = srv.dns.registros.filter(function (r) { return r.nome + '.' + F2.DOMINIO === h; })[0];
       return reg ? { ip: reg.ip, nome: h } : { erro: 'nx' };
     }
@@ -8875,10 +9815,12 @@
       inp.setAttribute('autocorrect', 'off');
       inp.setAttribute('enterkeyhint', 'go');
       inp.spellcheck = false;
-      inp.placeholder = 'Digite um endereço';
+      inp.placeholder = 'Pesquisar ou digitar endereço';
       inp.setAttribute('aria-label', 'Endereço');
       var bIr = S.ui.botao('Ir', 'primario', ir, barra);
       S.estilo(bIr, { padding: '6px 14px' });
+      S.el('div', { fontSize: '12px', color: '#5F6B7A', margin: '-4px 0 8px 4px' },
+        'Pode digitar resumido: só o nome do site, sem https:// e sem o nome do arquivo. O navegador tenta HTTPS primeiro e o servidor entrega a página padrão.', j);
       var pagina = S.el('div', {
         background: '#FFFFFF',
         border: '2px solid #C5CFDB',
@@ -8928,24 +9870,55 @@
             return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED', ip === S.REDE.gateway ? 'Esse é o roteador, não o servidor do site.' : 'Não há um site nesse endereço.');
           }
           var h = srv.https;
-          if (!h.ativo || porta !== 443 || proto !== 'https') {
-            return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED',
-              h.ativo ? 'O site só está publicado em HTTPS, na porta 443. Use https://' : 'O site ainda não foi publicado: configure o HTTPS no servidor.');
+          if (!srv.funcoes.iis) return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED', 'O servidor ainda não tem a função Servidor Web (IIS) instalada.');
+          // Sem nome de arquivo, o IIS entrega o documento padrão: o primeiro
+          // da lista que existe (iisstart.htm, se boasvindas.html não estiver lá).
+          var arquivo = caminho === '/' ? (h.docPadrao ? '/' + F2.ARQUIVO : '/iisstart.htm') : caminho;
+          if (arquivo !== '/' + F2.ARQUIVO && arquivo !== '/iisstart.htm') {
+            return erroPagina('404 · Arquivo não encontrado', 'HTTP 404', 'O arquivo do site é ' + F2.ARQUIVO + '. Você nem precisa digitar: com o documento padrão certo, basta o nome do site.');
           }
+          if (proto === 'http') {
+            if (porta !== 80) return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED', 'O site responde na porta 80 (HTTP) e na 443 (HTTPS).');
+            return arquivo === '/iisstart.htm' ? paginaIis(host, false) : paginaOk(host, false);
+          }
+          if (!h.ativo) {
+            return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED',
+              'O site ainda não tem HTTPS: no Gerenciador do IIS, crie o certificado e adicione a associação https (porta 443).');
+          }
+          if (porta !== 443) return erroPagina(host + ' recusou a conexão', 'ERR_CONNECTION_REFUSED', 'O HTTPS do site está na porta padrão, 443: não precisa digitar porta.');
           if (host !== F2.SITE) {
             return erroPagina('Sua conexão não é particular', 'NET::ERR_CERT_COMMON_NAME_INVALID',
-              'O certificado é de ' + F2.SITE + ', mas você acessou por ' + host + '. Use o nome do site (é para isso que serve o DNS).');
+              host.indexOf('.') < 0
+                ? 'O DNS achou o servidor, mas o certificado é de ' + F2.SITE + '. Resumir pode: tire o https:// e o nome do arquivo, mas digite o nome completo do site: ' + F2.SITE + '.'
+                : 'O certificado é de ' + F2.SITE + ', mas você acessou por ' + host + '. Use o nome do site (é para isso que serve o DNS).');
           }
-          if (caminho !== '/' && caminho !== '/' + F2.ARQUIVO) {
-            return erroPagina('404 · Arquivo não encontrado', 'HTTP 404', 'O arquivo do site é ' + F2.ARQUIVO + '.');
-          }
-          paginaOk(host);
+          if (arquivo === '/iisstart.htm') return paginaIis(host, true);
+          paginaOk(host, true);
         }, 500);
       }
 
-      function paginaOk(host) {
-        inp.value = 'https://' + host + '/' + F2.ARQUIVO;
+      // Página de boas-vindas que vem com o IIS (documento padrão ainda não configurado).
+      function paginaIis(host, seguro) {
+        inp.value = (seguro ? 'https://' : 'http://') + host + '/';
         pagina.textContent = '';
+        var faixa = S.el('div', { background: '#0072C6', color: '#FFFFFF', padding: '18px 14px', borderRadius: '4px', marginBottom: '10px' }, null, pagina);
+        S.el('div', { fontSize: '22px', fontWeight: '300' }, 'Internet Information Services', faixa);
+        S.el('div', { fontSize: '13px', opacity: '0.85' }, 'Bem-vindo · Welcome · Bienvenido', faixa);
+        S.el('div', { fontSize: '13px', background: '#FFF4D6', border: '2px solid #D9A21B', borderRadius: '6px', padding: '6px 8px' },
+          '💡 O servidor respondeu, mas entregou a página padrão do IIS (iisstart.htm). No Gerenciador do IIS, abra "Documento Padrão" e adicione ' + F2.ARQUIVO + ': assim o site abre só com o nome.', pagina);
+        ctx.msg('Quase: o site respondeu, mas falta o documento padrão no IIS.', 'info');
+      }
+
+      function paginaOk(host, seguro) {
+        inp.value = (seguro ? 'https://' : 'http://') + host + '/';
+        pagina.textContent = '';
+        if (!seguro) {
+          S.el('div', { fontSize: '12px', fontWeight: '700', color: '#A4262C', marginBottom: '6px' }, '⚠ Não seguro · http://' + host, pagina);
+          S.el('div', { fontSize: '13px', background: '#FDE7E9', border: '2px solid #E8A2A8', borderRadius: '6px', padding: '6px 8px', marginBottom: '8px' },
+            'A página abriu sem cadeado, pela porta 80 (HTTP): os dados passam sem criptografia. A missão pede HTTPS: digite só o nome do site (o navegador tenta HTTPS primeiro) ou https://.', pagina);
+          ctx.msg('Abriu, mas sem cadeado (HTTP). Acesse com HTTPS.', 'info');
+          return;
+        }
         var cab = S.el('div', { display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '4px solid ' + C.laranja, paddingBottom: '8px', marginBottom: '10px' }, null, pagina);
         var logo = S.ui.logo(cab, 30);
         if (logo) logo.style.flex = '0 0 auto';
@@ -8955,8 +9928,13 @@
           'Se você está lendo isto, o PC recebeu IP pelo DHCP, encontrou o servidor pelo DNS (' + F2.SITE + ' → ' + F2.IP_SRV + ') e abriu o arquivo ' + F2.ARQUIVO + ' por uma conexão HTTPS criptografada.', pagina);
         var jaTinha = F2.siteAberto;
         F2.siteAberto = true;
-        ctx.msg('✔ Site aberto pelo nome, com cadeado de HTTPS!' + (jaTinha ? '' : ' Feche a janela para continuar.'), 'ok');
-        J.atualizarMissoes();
+        ctx.msg('✔ Site aberto pelo nome, com cadeado de HTTPS!', 'ok');
+        if (!jaTinha) {
+          // Etapa concluída: dá um tempo para ver a página e sai da tela do PC.
+          setTimeout(function () { if (j.isConnected) ctx.m.fechar(true); J.atualizarMissoes(); }, 2600);
+        } else {
+          J.atualizarMissoes();
+        }
       }
     }
   });
@@ -8972,7 +9950,7 @@
       titulo: 'Servidor',
       resumoCurto: 'Instale tomadas keystone e configure um servidor com DHCP, DNS e HTTPS. Depois, abra o site pelo nome.',
       missaoCurta: 'Ligue o servidor, instale as keystones, configure DHCP, DNS e HTTPS e abra o site pelo nome num PC.',
-      missaoLonga: 'Coloque um servidor na rede: dê a ele IP fixo, instale as 3 tomadas keystone (T-568B), ative DHCP, DNS e HTTPS, deixe os PCs pegarem IP sozinhos e abra https://intranet.senac.lan no navegador. O quadro mostra as etapas.',
+      missaoLonga: 'Coloque um servidor na rede: dê a ele IP fixo, instale as funções DHCP, DNS e IIS, monte as 3 tomadas keystone (T-568B), configure o escopo DHCP, a zona DNS e o site com HTTPS, deixe os PCs pegarem IP sozinhos e abra intranet.senac.lan no navegador. O quadro mostra as etapas.',
       usar: F2.usar,
       rotulo: F2.rotulo,
       concluir: function () { F2.concluir(); },
@@ -9020,9 +9998,10 @@
             { quem: 'prof', tomada: 'servidor', gesto: 'apontar', texto: 'Atrás daquela porta fica a sala do servidor. Ligue o servidor e dê a ele um IP fixo: 192.168.0.10.' },
             { quem: 'prof', tomada: 'pontos', gesto: 'apontar', texto: 'Os cabos já estão passados pela canaleta, mas as pontas na parede estão sem tomada. São três pontos, um para cada PC.' },
             { quem: 'prof', tomada: 'keystones', gesto: 'apontar', texto: 'Pegue as keystones e a punch down na bancada. Na keystone, siga a linha B da etiqueta: é o T-568B, o mesmo padrão dos cabos.' },
-            { quem: 'prof', tomada: 'servidor', gesto: 'falar', texto: 'No servidor você ativa três serviços: o DHCP entrega IP automático, o DNS transforma nomes em IPs e o HTTPS publica o site com segurança.' },
+            { quem: 'prof', tomada: 'servidor', gesto: 'falar', texto: 'No Gerenciador do Servidor você instala as funções DHCP, DNS e IIS, igualzinho ao Windows Server de verdade.' },
+            { quem: 'prof', tomada: 'servidor', gesto: 'explicar', texto: 'O DHCP entrega IP automático, o DNS transforma nomes em IPs e o IIS publica o site com HTTPS.' },
             { quem: 'prof', tomada: 'pcs', gesto: 'apontar', texto: 'Depois ligue os três PCs e deixe eles pegarem IP sozinhos, pelo DHCP.' },
-            { quem: 'prof', tomada: 'quadro', gesto: 'falar', texto: 'Para fechar, abra o navegador num PC e acesse https://' + F2.SITE + '/' + F2.ARQUIVO + '. Se a página abrir, tudo funcionou!' },
+            { quem: 'prof', tomada: 'quadro', gesto: 'falar', texto: 'Para fechar, abra o navegador num PC e digite ' + F2.SITE + '. Pode ser resumido: sem https:// e sem o nome do arquivo. Se a página abrir, tudo funcionou!' },
             { quem: 'prof', tomada: 'dupla', gesto: 'aceno', texto: 'Boa sorte, ' + n + '!' },
             { quem: 'aluno', tomada: 'aluno', texto: 'Partiu configurar esse servidor!' }
           ];
@@ -14783,7 +15762,12 @@
       a.redim = dimensionar;
     };
 
-    var MINIS = {};
+    // Desenhos e close-ups reaproveitados pelos Labs 1, 2 e 3 (M05).
+    F4.desenho = {
+      rr: rr, capa: capa, fioH: fioH, fioCurva: fioCurva, etiqueta: etiqueta,
+      fundoBancada: fundoBancada, regua: regua, desenharRJ45: desenharRJ45, W: W, H: H
+    };
+    var MINIS = S.minigames.MINIS = {};
 
     // ---- 1. Decapar ----------------------------------------------------
     MINIS.decapar = function (api) {
@@ -15601,6 +16585,594 @@
   });
 
   /* ================================================================== */
+  secao('M05-close-ups-compartilhados', function () {
+    // Os close-ups em canvas do Lab 4 (cortar, encaixar o RJ45, crimpar)
+    // também rodam dentro das janelas comuns: o Lab 1 usa para montar as
+    // pontas do cabo, e os Labs 2 e 3 usam a keystone desenhada aqui.
+    var C = S.CSS;
+    var MG = S.minigames;
+    var F4 = S.f4;
+    var D = F4.desenho;
+    var MINIS = MG.MINIS;
+    var J = S.jogo;
+    var W = D.W, H = D.H;
+    var rr = D.rr;
+    function fio(id) { return S.T568B.filter(function (f) { return f.id === id; })[0]; }
+
+    // ---- Hospedeiro: roda MINIS[acao] dentro de "pai" ----------------------
+    // cfg: ordem (ids na ordem dos fios), dados (livre, para o minigame),
+    // aoConcluir(res), reservar (px de altura que a janela usa fora do canvas).
+    MG.closeEm = function (pai, acao, cfg) {
+      cfg = cfg || {};
+      var ap = S.ui.compacto();
+      var caixa = S.el('div', {
+        display: 'flex', flexDirection: 'column', border: '3px solid #071430', borderRadius: '8px',
+        overflow: 'hidden', background: '#0B1A2E'
+      }, null, pai);
+      var area = S.el('div', { display: 'flex', justifyContent: 'center' }, null, caixa);
+      var cv = S.el('canvas', { display: 'block', touchAction: 'none', maxWidth: '100%' }, null, area);
+      var rodape = S.el('div', { padding: ap ? '4px 8px 6px' : '8px 10px 10px', borderTop: '2px solid ' + C.borda, background: C.painel }, null, caixa);
+      var instr = S.el('div', { color: '#FFFFFF', fontWeight: '700', fontSize: ap ? '12px' : '14px', lineHeight: '1.35' }, '', rodape);
+      var msgEl = S.el('div', { minHeight: '18px', fontWeight: '700', fontSize: ap ? '12px' : '13px', marginTop: '2px' }, '', rodape);
+      msgEl.setAttribute('aria-live', 'polite');
+      var botoes = S.el('div', { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }, null, rodape);
+      var ctx = cv.getContext('2d');
+      var vivo = true;
+      var raf = 0;
+      var antes = 0;
+      var ultLargura = -1;
+
+      var api = {
+        ponta: cfg.ponta || null,
+        ordem: cfg.ordem || null,
+        dados: cfg.dados || {},
+        escala: 1,
+        segurando: false,
+        instr: function (t) { instr.textContent = t; },
+        msg: function (t, tipo) {
+          msgEl.textContent = S.marcarSimbolo ? S.marcarSimbolo(t || '', tipo) : (t || '');
+          msgEl.style.color = tipo === 'erro' ? C.vermelho : tipo === 'ok' ? C.verde : C.amarelo;
+          if (t) S.somGenerico(tipo);
+        },
+        botoes: function (lista) {
+          botoes.textContent = '';
+          (lista || []).forEach(function (b) {
+            var el = S.ui.botao(b[0], b[2] || 'primario', S.protegido('closeEm:' + b[0], b[1]), botoes);
+            S.estilo(el, { padding: ap ? '5px 10px' : '7px 12px', fontSize: ap ? '12px' : '13px' });
+          });
+        },
+        concluir: function (res) {
+          parar();
+          if (cfg.aoConcluir) cfg.aoConcluir(res || {});
+        }
+      };
+      var jogo = MINIS[acao](api);
+
+      function dimensionar() {
+        var aw = Math.min(W, area.clientWidth || pai.clientWidth || W);
+        var maxH = Math.max(140, (S.raiz.clientHeight || 600) - (cfg.reservar || (ap ? 190 : 290)));
+        var e = Math.min(aw / W, maxH / H);
+        var k = Math.min(2, window.devicePixelRatio || 1);
+        cv.width = Math.round(W * e * k);
+        cv.height = Math.round(H * e * k);
+        cv.style.width = Math.round(W * e) + 'px';
+        cv.style.height = Math.round(H * e) + 'px';
+        api.escala = e * k;
+      }
+      function ponto(ev) {
+        var r = cv.getBoundingClientRect();
+        return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H];
+      }
+      cv.addEventListener('pointerdown', S.protegido('closeEm:down', function (ev) {
+        try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* ignora */ }
+        api.segurando = true;
+        var p = ponto(ev);
+        if (jogo.down) jogo.down(p[0], p[1]);
+      }));
+      cv.addEventListener('pointermove', function (ev) {
+        var p = ponto(ev);
+        if (jogo.move) jogo.move(p[0], p[1], api.segurando);
+      });
+      function up(ev) {
+        api.segurando = false;
+        var p = ev && ev.clientX !== undefined ? ponto(ev) : [0, 0];
+        if (jogo.up) jogo.up(p[0], p[1]);
+      }
+      cv.addEventListener('pointerup', up);
+      cv.addEventListener('pointercancel', up);
+      function teclaDown(e) {
+        if ((e.key === ' ' || e.key === 'Enter') && jogo.teclaSegurar && !e.repeat) { e.preventDefault(); jogo.teclaSegurar(true); }
+      }
+      function teclaUp(e) {
+        if ((e.key === ' ' || e.key === 'Enter') && jogo.teclaSegurar) { e.preventDefault(); jogo.teclaSegurar(false); }
+      }
+      window.addEventListener('keydown', teclaDown, true);
+      window.addEventListener('keyup', teclaUp, true);
+
+      function parar() {
+        if (!vivo) return;
+        vivo = false;
+        cancelAnimationFrame(raf);
+        window.removeEventListener('keydown', teclaDown, true);
+        window.removeEventListener('keyup', teclaUp, true);
+        caixa.remove();
+      }
+      function laco(t) {
+        if (!vivo) return;
+        if (!caixa.isConnected) return parar();
+        raf = requestAnimationFrame(laco);
+        var agora = t || performance.now();
+        var dt = Math.min(0.05, Math.max(0, (agora - antes) / 1000));
+        antes = agora;
+        if (area.clientWidth !== ultLargura) {
+          ultLargura = area.clientWidth;
+          dimensionar();
+        }
+        ctx.setTransform(api.escala, 0, 0, api.escala, 0, 0);
+        try { jogo.desenhar(ctx, dt); } catch (e) { registrarErro('closeEm:' + acao, e); parar(); }
+      }
+      requestAnimationFrame(function () {
+        antes = performance.now();
+        laco(antes);
+      });
+      MG.closeAtual = jogo; // para os testes
+      return { parar: parar, jogo: jogo, api: api };
+    };
+
+    // ---- Keystone (Labs 2 e 3) ------------------------------------------
+    // Vista de trás da keystone, como na bancada: 8 contatos (IDC) com a
+    // etiqueta de cores A/B ao lado. O aluno:
+    //   1) leva cada fio ao contato da linha B (T-568B);
+    //   2) bate cada fio com a ferramenta de impacto (punch down), com a
+    //      lâmina virada para fora, do lado da sobra;
+    //   3) coloca a tampa traseira;
+    //   4) encaixa a keystone no espelho (e liga o patch cord, no Lab 2).
+    // dados: { n, pc, semPatch }
+    MINIS.keystone = function (api) {
+      var dados = api.dados || {};
+      var CX = 400, CY = 168;
+      var CORPO = { x: CX - 205, y: CY - 104, w: 410, h: 208 };
+      var JAQ = 312; // topo da capa do cabo, embaixo da keystone
+      var slots = [];
+      for (var k = 0; k < 8; k++) {
+        var esq = k < 4;
+        slots.push({ i: k, esq: esq, x: esq ? CX - 100 : CX + 100, y: CY - 66 + (k % 4) * 44, fio: null, batido: false });
+      }
+      var soltos = S.embaralhar(S.T568B).map(function (f, j) {
+        var esq = j < 4;
+        return {
+          f: f,
+          x: esq ? 112 + j * 64 : 496 + (j - 4) * 64,
+          y: 394 + (j % 2) * 18,
+          ox: 386 + S.T568B.indexOf(f) * 4,
+          colocado: false
+        };
+      });
+      var s = {
+        fase: 'colocar', sel: null, erros: 0, lamina: Math.random() < 0.5 ? 'esq' : 'dir',
+        ferr: { x: 720, y: 150 }, golpe: null, quedas: [], tampa: 0, tampaAnim: false, frente: 0, patch: 0, fim: false
+      };
+      api.instr('1) Toque num fio solto e depois no contato certo. Siga a linha B da etiqueta (T-568B), o mesmo padrão dos cabos.');
+      api.botoes([]);
+
+      function slotEm(x, y) {
+        for (var i = 0; i < slots.length; i++) {
+          if (Math.abs(x - slots[i].x) < 42 && Math.abs(y - slots[i].y) < 22) return slots[i];
+        }
+        return null;
+      }
+      function soltoEm(x, y) {
+        var melhor = null;
+        var dmin = 34;
+        soltos.forEach(function (w) {
+          if (w.colocado) return;
+          var d = Math.hypot(x - w.x, y - w.y);
+          if (d < dmin) { dmin = d; melhor = w; }
+        });
+        return melhor;
+      }
+      function colocados() { return slots.filter(function (sl) { return sl.fio; }).length; }
+      function batidos() { return slots.filter(function (sl) { return sl.batido; }).length; }
+
+      function colocar(sl) {
+        if (sl.fio) return api.msg('O contato ' + (sl.i + 1) + ' já tem fio.', 'info');
+        if (!s.sel) return api.msg('Primeiro toque num fio solto (embaixo).', 'info');
+        var certo = S.T568B[sl.i];
+        var f = s.sel.f;
+        if (f.id !== certo.id) {
+          J.erros++;
+          s.erros++;
+          api.msg(f.id === S.T568A[sl.i].id
+            ? '✖ Essa é a cor da linha A (T-568A). Os cabos foram feitos em T-568B: siga a linha B da etiqueta.'
+            : '✖ O contato ' + (sl.i + 1) + ' pede ' + certo.nome + ' (linha B).', 'erro');
+          return;
+        }
+        sl.fio = s.sel;
+        s.sel.colocado = true;
+        s.sel = null;
+        S.som('fio');
+        if (colocados() === 8) {
+          s.fase = 'bater';
+          api.msg('Todos os fios no lugar! Agora a ferramenta de impacto.', 'ok');
+          api.instr('2) Bata cada fio com a punch down: toque em cada contato. A lâmina fica sempre para fora, do lado da sobra.');
+          botaoVirar();
+        } else {
+          api.msg('Certo! ' + colocados() + '/8 fios.', 'ok');
+        }
+      }
+      function botaoVirar() {
+        api.botoes([['↻ Virar a ferramenta (lâmina para a ' + (s.lamina === 'esq' ? 'esquerda' : 'direita') + ')', function () {
+          s.lamina = s.lamina === 'esq' ? 'dir' : 'esq';
+          S.som('fio');
+          botaoVirar();
+        }, 'secundario']]);
+      }
+      function bater(sl) {
+        s.ferr = { x: sl.x, y: sl.y };
+        if (sl.batido) return api.msg('Esse fio já foi batido.', 'info');
+        var certa = sl.esq ? 'esq' : 'dir';
+        if (s.lamina !== certa) {
+          J.erros++;
+          api.msg('✖ A lâmina estava virada para dentro: ela ia cortar o fio do lado do cabo! Vire a ferramenta: a lâmina fica do lado da sobra, para fora.', 'erro');
+          return;
+        }
+        s.golpe = { sl: sl, t: 0 };
+      }
+      function terminarGolpe(sl) {
+        sl.batido = true;
+        S.som('punch');
+        s.quedas.push({ sl: sl, t: 0 });
+        if (batidos() === 8) {
+          s.fase = 'tampa';
+          api.botoes([]);
+          api.msg('Tac! Os 8 fios presos nos contatos e as sobras cortadas rente.', 'ok');
+          api.instr('3) Coloque a tampa traseira: toque na keystone (ou na tampa) para encaixar.');
+        } else {
+          api.msg('Tac! ' + batidos() + '/8 fios batidos.', 'ok');
+        }
+      }
+      function irFrente() {
+        s.fase = 'frente';
+        api.botoes([]);
+        S.som('plugue');
+        api.msg(dados.semPatch ? '✔ Tomada ' + (dados.n || '') + ' montada e encaixada no espelho!' : 'Keystone encaixada no espelho!', 'ok');
+        if (dados.semPatch) {
+          api.instr('Pronto! A tomada já pode receber o patch cord.');
+          setTimeout(function () { if (!s.fim) { s.fim = true; api.concluir({}); } }, 1300);
+        } else {
+          api.instr('4) Agora ligue o patch cord do ' + (dados.pc || 'PC') + ' na tomada.');
+          api.botoes([['Ligar o patch cord ▶', function () {
+            api.botoes([]);
+            s.fase = 'patch';
+          }]]);
+        }
+      }
+
+      // ---- Desenho -----------------------------------------------------
+      function fundoParede(ctx) {
+        var g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, '#33465F');
+        g.addColorStop(1, '#22324A');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+      function rotaFio(w, sl, sobra) {
+        var dirX = sl.esq ? -1 : 1;
+        var pts = [[w.ox, JAQ + 2], [w.ox, CY + 96], [CX + dirX * 42, sl.y + 6], [sl.x - dirX * 20, sl.y], [sl.x + dirX * 22, sl.y]];
+        if (sobra) pts.push([sl.x + dirX * 50, sl.y]);
+        return pts;
+      }
+      function desenharCostas(ctx) {
+        // corpo da keystone
+        var g = ctx.createLinearGradient(0, CORPO.y, 0, CORPO.y + CORPO.h);
+        g.addColorStop(0, '#F6F8FB');
+        g.addColorStop(1, '#D7DEE6');
+        ctx.fillStyle = g;
+        rr(ctx, CORPO.x, CORPO.y, CORPO.w, CORPO.h, 14);
+        ctx.fill();
+        ctx.strokeStyle = '#8E9BAC';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // canal do meio, por onde os fios sobem
+        ctx.fillStyle = '#C3CCD7';
+        rr(ctx, CX - 46, CORPO.y + 8, 92, CORPO.h - 8, 8);
+        ctx.fill();
+        ctx.fillStyle = '#8E9BAC';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('CAT6', CX, CORPO.y + 26);
+        // cabeçalho das linhas de cor
+        ctx.fillText('A', CX - 188, CORPO.y + 20);
+        ctx.fillText('B', CX - 166, CORPO.y + 20);
+        ctx.fillText('B', CX + 166, CORPO.y + 20);
+        ctx.fillText('A', CX + 188, CORPO.y + 20);
+        ctx.textAlign = 'left';
+        // torres dos contatos e etiqueta de cores
+        slots.forEach(function (sl) {
+          ctx.fillStyle = '#DCE2EA';
+          rr(ctx, sl.x - 19, sl.y - 16, 38, 32, 5);
+          ctx.fill();
+          ctx.strokeStyle = '#9AA7B6';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#4C5462';
+          ctx.fillRect(sl.x - 17, sl.y - 3, 34, 6); // ranhura do contato
+          var fa = S.T568A[sl.i], fb = S.T568B[sl.i];
+          var xa = sl.esq ? CX - 194 : CX + 182;
+          var xb = sl.esq ? CX - 175 : CX + 158;
+          quadradoCor(ctx, xa, sl.y - 6, 12, fa);
+          quadradoCor(ctx, xb, sl.y - 8, 17, fb);
+          ctx.fillStyle = '#5A6B80';
+          ctx.font = 'bold 10px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(sl.i + 1), sl.x + (sl.esq ? 30 : -30), sl.y - 9);
+          ctx.textAlign = 'left';
+        });
+      }
+      function quadradoCor(ctx, x, y, t, f) {
+        ctx.save();
+        ctx.fillStyle = f.listrado ? '#F4F4F4' : f.cor;
+        ctx.fillRect(x, y, t, t);
+        if (f.listrado) {
+          ctx.fillStyle = f.cor;
+          ctx.fillRect(x + t * 0.35, y, t * 0.3, t);
+        }
+        ctx.strokeStyle = '#071430';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, y, t, t);
+        ctx.restore();
+      }
+      function desenharContatos(ctx) {
+        // lâminas do contato por cima do fio (o fio fica "dentro" da ranhura)
+        slots.forEach(function (sl) {
+          var aperto = sl.batido ? 1.5 : 3.5;
+          ctx.fillStyle = '#C9A13B';
+          ctx.fillRect(sl.x - 13, sl.y - aperto - 2, 26, 2);
+          ctx.fillRect(sl.x - 13, sl.y + aperto, 26, 2);
+        });
+      }
+      function desenharFios(ctx) {
+        // fios ainda soltos, saindo da capa
+        soltos.forEach(function (w) {
+          if (w.colocado) return;
+          var sel = s.sel === w;
+          var y = w.y - (sel ? 12 : 0);
+          var pts = [[w.ox, JAQ + 2], [w.ox + (w.x - w.ox) * 0.35, JAQ - 18], [w.x, y]];
+          if (sel) {
+            ctx.save();
+            ctx.globalAlpha = 0.45;
+            D.fioCurva(ctx, pts, 12, { cor: '#FFD36B' });
+            ctx.restore();
+          }
+          D.fioCurva(ctx, pts, 6, w.f);
+        });
+        // fios nos contatos
+        slots.forEach(function (sl) {
+          if (!sl.fio) return;
+          D.fioCurva(ctx, rotaFio(sl.fio, sl, !sl.batido), sl.batido ? 5 : 6, sl.fio.f);
+        });
+        // sobras caindo depois do golpe
+        s.quedas.forEach(function (q) {
+          if (q.t > 1) return;
+          var dirX = q.sl.esq ? -1 : 1;
+          ctx.save();
+          ctx.globalAlpha = 1 - q.t;
+          D.fioCurva(ctx, [[q.sl.x + dirX * 24, q.sl.y + q.t * q.t * 160], [q.sl.x + dirX * 52, q.sl.y + q.t * q.t * 170]], 5, q.sl.fio.f);
+          ctx.restore();
+        });
+        // capa azul do cabo, entrando por baixo
+        ctx.save();
+        var g = ctx.createLinearGradient(CX - 24, 0, CX + 24, 0);
+        g.addColorStop(0, '#174E94');
+        g.addColorStop(0.4, '#2D7FE0');
+        g.addColorStop(1, '#174E94');
+        ctx.fillStyle = g;
+        rr(ctx, CX - 24, JAQ, 48, H - JAQ + 10, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#0B2E5C';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+        // nome do fio escolhido
+        if (s.sel) D.etiqueta(ctx, s.sel.x, s.sel.y - 40, s.sel.f.nome, '#FFD36B');
+      }
+      function desenharFerramenta(ctx, dt) {
+        var x = s.ferr.x, y = s.ferr.y;
+        var desce = 0;
+        if (s.golpe) {
+          s.golpe.t += dt;
+          x = s.golpe.sl.x;
+          y = s.golpe.sl.y;
+          desce = s.golpe.t < 0.12 ? s.golpe.t / 0.12 * 12 : Math.max(0, 12 - (s.golpe.t - 0.12) * 60);
+          if (s.golpe.t >= 0.12 && !s.golpe.feito) {
+            s.golpe.feito = true;
+            terminarGolpe(s.golpe.sl);
+          }
+          if (s.golpe.t > 0.34) s.golpe = null;
+        }
+        ctx.save();
+        ctx.translate(x, y - 6 + desce);
+        // ponta (lâmina 110): fica em cima do contato
+        ctx.fillStyle = '#9AA3AD';
+        ctx.fillRect(-5, -40, 10, 40);
+        ctx.fillStyle = '#C9D2DC';
+        ctx.fillRect(-14, -6, 28, 6);
+        // lado da lâmina de corte (vermelho)
+        ctx.fillStyle = '#E04A3C';
+        var lx = s.lamina === 'esq' ? -14 : 8;
+        ctx.fillRect(lx, -10, 6, 10);
+        // cabo amarelo da ferramenta (meio transparente para não esconder a etiqueta)
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#F2C200';
+        rr(ctx, -15, -104, 30, 66, 9);
+        ctx.fill();
+        ctx.strokeStyle = '#7A5E00';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#C79F00';
+        for (var i = 0; i < 4; i++) ctx.fillRect(-11, -94 + i * 13, 22, 4);
+        ctx.restore();
+        D.etiqueta(ctx, x + (s.lamina === 'esq' ? -62 : 62), y - 22 + desce, s.lamina === 'esq' ? '◀ lâmina' : 'lâmina ▶', '#E04A3C', '#FFFFFF');
+      }
+      function desenharTampa(ctx, dt) {
+        if (s.tampaAnim) s.tampa = Math.min(1, s.tampa + dt * 2.6);
+        if (s.tampaAnim && s.tampa >= 1 && s.fase === 'tampa') {
+          s.fase = 'espelho';
+          S.som('plugue');
+          api.msg('Clic! Tampa encaixada: ela segura os fios e protege os contatos.', 'ok');
+          api.instr('4) Encaixe a keystone no espelho da parede.');
+          api.botoes([['Encaixar no espelho ▶', irFrente]]);
+        }
+        var t = s.tampa;
+        var x0 = 600 + (CORPO.x + 8 - 600) * t;
+        var y0 = 300 + (CORPO.y + 8 - 300) * t;
+        var w0 = 150 + (CORPO.w - 16 - 150) * t;
+        var h0 = 96 + (CORPO.h - 16 - 96) * t;
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = '#EEF2F6';
+        rr(ctx, x0, y0, w0, h0, 12);
+        ctx.fill();
+        ctx.strokeStyle = '#7F8C9C';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(127,140,156,0.6)';
+        for (var i = 1; i < 6; i++) {
+          ctx.beginPath();
+          ctx.moveTo(x0 + 10, y0 + h0 * i / 6);
+          ctx.lineTo(x0 + w0 - 10, y0 + h0 * i / 6);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#7F8C9C';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('tampa traseira', x0 + w0 / 2, y0 + h0 / 2 + 4);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      }
+      function desenharFrente(ctx, dt) {
+        // parede e espelho, vistos de frente
+        ctx.fillStyle = '#D9D2C3';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#F7F7F4';
+        rr(ctx, CX - 92, 54, 184, 290, 12);
+        ctx.fill();
+        ctx.strokeStyle = '#B9B4A8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [[CX, 76], [CX, 322]].forEach(function (p) {
+          ctx.fillStyle = '#C9C4B8';
+          ctx.beginPath(); ctx.arc(p[0], p[1], 7, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#8F8A80';
+          ctx.beginPath(); ctx.moveTo(p[0] - 4, p[1]); ctx.lineTo(p[0] + 4, p[1]); ctx.stroke();
+        });
+        // módulo keystone com a boca RJ45
+        ctx.fillStyle = '#FFFFFF';
+        rr(ctx, CX - 36, 156, 72, 70, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#9AA7B6';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#1A1D22';
+        rr(ctx, CX - 25, 168, 50, 42, 4);
+        ctx.fill();
+        ctx.fillRect(CX - 9, 208, 18, 9);
+        for (var k = 0; k < 8; k++) {
+          ctx.fillStyle = '#E2B53C';
+          ctx.fillRect(CX - 21 + k * 5.4, 171, 3, 11);
+        }
+        ctx.fillStyle = '#6A6457';
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Ponto ' + (dados.n || ''), CX, 370);
+        ctx.textAlign = 'left';
+        if (s.fase === 'patch' || s.patch > 0) {
+          s.patch = Math.min(1, s.patch + dt * 1.8);
+          var yp = 360 - (360 - 166) * s.patch;
+          ctx.fillStyle = '#2D7FE0';
+          rr(ctx, CX - 9, yp + 40, 18, H - yp, 4);
+          ctx.fill();
+          ctx.fillStyle = '#1D5FB0';
+          rr(ctx, CX - 17, yp + 30, 34, 22, 5); // capinha (boot)
+          ctx.fill();
+          ctx.fillStyle = 'rgba(225,238,255,0.92)';
+          rr(ctx, CX - 26, yp, 52, 34, 4);
+          ctx.fill();
+          ctx.strokeStyle = '#8FA3BC';
+          ctx.stroke();
+          if (s.patch >= 1 && !s.fim) {
+            s.fim = true;
+            S.som('plugue');
+            api.msg('✔ Keystone no espelho e ' + (dados.pc || 'o PC') + ' ligado com patch cord!', 'ok');
+            api.instr('Clic! Ponto de rede pronto.');
+            setTimeout(function () { api.concluir({}); }, 1100);
+          }
+        }
+      }
+
+      return {
+        estado: s,
+        slots: slots, // para os testes
+        soltos: soltos,
+        down: function (x, y) {
+          if (s.fase === 'colocar') {
+            var w = soltoEm(x, y);
+            if (w) {
+              s.sel = w;
+              S.som('fio');
+              api.msg('Fio ' + w.f.nome + ' na mão: toque no contato certo.', 'info');
+              return;
+            }
+            var sl = slotEm(x, y);
+            if (sl) colocar(sl);
+            return;
+          }
+          if (s.fase === 'bater') {
+            var alvo = slotEm(x, y);
+            if (alvo && !s.golpe) bater(alvo);
+            else if (!alvo) s.ferr = { x: x, y: Math.max(60, y) };
+            return;
+          }
+          if (s.fase === 'tampa' && !s.tampaAnim) {
+            var naKs = x > CORPO.x && x < CORPO.x + CORPO.w && y > CORPO.y && y < CORPO.y + CORPO.h;
+            var naTampa = x > 600 && x < 750 && y > 300 && y < 396;
+            if (naKs || naTampa) s.tampaAnim = true;
+          }
+        },
+        move: function (x, y) {
+          if (s.fase === 'bater' && !s.golpe) s.ferr = { x: x, y: Math.max(60, y) };
+        },
+        desenhar: function (ctx, dt) {
+          s.quedas.forEach(function (q) { q.t += dt * 1.6; });
+          var alfaFrente = 0;
+          if (s.fase === 'frente' || s.fase === 'patch') {
+            s.frente = Math.min(1, s.frente + dt * 2.5);
+            alfaFrente = s.frente;
+          }
+          if (alfaFrente < 1) {
+            ctx.save();
+            ctx.globalAlpha = 1 - alfaFrente;
+            fundoParede(ctx);
+            desenharCostas(ctx);
+            desenharFios(ctx);
+            desenharContatos(ctx);
+            if (s.fase === 'colocar') D.etiqueta(ctx, CX, 30, 'siga a linha B da etiqueta (T-568B)', '#FFD36B');
+            if (s.fase === 'tampa' || s.fase === 'espelho' || alfaFrente > 0) desenharTampa(ctx, dt);
+            if (s.fase === 'bater' || s.golpe) desenharFerramenta(ctx, dt);
+            ctx.restore();
+          }
+          if (alfaFrente > 0) {
+            ctx.save();
+            ctx.globalAlpha = alfaFrente;
+            desenharFrente(ctx, dt);
+            ctx.restore();
+          }
+        }
+      };
+    };
+  });
+
+  /* ================================================================== */
   secao('P04-professor-explica', function () {
     var C = S.CSS;
     var J = S.jogo;
@@ -15646,7 +17218,7 @@
           'Responsabilidade no uso dos recursos organizacionais'
         ],
         sabe: [
-          'Crimpou cabos UTP no padrão T-568B',
+          'Crimpou cabos UTP no padrão T-568B, com a capa presa no RJ45',
           'Ligou PCs ao switch e o switch ao roteador (uplink)',
           'Configurou IP fixo, máscara e gateway na mesma rede',
           'Testou a rede com ping nos dois sentidos'
@@ -15655,7 +17227,7 @@
       servidores: {
         uc: 2,
         reforca: [1],
-        desenvolve: 'a configuração de um servidor de rede com os serviços DHCP, DNS e HTTPS, além da instalação de tomadas keystone',
+        desenvolve: 'a instalação e a configuração de um servidor de rede com DHCP, DNS e um site com HTTPS (IIS), além da montagem de tomadas keystone',
         conhecimentos: [
           'Sistema operacional de rede: hardware de servidores e configuração dos serviços DNS e DHCP',
           'Sistema operacional: configuração de protocolos para conexão em redes locais, host e cliente',
@@ -15672,10 +17244,11 @@
           'Proatividade no desenvolvimento do trabalho'
         ],
         sabe: [
-          'Deu IP fixo ao servidor',
-          'Instalou tomadas keystone com a punch down (T-568B)',
-          'Criou o escopo DHCP e o registro DNS do site',
-          'Publicou o site com HTTPS e abriu pelo nome num PC'
+          'Deu IP fixo ao servidor pelas propriedades do TCP/IPv4',
+          'Instalou as funções DHCP, DNS e IIS no Gerenciador do Servidor',
+          'Montou tomadas keystone com a punch down (T-568B)',
+          'Criou o escopo DHCP, a zona DNS e o registro do site',
+          'Publicou o site com certificado e HTTPS e abriu pelo nome num PC'
         ]
       },
       cabeamento: {
@@ -15732,11 +17305,11 @@
     var EXPLICA = {
       laboratorio: {
         ligar: 'Antes de qualquer coisa, os equipamentos precisam estar ligados: sem energia, a placa de rede não funciona e não dá para configurar nada. Quando o PC liga, o LED verde do gabinete acende.',
-        crimpar1: 'O cabo de rede (UTP) tem 8 fios trançados em 4 pares. Crimpar é prender esses fios no conector RJ45 com o alicate. A ordem das cores importa: no padrão T-568B ela é branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom. Se um fio trocar de lugar, o cabo não funciona direito.',
+        crimpar1: 'O cabo de rede (UTP) tem 8 fios trançados em 4 pares. Você decapa uns 2 cm da capa, destrança e organiza os fios no T-568B: branco-laranja, laranja, branco-verde, azul, branco-azul, verde, branco-marrom, marrom. Depois apara todos juntos com 1,3 cm. O RJ45 entra com os contatos dourados virados para você, até os fios chegarem no fim e a capa azul ficar dentro do conector. Por último, o alicate crimpa: os contatos furam o isolamento e a trava de trás prende a capa.',
         conectar1: 'O switch é o "ponto de encontro" da rede local: cada computador liga um cabo nele, e ele entrega os dados só para quem precisa receber. Uma ponta do cabo vai na placa de rede do PC (entrada RJ45) e a outra numa porta Fast Ethernet do switch (Fa0/1 a Fa0/24).',
-        crimpar2: 'Mesmo processo do primeiro cabo. Repetir é o que faz a mão pegar o jeito: na vida real, um técnico crimpa dezenas de cabos numa instalação. Confira as cores no cartaz antes de apertar o alicate.',
+        crimpar2: 'Mesmo processo do primeiro cabo: decapar, organizar no T-568B, aparar com 1,3 cm, encaixar o RJ45 até a capa azul entrar e crimpar cada ponta na matriz 8P. Repetir é o que faz a mão pegar o jeito: numa instalação de verdade, o técnico crimpa dezenas de cabos.',
         conectar2: 'Agora o segundo PC entra na rede do mesmo jeito: placa de rede → porta Fast livre do switch. Com dois PCs no mesmo switch, eles já conseguem conversar, desde que estejam na mesma rede IP.',
-        crimpar3: 'Este cabo vai ligar o switch ao roteador. É um cabo direto: as duas pontas seguem o mesmo padrão (T-568B dos dois lados).',
+        crimpar3: 'Este cabo vai ligar o switch ao roteador. É um cabo direto: as duas pontas seguem o mesmo padrão, T-568B dos dois lados. Se a capa azul ficar de fora do conector, o cabo solta com o tempo: por isso a gente apara os fios com 1,3 cm.',
         uplink: 'O uplink é a ligação do switch com o roteador. Usamos uma porta Gigabit do switch, que é mais rápida, porque todo o tráfego que sai da rede passa por ela. No roteador, o cabo vai numa porta LAN (rede interna). A porta WAN é reservada para a internet que vem do provedor.',
         roteador: 'O roteador liga a nossa rede a outras redes, como a internet. Ele também é o "gateway": o endereço para onde os PCs mandam tudo o que não é da rede local. Para isso, ele precisa estar ligado.',
         ip1: 'Todo equipamento na rede precisa de um endereço IP, como o número de uma casa na rua. O IP do roteador (192.168.0.1) mostra qual é a rede: 192.168.0. O PC precisa estar nessa mesma rede, com um final diferente (.2 ou .3). A máscara 255.255.255.0 diz que os três primeiros números são a rede, e o gateway é o IP do roteador.',
@@ -15746,15 +17319,16 @@
       },
       servidores: {
         srvLigar: 'O servidor é um computador que fica ligado o tempo todo oferecendo serviços para a rede. Ele fica numa sala separada, mais segura e com o rack. Primeiro passo: ligar o equipamento.',
-        srvIp: 'Servidor sempre usa IP fixo: se o IP dele mudasse, os PCs não saberiam mais onde encontrá-lo. Damos o 192.168.0.10, com a mesma máscara e o mesmo gateway (o roteador) da rede. No DNS colocamos 127.0.0.1, que significa "eu mesmo", porque o próprio servidor vai responder pelos nomes.',
+        srvIp: 'Servidor sempre usa IP fixo: se o IP dele mudasse, os PCs não saberiam mais onde encontrá-lo. No Windows Server, isso fica nas propriedades da placa: Ethernet, depois Protocolo IP Versão 4, depois Propriedades. Ali você marca "Usar o seguinte endereço IP" e coloca o 192.168.0.10, a máscara e o gateway (o roteador). No DNS vai o 127.0.0.1, que quer dizer "eu mesmo", porque o próprio servidor vai responder pelos nomes.',
+        funcoes: 'O Windows Server vem "vazio": cada serviço é uma função que você instala. Pelo Gerenciador do Servidor, no menu Gerenciar, o assistente Adicionar Funções e Recursos instala o Servidor DHCP, o Servidor DNS e o Servidor Web, o IIS. Instale só o que a rede precisa: cada função a mais é mais coisa para atualizar e proteger. Depois de instaladas, elas aparecem no menu Ferramentas.',
         kit: 'A keystone é a tomada de rede que fica na parede. A punch down é a ferramenta que empurra cada fio para dentro dos contatos da keystone e corta a sobra. Pegue as duas na bancada.',
-        tomadas: 'Os cabos já chegam pela canaleta até a parede. Em cada ponto, você encaixa os 8 fios na keystone seguindo a linha B da etiqueta (T-568B, o mesmo padrão dos cabos) e prende com a punch down. Assim o PC pode ligar na parede com um cabo curto.',
-        dhcp: 'O DHCP é o serviço que entrega IP automaticamente. Em vez de configurar cada PC na mão, você cria um escopo: uma faixa de endereços (por exemplo, .100 a .150) com máscara, gateway e DNS. Quando um PC pede, o servidor empresta um IP dessa faixa.',
-        dns: 'O DNS traduz nomes em IPs, como uma agenda de contatos. As pessoas lembram de "intranet", não de 192.168.0.10. O registro do tipo A liga um nome a um endereço IP: nome intranet → IP do servidor.',
-        https: 'O HTTPS publica o site com segurança: os dados vão criptografados entre o navegador e o servidor. Ele usa a porta 443, e o certificado precisa ter o mesmo nome do site. Se o nome não bater, o navegador avisa que a conexão não é segura.',
+        tomadas: 'Os cabos já chegam pela canaleta até a parede. Em cada ponto, você deita os 8 fios nos contatos da keystone seguindo a linha B da etiqueta, o T-568B. Depois bate cada fio com a ferramenta de impacto, a punch down: ela empurra o fio para dentro do contato e corta a sobra. A lâmina fica sempre para fora, do lado da sobra. No fim, coloca a tampa traseira e encaixa a keystone no espelho.',
+        dhcp: 'O DHCP é o serviço que entrega IP automaticamente. No console DHCP, você cria um escopo: um nome, a faixa de endereços (por exemplo, .100 a .150), a máscara, o tempo de concessão e as opções, que são o roteador (gateway), o domínio senac.lan e o servidor DNS. No fim, o escopo precisa ser ativado: escopo inativo não entrega IP para ninguém.',
+        dns: 'O DNS traduz nomes em IPs, como uma agenda de contatos. Primeiro você cria a zona senac.lan, que é a "agenda" do domínio. Ela é primária, porque este é o único servidor DNS da rede. Dentro da zona, o registro de Host, o tipo A, liga o nome intranet ao IP do servidor. Assim, intranet.senac.lan vira 192.168.0.10.',
+        https: 'O IIS é o servidor de sites. Para ter HTTPS, o site precisa de um certificado com o mesmo nome que as pessoas digitam, intranet.senac.lan, emitido por uma autoridade em que os PCs confiam. Depois, nas Associações do site, você adiciona https na porta 443 com esse certificado. Por último, o Documento Padrão: colocando boasvindas.html na lista, o site abre só com o nome, sem digitar o arquivo.',
         pcsLigar: 'Os três PCs precisam estar ligados para entrar na rede e pedir IP ao servidor.',
         pcsDhcp: 'Agora cada PC pede IP sozinho: em "Obter endereço IP automaticamente" ele chama o DHCP e recebe IP, máscara, gateway e DNS. Se aparecer um IP 169.254.x.x, o PC não achou o DHCP: confira a tomada keystone e o escopo no servidor.',
-        site: 'Este é o teste final, que junta tudo: o PC tem IP pelo DHCP, pergunta ao DNS qual é o IP de "intranet" e abre o site pelo HTTPS. Se a página abrir digitando o nome, todos os serviços estão funcionando juntos.'
+        site: 'Este é o teste final, que junta tudo. O PC tem IP pelo DHCP, pergunta ao DNS qual é o IP de intranet.senac.lan e abre o site pelo HTTPS. Pode digitar resumido: só intranet.senac.lan, sem https:// e sem o nome do arquivo. O navegador tenta HTTPS primeiro e o servidor entrega a página padrão.',
       },
       cabeamento: {
         kitPres: 'Cabeamento estruturado é deixar a rede organizada, segura e fácil de manter. As presilhas seguram o feixe de cabos na parede, e o martelo prende cada presilha. Tudo isso fica na bancada.',
@@ -15764,7 +17338,7 @@
         feixe: 'Agora o feixe sai do switch e passa pelas presilhas na ordem do trajeto. Em cada ponto de rede fica um cabo. Não dá para pular presilha: é ela que segura o peso do feixe e mantém o caminho certinho.',
         canaleta: 'A canaleta é o "trilho" de plástico que esconde e protege os cabos. Ela evita que alguém tropece ou arranque um fio, e deixa a sala com aparência profissional. Em cada trecho: fixe a base e feche a tampa.',
         kitKs: 'Com os cabos no lugar, falta a tomada de cada ponto. Pegue as keystones e a punch down na bancada.',
-        keystones: 'Em cada ponto, o cabo termina numa keystone, a tomada de rede da parede. Siga a linha B da etiqueta (T-568B) e prenda os fios com a punch down. Assim o cabo da parede fica fixo e o PC liga nele com um cabo curto.',
+        keystones: 'Em cada ponto, o cabo termina numa keystone, a tomada de rede da parede. Deite cada fio no contato da linha B da etiqueta (T-568B) e bata com a punch down, com a lâmina para fora, do lado da sobra. Depois coloque a tampa traseira, que segura os fios, e encaixe no espelho. Assim o PC liga na parede com um cabo curto.',
         patch: 'O patch cord é o cabo curto que liga a tomada da parede ao computador. Ele vai na porta RJ45 do PC, a maior, com 8 contatos. A RJ11, menor, é de telefone.',
         ligar: 'Com tudo cabeado, ligue os 6 computadores para que eles entrem na rede.',
         dhcp: 'O servidor DHCP da outra sala entrega IP automático para cada PC. Se todos receberem IP, o cabeamento inteiro está funcionando: switch, feixe, keystones e patch cords.'
@@ -16256,7 +17830,7 @@
 })();
 
 (function () {
-  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4F-retomar-depois-da-camera","F4D-bancada-3d","F4E-closeups","P04-professor-explica"];
+  var ESPERADAS = ["B01-constantes","B02-utilitarios","U01-raiz-e-tema","U02-modal-e-avisos","U03-login","U04-comandos","U05-carregamento","U06-hud","U09-atualizacoes","D01-dados-ranking","D02-tela-ranking","D03-area-professor","W01-render-base","W02-sala","W03-bancadas-e-pcs","W04-rack-switch-roteador","W05-ferramentas-e-cabos","P01-personagem","P02-movimento-camera","P03-professor","E01-teclado-mouse","E02-controles-toque","J01-estado-e-missoes","J02-acoes","M01-minigames-base","M02-crimpagem","M03-portas","M04-configuracao-ip","F01-tela-final","L01-carregamento","L02-laco-e-qualidade","L03-inicio","C01-cena-abertura","F2A-sala-servidor","F2B-estado-e-missoes","F2C-acoes","F2D-keystone","F2E-gerenciador-servidor","F2F-pcs-dhcp-navegador","F2G-registro-da-fase","K01-cachola","K02-segredo-carlos","F3A-sala-cabeamento","F3B-estado-e-missoes","F3C-acoes","F3D-minigames","F3E-registro-da-fase","A01-motor-de-audio","A02-efeitos","A03-musica","A04-vozes","A05-legendas","G01-acessibilidade","G02-tela-configuracoes","F4A-sala-imersao","F4B-matematica-mesa","F4C-imersao-foto","F4F-retomar-depois-da-camera","F4D-bancada-3d","F4E-closeups","M05-close-ups-compartilhados","P04-professor-explica"];
   var painel = null;
   var timer = null;
   var gpu = null;
